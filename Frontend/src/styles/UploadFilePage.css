@@ -1,0 +1,132 @@
+.page-container {
+  display: flex;
+  min-height: 100vh;
+}
+
+.sidebar {
+  width: 200px; 
+  background-color: #1e293b;
+  color: white;
+  padding: 20px;
+  box-shadow: 2px 0 5px rgba(0, 0, 0, 0.1);
+}
+
+.main-content {
+  flex-grow: 1;
+  padding: 20px;
+  background-color: #f8fafc;
+}
+
+.upload-section {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  background-color: #e2e8f0;
+  padding: 15px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+}
+
+.upload-section input[type="text"],
+.upload-section input[type="file"] {
+  flex: 1;
+  min-width: 200px;
+  padding: 8px;
+  border: 1px solid #94a3b8;
+  border-radius: 4px;
+  background-color: white;
+}
+
+.upload-section button {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 4px;
+  background-color: #2563eb;
+  color: white;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.upload-section button:hover {
+  background-color: #1d4ed8;
+}
+
+.file-explorer {
+  background-color: white;
+  border-radius: 8px;
+  padding: 15px;
+  box-shadow: 0 0 6px rgba(0, 0, 0, 0.1);
+}
+
+.file-explorer h4 {
+  margin-top: 15px;
+  color: #0f172a;
+  font-weight: 600;
+}
+
+/* Breadcrumb Styling */
+.breadcrumb {
+  margin-bottom: 20px;
+  padding: 10px 15px;
+  background-color: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  font-size: 14px;
+}
+
+.path-item {
+  color: #64748b;
+  cursor: pointer;
+  padding: 0 5px;
+  transition: color 0.2s;
+}
+
+.path-item:hover {
+  color: #0f172a;
+  text-decoration: underline;
+}
+
+.path-item.active {
+  font-weight: bold;
+  color: #2563eb;
+  cursor: default;
+}
+
+/* Horizontal List for Folders and Files */
+.horizontal-list {
+  display: flex;
+  flex-wrap: wrap; 
+  gap: 15px;
+  padding: 10px 0;
+}
+
+.folder-item,
+.file-item {
+  padding: 15px 20px;
+  border-radius: 8px;
+  min-width: 120px; 
+  flex-basis: auto; 
+  margin: 0; 
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  text-align: center;
+  transition: background-color 0.2s ease;
+  cursor: pointer; 
+}
+
+.folder-item {
+  background-color: #f1f5f9;
+  color: #1e293b;
+}
+
+.folder-item:hover {
+  background-color: #dbeafe;
+}
+
+.file-item {
+  background-color: #f1f5f9;
+  color: #1e293b;
+}
+
+.file-item:hover {
+  background-color: #fef3c7;
+}
