@@ -1,19 +1,28 @@
-const mongoose = require("mongoose");
+// backend/models/Folder.js
+
+const mongoose = require('mongoose');
 
 const folderSchema = new mongoose.Schema({
     name: {
         type: String,
         required: true,
+        trim: true,
     },
-    parentFolder: {
+    parent: {
+        // Null means this is a root folder
         type: mongoose.Schema.Types.ObjectId,
-        ref: "Folder",
-        default: null,
+        ref: 'Folder',
+        default: null, 
     },
-    createdBy: {
-        type: String,
-        required: true,
+    owner: {
+        // Placeholder for user ID if implementing authentication
+        type: String, 
+        default: 'System',
     },
-}, { timestamps: true });
+    createdAt: {
+        type: Date,
+        default: Date.now,
+    },
+});
 
-module.exports = mongoose.models.Folder || mongoose.model("Folder", folderSchema);
+module.exports = mongoose.model('Folder', folderSchema);

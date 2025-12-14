@@ -1,132 +1,386 @@
-.page-container {
-  display: flex;
-  min-height: 100vh;
+/* --- Global Reset & Base Styles (Standard Light Mode) --- */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
 }
 
-.sidebar {
-  width: 200px; 
-  background-color: #1e293b;
-  color: white;
-  padding: 20px;
-  box-shadow: 2px 0 5px rgba(0, 0, 0, 0.1);
+body, #root {
+    background-color: #f8fafc; /* Light background */
+    min-height: 100vh;
+    margin: 0;
 }
 
+/* --- 1. SINGLE-PANE APP CONTAINER --- */
+.file-explorer-app-single-pane {
+    padding: 20px; 
+    background: #f8fafc;
+    min-height: 100vh;
+}
+
+/* --- 2. MAIN CONTENT (All Elements) --- */
 .main-content {
-  flex-grow: 1;
-  padding: 20px;
-  background-color: #f8fafc;
+    width: 100%; 
+    padding: 0; 
+    background-color: #f8fafc;
+    overflow-y: auto;
 }
 
-.upload-section {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  background-color: #e2e8f0;
-  padding: 15px;
-  border-radius: 8px;
-  margin-bottom: 20px;
+.main-header h1 {
+    color: #0f172a;
+    font-size: 2rem;
+    margin-bottom: 20px;
 }
 
-.upload-section input[type="text"],
-.upload-section input[type="file"] {
-  flex: 1;
-  min-width: 200px;
-  padding: 8px;
-  border: 1px solid #94a3b8;
-  border-radius: 4px;
-  background-color: white;
+/* --- MAIN ACTIONS TOOLBAR --- */
+.main-actions-toolbar {
+    display: flex;
+    gap: 20px;
+    align-items: center;
+    padding: 15px;
+    margin-bottom: 20px;
+    background-color: white;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
 }
 
-.upload-section button {
-  padding: 8px 16px;
-  border: none;
-  border-radius: 4px;
-  background-color: #2563eb;
-  color: white;
-  cursor: pointer;
-  transition: background-color 0.2s ease;
+.action-group {
+    display: flex;
+    align-items: center;
+    gap: 10px;
 }
 
-.upload-section button:hover {
-  background-color: #1d4ed8;
+/* Create Folder Group - Conditional border implemented via class in JSX */
+.create-group {
+    padding-right: 0; 
 }
 
-.file-explorer {
-  background-color: white;
-  border-radius: 8px;
-  padding: 15px;
-  box-shadow: 0 0 6px rgba(0, 0, 0, 0.1);
+.create-group.has-right-border {
+    border-right: 1px solid #e2e8f0;
+    padding-right: 20px;
 }
 
-.file-explorer h4 {
-  margin-top: 15px;
-  color: #0f172a;
-  font-weight: 600;
+.create-input {
+    padding: 8px 12px;
+    border: 1px solid #e2e8f0;
+    border-radius: 4px;
+    width: 180px;
+    background-color: white; /* Light mode input background */
+    color: #0f172a;
+}
+
+.create-btn {
+    background-color: #2563eb;
+    color: white;
+    padding: 8px 12px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: background-color 0.2s;
+}
+
+.create-btn:hover {
+    background-color: #1d4ed8;
+}
+
+/* Upload File Group */
+.upload-group {
+    border-right: 1px solid #e2e8f0;
+    padding-right: 20px;
+}
+
+.upload-label-main {
+    background-color: #0d9488;
+    color: white;
+    padding: 8px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: background-color 0.2s;
+}
+
+.upload-label-main:hover {
+    background-color: #0b7c70;
+}
+
+.selected-file-name {
+    font-size: 13px;
+    color: #475569;
+    max-width: 120px;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.upload-btn-main {
+    background-color: #0f766e;
+    color: white;
+    padding: 8px 12px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: 500;
+}
+
+.upload-btn-main:disabled {
+    background-color: #94a3b8;
+    cursor: not-allowed;
+}
+
+/* Search Bar Group */
+.search-group {
+    flex-grow: 1; 
+    background-color: #f1f5f9;
+    border-radius: 4px;
+    padding: 0 10px;
+}
+
+.search-icon {
+    color: #64748b;
+}
+
+.search-input {
+    flex-grow: 1;
+    padding: 8px 0;
+    border: none;
+    background: transparent;
+    outline: none;
+    color: #0f172a;
 }
 
 /* Breadcrumb Styling */
 .breadcrumb {
-  margin-bottom: 20px;
-  padding: 10px 15px;
-  background-color: white;
-  border-radius: 8px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
-  font-size: 14px;
+    margin-bottom: 20px;
+    padding: 10px 15px;
+    background-color: white;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    font-size: 15px;
 }
 
 .path-item {
-  color: #64748b;
-  cursor: pointer;
-  padding: 0 5px;
-  transition: color 0.2s;
+    color: #64748b;
+    cursor: pointer;
+    padding: 0 5px;
+    transition: color 0.2s;
 }
 
 .path-item:hover {
-  color: #0f172a;
-  text-decoration: underline;
+    color: #0f172a;
+    text-decoration: underline;
 }
 
 .path-item.active {
-  font-weight: bold;
-  color: #2563eb;
-  cursor: default;
+    font-weight: bold;
+    color: #2563eb;
+    cursor: default;
 }
 
-/* Horizontal List for Folders and Files */
-.horizontal-list {
-  display: flex;
-  flex-wrap: wrap; 
-  gap: 15px;
-  padding: 10px 0;
+/* List Header and Transfer Button */
+.list-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+    padding: 10px 0;
+    border-bottom: 1px solid #e2e8f0;
 }
 
-.folder-item,
-.file-item {
-  padding: 15px 20px;
-  border-radius: 8px;
-  min-width: 120px; 
-  flex-basis: auto; 
-  margin: 0; 
-  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-  text-align: center;
-  transition: background-color 0.2s ease;
-  cursor: pointer; 
+.list-toolbar h2 {
+    font-size: 1.2rem;
+    color: #334155;
 }
 
-.folder-item {
-  background-color: #f1f5f9;
-  color: #1e293b;
+.transfer-btn {
+    padding: 8px 16px;
+    background-color: #ef4444; 
+    color: white;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: background-color 0.2s;
 }
 
-.folder-item:hover {
-  background-color: #dbeafe;
+.transfer-btn:hover:not(:disabled) {
+    background-color: #dc2626;
 }
 
-.file-item {
-  background-color: #f1f5f9;
-  color: #1e293b;
+.transfer-btn:disabled {
+    background-color: #94a3b8;
+    cursor: not-allowed;
 }
 
-.file-item:hover {
-  background-color: #fef3c7;
+/* --- 4. FILE TABLE VIEW (Horizontal List) --- */
+.file-table-container {
+    background-color: white;
+    border-radius: 8px;
+    box-shadow: 0 0 6px rgba(0, 0, 0, 0.1);
+    overflow: hidden;
+}
+
+.file-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.file-table thead th {
+    background-color: #f1f5f9;
+    padding: 12px 15px;
+    text-align: left;
+    color: #334155;
+    font-weight: 600;
+}
+
+.file-table tbody td {
+    padding: 12px 15px;
+    border-bottom: 1px solid #e2e8f0;
+    font-size: 14px;
+    color: #0f172a;
+}
+
+.file-table tbody tr:hover {
+    background-color: #f8fafc;
+}
+
+/* ICON STYLING (COLORED ICONS) */
+.file-table .file-icon, .file-table .folder-icon {
+    margin-right: 10px;
+    color: #64748b; 
+    transition: color 0.15s;
+}
+
+.file-table .fa-folder {
+    color: #facc15 !important; 
+}
+
+.file-table .fa-file {
+    color: #64748b !important; 
+}
+
+.file-table .fa-file-pdf {
+    color: #dc2626 !important; 
+}
+
+.file-table .fa-file-excel {
+    color: #15803d !important; 
+}
+
+.file-table .fa-file-image {
+    color: #3b82f6 !important; 
+}
+
+.file-table .fa-file-archive {
+    color: #4c1d95 !important; 
+}
+
+.file-table .fa-file-video {
+    color: #ef4444 !important; 
+}
+
+.file-table .fa-file-audio {
+    color: #10b981 !important; 
+}
+
+.file-table .fa-file-word {
+    color: #1e40af !important; 
+}
+
+.file-table .folder-row {
+    cursor: pointer;
+    font-weight: 500;
+}
+
+.empty-message {
+    text-align: center;
+    padding: 30px;
+    color: #64748b;
+}
+
+/* ========================================= */
+/* --- DARK THEME OVERRIDES (AGGRESSIVE FIX) --- */
+/* ========================================= */
+
+/* Targetting the main elements aggressively */
+.dark-theme .file-explorer-app-single-pane,
+.dark-theme .main-content,
+.dark-theme main { /* Added bare main tag */
+    background-color: #1e293b !important; 
+    color: #f1f5f9 !important; 
+}
+
+.dark-theme .main-actions-toolbar,
+.dark-theme .breadcrumb,
+.dark-theme .file-table-container {
+    background-color: #334155 !important; 
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4);
+}
+
+.dark-theme .main-header h1 {
+    color: #f1f5f9 !important;
+}
+
+.dark-theme .create-group.has-right-border,
+.dark-theme .upload-group {
+    border-right: 1px solid #475569 !important;
+}
+
+/* Input Overrides */
+.dark-theme .create-input,
+.dark-theme .search-group,
+.dark-theme input[type="text"], /* Added bare input tag */
+.dark-theme .search-input {
+    background-color: #475569 !important; 
+    border: 1px solid #64748b !important;
+    color: #f1f5f9 !important;
+}
+
+.dark-theme .search-icon {
+    color: #f1f5f9 !important;
+}
+
+
+.dark-theme .path-item {
+    color: #cbd5e1 !important;
+}
+
+.dark-theme .path-item:hover {
+    color: #f1f5f9 !important;
+}
+
+.dark-theme .path-item.active {
+    color: #93c5fd !important;
+}
+
+.dark-theme .list-toolbar {
+    border-bottom: 1px solid #475569 !important;
+}
+
+.dark-theme .list-toolbar h2 {
+    color: #f1f5f9 !important;
+}
+
+/* Table Specific Dark Styles */
+.dark-theme .file-table thead th {
+    background-color: #475569 !important; 
+    color: #f1f5f9 !important;
+}
+
+.dark-theme .file-table tbody td {
+    color: #f1ffef !important; 
+    border-bottom: 1px solid #475569 !important;
+}
+
+.dark-theme .file-table tbody tr:hover {
+    background-color: #3f5068 !important; 
+}
+
+.dark-theme .empty-message {
+    color: #cbd5e1 !important;
+}
+
+.dark-theme .selected-file-name {
+    color: #cbd5e1 !important;
 }
