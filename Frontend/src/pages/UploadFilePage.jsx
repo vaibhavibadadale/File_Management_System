@@ -1,384 +1,168 @@
-// src/pages/UploadFilePage.js
-
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import axios from "axios";
-import "../styles/UploadFilePage.css"; 
+import { Container, Table, Button, Form, Breadcrumb, Row, Col, InputGroup } from 'react-bootstrap';
+import { FolderFill, FileEarmarkFill, HouseFill, Upload, PlusSquare, Send, Search, XCircle } from 'react-bootstrap-icons';
+import TransferModal from "./TransferModal"; 
 
-
-// --- Configuration and Utility Functions ---
-const ALLOWED_MIME_TYPES = [
-    'image/jpeg', 'image/png', 'image/gif',
-    'audio/mpeg', 'audio/wav', 'audio/ogg',
-    'video/mp4', 'video/quicktime', 'video/x-msvideo',
-    'application/pdf', 'application/zip', 'application/x-zip-compressed',
-    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    'application/msword',
-];
-// Ensure this URL is correct for your backend server
-const BACKEND_URL = "http://localhost:5000"; 
-
-const getFileIcon = (mimeType) => {
-    if (!mimeType || typeof mimeType !== 'string') return 'fas fa-file'; 
+function UploadFilePage({ currentTheme, user }) {
+    const [folders, setFolders] = useState([]);
+    const [files, setFiles] = useState([]);
+    const [folderName, setFolderName] = useState("");
+    const [searchTerm, setSearchTerm] = useState("");
+    const [selectedItems, setSelectedItems] = useState({}); // Tracks both file and folder IDs
     
-    if (mimeType.includes('image')) return 'fas fa-file-image';
-    if (mimeType.includes('pdf')) return 'fas fa-file-pdf';
-    if (mimeType.includes('sheet') || mimeType.includes('excel')) return 'fas fa-file-excel';
-    if (mimeType.includes('zip') || mimeType.includes('archive')) return 'fas fa-file-archive';
-    if (mimeType.includes('audio')) return 'fas fa-file-audio';
-    if (mimeType.includes('video')) return 'fas fa-file-video';
-    if (mimeType.includes('word')) return 'fas fa-file-word';
-    
-    return 'fas fa-file';
-};
-
-const formatBytes = (bytes, decimals = 2) => {
-    if (bytes === 0 || bytes === null || bytes === undefined) return '—';
-    const k = 1024;
-    const dm = decimals < 0 ? 0 : decimals;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
-};
-
-
-function UploadFilePage() {
-    const [foldersInCurrentView, setFoldersInCurrentView] = useState([]);
-    const [filesInCurrentView, setFilesInCurrentView] = useState([]);
-    const [selectedFile, setSelectedFile] = useState(null);
-    const [folderName, setFolderName] = useState(""); 
     const [currentFolderId, setCurrentFolderId] = useState(null); 
-    const [currentPath, setCurrentPath] = useState([{ _id: null, name: "Home" }]); 
-    const [filesToTransfer, setFilesToTransfer] = useState({});
-    const [searchQuery, setSearchQuery] = useState(""); 
+    const [path, setPath] = useState([{ _id: null, name: "Home" }]);
+    const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
+    
+    const fileInputRef = useRef(null);
 
-    useEffect(() => {
-        loadContent(currentFolderId);
-    }, [currentFolderId]);
+    useEffect(() => { loadData(); }, [currentFolderId, searchTerm]);
 
-    const loadContent = async (parentId) => {
-        setFilesToTransfer({});
-
-        // Load folders
+    const loadData = async () => {
         try {
-            const folderRes = await axios.get(`${BACKEND_URL}/api/folders`, {
-                params: { parentId: parentId || null },
-            });
-            setFoldersInCurrentView(folderRes.data.folders);
-        } catch (err) {
-            console.error("Error loading folders:", err);
-            setFoldersInCurrentView([]);
-        }
-
-        // Load files 
-        try {
-            const fileRes = await axios.get(`${BACKEND_URL}/api/files`, {
-                params: { folderId: parentId || null },
-            });
-            setFilesInCurrentView(fileRes.data.files);
-        } catch (err) {
-            console.error("Error loading files:", err);
-            setFilesInCurrentView([]);
-        }
+            const id = currentFolderId || "null";
+            const searchQ = searchTerm ? `&search=${searchTerm}` : "";
+            const [fRes, filRes] = await Promise.all([
+                axios.get(`http://localhost:5000/api/folders?parentId=${id}${searchQ}`),
+                axios.get(`http://localhost:5000/api/files?folderId=${id}${searchQ}`)
+            ]);
+            setFolders(fRes.data.folders);
+            setFiles(filRes.data.files);
+        } catch (err) { console.error("Load Error", err); }
     };
 
-    const handleFileUpload = async () => {
-        if (!selectedFile) return alert("Please select a file first.");
-        
-        if (!ALLOWED_MIME_TYPES.includes(selectedFile.type)) {
-            alert("Unsupported file type selected. Please check allowed types.");
-            setSelectedFile(null);
-            document.getElementById('file-input').value = '';
-            return;
-        }
-
-        const formData = new FormData();
-        formData.append("file", selectedFile);
-        formData.append("folderId", currentFolderId || null); 
-        formData.append("uploadedBy", "Admin"); 
-
-        try {
-            await axios.post(`${BACKEND_URL}/api/files/upload`, formData, {
-                headers: { "Content-Type": "multipart/form-data" },
-            });
-            
-            setSelectedFile(null);
-            document.getElementById('file-input').value = '';
-            
-            // CRITICAL: Reload content to fetch the new file list
-            loadContent(currentFolderId); 
-            
-            alert(`File "${selectedFile.name}" uploaded successfully!`); 
-        } catch (err) {
-            console.error("Error uploading file:", err);
-            alert("Error uploading file: " + (err.response?.data?.message || err.message));
-        }
-    };
-
-    const handleCreateFolder = async () => {
-        if (!folderName) return alert("Enter folder name");
-
-        try {
-            await axios.post(`${BACKEND_URL}/api/folders/create`, {
-                name: folderName,
-                parent: currentFolderId || null, 
-                createdBy: "Admin",
-            });
-            setFolderName("");
-            loadContent(currentFolderId); 
-        } catch (err) {
-            console.error("Error creating folder:", err);
-            alert("Error creating folder: " + (err.response?.data?.message || err.message));
-        }
-    };
-
-    const handleFolderClick = (folder) => {
+    const enterFolder = (folder) => {
         setCurrentFolderId(folder._id);
-        setCurrentPath((prevPath) => [...prevPath, { _id: folder._id, name: folder.name }]);
-        setSearchQuery(""); 
+        setPath([...path, { _id: folder._id, name: folder.name }]);
+        setSelectedItems({}); 
+        setSearchTerm("");
     };
 
-    const handlePathClick = (item) => {
-        const folderId = item._id;
-        const index = currentPath.findIndex(p => p._id === folderId);
-        
-        if (index !== -1) {
-            setCurrentPath((prevPath) => prevPath.slice(0, index + 1));
-            setCurrentFolderId(folderId);
-            setSearchQuery(""); 
-        }
-    };
-    
-    const handleFileClick = (file) => {
-        // This is the function that initiates file viewing/download
-        window.open(`${BACKEND_URL}/uploads/${file.path}`, "_blank");
+    const jumpTo = (index) => {
+        const newPath = path.slice(0, index + 1);
+        setPath(newPath);
+        setCurrentFolderId(newPath[newPath.length - 1]._id);
+        setSelectedItems({});
+        setSearchTerm("");
     };
 
-    const handleFileSelect = (fileId) => {
-        setFilesToTransfer((prev) => {
-            const newState = { ...prev };
-            if (newState[fileId]) { delete newState[fileId]; } else { newState[fileId] = true; }
-            return newState;
-        });
+    const toggleSelect = (id) => {
+        setSelectedItems(prev => ({ ...prev, [id]: !prev[id] }));
     };
 
-    const handleSelectAll = (e) => {
-        if (e.target.checked) {
-            const allItemIds = itemsInCurrentView.map(item => item._id);
-            const newSelection = {};
-            allItemIds.forEach(id => newSelection[id] = true);
-            setFilesToTransfer(newSelection);
-        } else {
-            setFilesToTransfer({});
-        }
-    };
-
-    const handleTransferFiles = () => {
-        const selectedIds = Object.keys(filesToTransfer);
-        if (selectedIds.length === 0) return;
-        alert(`Initiating transfer for ${selectedIds.length} files. \nIDs: ${selectedIds.join(', ')}\n\n(Next step: Implement destination selection logic)`);
-    };
-
-    // --- Data Aggregation and Sorting (FIXED LOGIC) ---
-    let itemsInCurrentView = [];
-    const lowerCaseQuery = searchQuery.toLowerCase();
-    const isRootFolder = currentFolderId === null;
-
-    if (searchQuery) {
-        // SCENARIO 1: SEARCH IS ACTIVE - Show files and folders matching the query
-        let allItems = [
-            ...foldersInCurrentView.map(f => ({...f, type: 'Folder', name: f.name, originalname: f.name})),
-            ...filesInCurrentView.map(f => ({...f, type: f.mimetype || 'application/octet-stream', originalname: f.originalname}))
-        ];
-        
-        itemsInCurrentView = allItems.filter(item => 
-            (item.originalname || item.name).toLowerCase().includes(lowerCaseQuery)
-        );
-        
-    } else {
-        // SCENARIO 2: NO SEARCH QUERY
-        
-        if (!isRootFolder) {
-            // FIX: If we are inside a sub-folder, show both files and folders.
-            itemsInCurrentView = [
-                ...foldersInCurrentView.map(f => ({...f, type: 'Folder', name: f.name, originalname: f.name})),
-                ...filesInCurrentView.map(f => ({...f, type: f.mimetype || 'application/octet-stream', originalname: f.originalname}))
-            ];
-        } else {
-            // If we are in the root 'Home' folder, only show folders.
-            itemsInCurrentView = foldersInCurrentView.map(f => ({
-                ...f, 
-                type: 'Folder', 
-                name: f.name, 
-                originalname: f.name
-            }));
-        }
-    }
-    
-    // Final Sorting: Folders first, then files by name
-    itemsInCurrentView.sort((a, b) => {
-        if (a.type === 'Folder' && b.type !== 'Folder') return -1;
-        if (a.type !== 'Folder' && b.type === 'Folder') return 1;
-        
-        const nameA = a.originalname || a.name || '';
-        const nameB = b.originalname || b.name || '';
-        return nameA.localeCompare(nameB);
-    });
-
-    
-    const showTransferButton = Object.keys(filesToTransfer).length > 0;
-    const item_count = itemsInCurrentView.length;
-    const isAllSelected = item_count > 0 && itemsInCurrentView.every(item => filesToTransfer[item._id]);
-
-    const createGroupClassName = `action-group create-group ${currentFolderId !== null ? 'has-right-border' : ''}`;
-
+    const selectedCount = Object.values(selectedItems).filter(Boolean).length;
 
     return (
-        <div className="file-explorer-app-single-pane">
-            
-            <main className="main-content">
-                <header className="main-header">
-                    <h1>📁 File Manager</h1>
-                </header>
+        <Container fluid className={`p-4 ${currentTheme === 'dark' ? 'bg-dark text-white min-vh-100' : ''}`}>
+            <Row className="mb-4 align-items-center">
+                <Col md={4}><h3>📂 Drive Manager</h3></Col>
+                <Col md={8}>
+                    <InputGroup>
+                        <InputGroup.Text><Search /></InputGroup.Text>
+                        <Form.Control 
+                            placeholder="Search..." 
+                            value={searchTerm} 
+                            onChange={(e) => setSearchTerm(e.target.value)} 
+                        />
+                        {searchTerm && <Button variant="light" onClick={() => setSearchTerm("")}><XCircle /></Button>}
+                    </InputGroup>
+                </Col>
+            </Row>
+
+            <Breadcrumb className="border p-2 bg-light rounded shadow-sm mb-3">
+                {path.map((item, index) => (
+                    <Breadcrumb.Item key={index} active={index === path.length - 1} onClick={() => jumpTo(index)} style={{ cursor: 'pointer' }}>
+                        {index === 0 ? <HouseFill className="me-1"/> : null} {item.name}
+                    </Breadcrumb.Item>
+                ))}
+            </Breadcrumb>
+
+            <div className="d-flex gap-2 mb-4 p-3 bg-white border rounded shadow-sm align-items-center">
+                <Form.Control 
+                    placeholder="New folder name" 
+                    value={folderName || ""} 
+                    onChange={(e) => setFolderName(e.target.value)} 
+                    style={{width: '200px'}}
+                />
+                <Button variant="primary" onClick={async () => {
+                    if(!folderName) return;
+                    await axios.post("http://localhost:5000/api/folders/create", { name: folderName, parentId: currentFolderId });
+                    setFolderName(""); loadData();
+                }}><PlusSquare /> Create Folder</Button>
                 
-                {/* ACTIONS TOOLBAR AND SEARCH BAR */}
-                <div className="main-actions-toolbar">
-                    
-                    {/* 1. Create Folder */}
-                    <div className={createGroupClassName}>
-                        <input
-                            type="text"
-                            placeholder="New folder name"
-                            value={folderName}
-                            onChange={(e) => setFolderName(e.target.value)}
-                            className="create-input"
-                        />
-                        <button onClick={handleCreateFolder} title="Create New Folder" className="create-btn">
-                            <i className="fas fa-plus"></i> Create Folder
-                        </button>
-                    </div>
+                {/* Upload Section: Only shows when NOT on the Home Page */}
+                {currentFolderId !== null && (
+                    <>
+                        <div className="vr mx-2"></div>
+                        <Button variant="success" onClick={() => fileInputRef.current.click()}><Upload /> Upload File</Button>
+                        <input type="file" ref={fileInputRef} hidden onChange={async (e) => {
+                            const formData = new FormData();
+                            formData.append("file", e.target.files[0]);
+                            formData.append("folderId", currentFolderId);
+                            await axios.post("http://localhost:5000/api/files/upload", formData);
+                            loadData();
+                        }} />
+                    </>
+                )}
 
-                    {/* 2. Upload File (CONDITIONAL: Only visible when inside a folder) */}
-                    {currentFolderId !== null && (
-                        <div className="action-group upload-group">
-                            <label className="upload-label-main" htmlFor="file-input">
-                                <i className="fas fa-upload"></i> Upload File
-                            </label>
-                            <input
-                                id="file-input"
-                                type="file"
-                                onChange={(e) => setSelectedFile(e.target.files[0])}
-                                hidden 
-                            />
-                            {selectedFile && <span className="selected-file-name">{selectedFile.name}</span>}
-                            <button onClick={handleFileUpload} disabled={!selectedFile} className="upload-btn-main">
-                                Upload
-                            </button>
-                        </div>
-                    )}
-                    
-                    {/* 3. Search Bar */}
-                    <div className="action-group search-group">
-                        <i className="fas fa-search search-icon"></i>
-                        <input
-                            type="text"
-                            placeholder="Search files and folders..."
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                            className="search-input"
-                        />
-                    </div>
-                </div>
+                {/* Transfer button pops up when any item is selected */}
+                {selectedCount > 0 && (
+                    <Button variant="warning" className="ms-auto" onClick={() => setIsTransferModalOpen(true)}>
+                        <Send /> Transfer ({selectedCount})
+                    </Button>
+                )}
+            </div>
 
-                {/* Breadcrumb Navigation */}
-                <div className="breadcrumb">
-                    {currentPath.map((item, index) => (
-                        <span 
-                            key={item._id || 'root'} 
-                            className={`path-item ${item._id === currentFolderId ? 'active' : ''}`}
-                            onClick={() => handlePathClick(item)}
-                        >
-                            {item.name}
-                            {index < currentPath.length - 1 && ' / '}
-                        </span>
+            <Table hover bordered variant={currentTheme === 'dark' ? 'dark' : ''}>
+                <thead className="table-secondary">
+                    <tr>
+                        <th style={{ width: "60px" }} className="text-center">Select</th>
+                        <th>Name</th>
+                        <th>Type</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {folders.map(f => (
+                        <tr key={f._id}>
+                            <td className="text-center">
+                                <Form.Check 
+                                    type="checkbox" 
+                                    checked={!!selectedItems[f._id] || false} 
+                                    onChange={() => toggleSelect(f._id)} 
+                                />
+                            </td>
+                            <td onDoubleClick={() => enterFolder(f)} style={{ cursor: 'pointer' }} className="text-primary fw-bold">
+                                <FolderFill className="text-warning me-2" /> {f.name}
+                            </td>
+                            <td>Folder</td>
+                        </tr>
                     ))}
-                </div>
+                    {files.map(file => (
+                        <tr key={file._id}>
+                            <td className="text-center">
+                                <Form.Check 
+                                    type="checkbox" 
+                                    checked={!!selectedItems[file._id] || false} 
+                                    onChange={() => toggleSelect(file._id)} 
+                                />
+                            </td>
+                            <td><FileEarmarkFill className="text-info me-2" /> {file.originalname}</td>
+                            <td>File</td>
+                        </tr>
+                    ))}
+                </tbody>
+            </Table>
 
-                {/* List Header and Transfer Button */}
-                <div className="list-toolbar">
-                    <h2>
-                        {searchQuery 
-                            ? `Search Results in: ${currentPath[currentPath.length - 1].name}` 
-                            : `Current Folder: ${currentPath[currentPath.length - 1].name}`
-                        }
-                    </h2>
-                    <button 
-                        onClick={handleTransferFiles} 
-                        disabled={!showTransferButton} 
-                        className="transfer-btn"
-                    >
-                        <i className="fas fa-share-square"></i> 
-                        {showTransferButton ? `Transfer Selected (${Object.keys(filesToTransfer).length})` : 'Transfer Selected'}
-                    </button>
-                </div>
-
-                {/* File/Folder Horizontal Table View */}
-                <div className="file-table-container">
-                    <table className="file-table">
-                        <thead>
-                            <tr>
-                                <th style={{width: '30px'}}>
-                                    {item_count > 0 && (
-                                        <input 
-                                            type="checkbox" 
-                                            onChange={handleSelectAll} 
-                                            checked={isAllSelected}
-                                        />
-                                    )}
-                                </th>
-                                <th style={{width: '40%'}}>Name</th>
-                                <th style={{width: '20%'}}>Type</th>
-                                <th style={{width: '20%'}}>Date Modified</th>
-                                <th style={{width: '10%'}}>Size</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {itemsInCurrentView.length === 0 && (
-                                <tr>
-                                    <td colSpan="5" className="empty-message">
-                                        {searchQuery 
-                                            ? `No items match "${searchQuery}" in this folder.` 
-                                            : `This folder contains no ${isRootFolder ? 'sub-folders' : 'folders or files'}.`
-                                        }
-                                    </td>
-                                </tr>
-                            )}
-                            {itemsInCurrentView.map((item) => (
-                                <tr key={item._id || item.name} 
-                                    className={item.type === 'Folder' ? 'folder-row' : 'file-row'}
-                                    onDoubleClick={item.type === 'Folder' ? () => handleFolderClick(item) : () => handleFileClick(item)}
-                                >
-                                    <td>
-                                        <input 
-                                            type="checkbox" 
-                                            checked={!!filesToTransfer[item._id]} 
-                                            onChange={() => handleFileSelect(item._id)}
-                                            onClick={(e) => e.stopPropagation()} 
-                                        />
-                                    </td>
-                                    <td>
-                                        <i className={`${item.type === 'Folder' ? 'fas fa-folder' : getFileIcon(item.type)} file-icon`}></i>
-                                        {item.originalname}
-                                    </td>
-                                    <td>{item.type === 'Folder' ? 'Folder' : item.type.split('/').pop()?.toUpperCase() || 'N/A'}</td>
-                                    <td>{new Date(item.updatedAt || item.createdAt).toLocaleDateString()}</td>
-                                    <td>{item.type === 'Folder' ? '—' : formatBytes(item.size)}</td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
-            </main>
-        </div>
+            {isTransferModalOpen && (
+                <TransferModal 
+                    selectedIds={Object.keys(selectedItems).filter(id => selectedItems[id])}
+                    senderUsername={user?.username}
+                    onClose={() => setIsTransferModalOpen(false)}
+                    onSuccess={() => { setSelectedItems({}); setIsTransferModalOpen(false); loadData(); }}
+                />
+            )}
+        </Container>
     );
 }
 
