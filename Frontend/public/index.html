@@ -4,59 +4,20 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>File Explorer Management System</title>
-    
+
     <link
         rel="stylesheet"
         href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
     />
-    
-    <link rel="stylesheet" href="styles.css" /> 
+
+    <link rel="icon" href="%PUBLIC_URL%/favicon.ico" />
 </head>
 <body>
+    <div id="root"></div>
     
-    <div id="root" class="file-explorer-app">
-        
-        <aside class="sidebar">
-            <div class="actions-pane">
-                
-                <button id="createFolderBtn" class="action-btn">
-                    <i class="fas fa-plus"></i> Create Folder
-                </button>
-                
-                <label for="fileUpload" class="action-btn upload-label">
-                    <i class="fas fa-upload"></i> Upload File
-                    <input type="file" id="fileUpload" multiple hidden />
-                </label>
-            </div>
-            
-            <h3>Directory Tree</h3>
-            <ul id="folderTreeView" class="folder-tree">
-                </ul>
-        </aside>
-        
-        <main class="file-list-main">
-            <div class="list-toolbar">
-                <button id="transferSelectedBtn" disabled>
-                    <i class="fas fa-share-square"></i> Transfer Selected
-                </button>
-            </div>
-            
-            <table class="file-table">
-                <thead>
-                    <tr>
-                        <th style="width: 40px;"><input type="checkbox" id="selectAllFiles" /></th>
-                        <th data-sort="name">Name <i class="fas fa-sort"></i></th>
-                        <th data-sort="date">Date Modified <i class="fas fa-sort"></i></th>
-                        <th data-sort="type">Type</th>
-                        <th data-sort="size">Size</th>
-                    </tr>
-                </thead>
-                <tbody id="fileTableBody">
-                    </tbody>
-            </table>
-        </main>
-    </div>
-
-    <script src="script.js"></script>
+     
+    
+    
+    
 </body>
 </html>

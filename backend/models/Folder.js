@@ -1,15 +1,45 @@
 const mongoose = require("mongoose");
 
-const folderSchema = new mongoose.Schema({
-  name: { type: String, required: true },
-  // 'parent' holds the ObjectId of the parent folder
-  parent: { type: mongoose.Schema.Types.ObjectId, ref: "Folder", default: null },
-  createdBy: { type: String, required: true },
-  // path is optional and can be derived, but we keep it for simplicity
-  path: { type: String }, 
-}, { timestamps: true });
+const FolderSchema = new mongoose.Schema(
+  {
+    folderName: { type: String, required: true },
 
-// Ensure unique name within the same parent folder
-folderSchema.index({ name: 1, parent: 1 }, { unique: true });
+    predictedId: {
+      type: String,
+      required: true,
+      unique: true
+    },
 
-module.exports = mongoose.model("Folder", folderSchema);
+    departmentId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Department",
+      required: true
+    },
+
+    createdBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true
+    },
+
+    parentFolderId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Folder",
+      default: null
+    },
+
+   path: { type: String },
+
+    deletedAt: { type: Date, default: null }
+  },
+  { timestamps: true }
+);
+
+/* Auto hide soft-deleted folders */
+FolderSchema.pre(/^find/, function () {
+  this.where({ deletedAt: null });
+});
+
+
+module.exports =
+  mongoose.models.Folder || mongoose.model("Folder", FolderSchema);

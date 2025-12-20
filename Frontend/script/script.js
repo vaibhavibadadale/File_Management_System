@@ -261,6 +261,56 @@ fileTableBody.addEventListener('change', (event) => {
     }
 });
 
+// --- Existing Event Handler ---
+
+createFolderBtn.onclick = async () => { // 👈 Make the function async
+    const folderName = prompt(`Enter new folder name in ${currentPath}:`);
+    
+    if (folderName && folderName.trim()) {
+        const newFolderName = folderName.trim();
+        // NOTE: We don't create the path here, the server does that.
+
+        // Assume BACKEND_URL, USER_ID, and DEPARTMENT_ID are defined elsewhere (e.g., at the top of the file)
+        const BACKEND_URL = 'http://localhost:5000'; 
+        const USER_ID = '694130dd872795f2641e2621'; // Replace with your actual ID
+        const DEPARTMENT_ID = '694050d65c12077b1957bc98'; // Replace with your actual ID
+
+        // 1. CONSTRUCT THE PAYLOAD
+        const payload = {
+            name: newFolderName,
+            parent: currentFolderId || null, // Assuming you have currentFolderId defined somewhere
+            createdBy: USER_ID,
+            departmentId: DEPARTMENT_ID,
+        };
+
+        try {
+            // 2. MAKE THE API CALL HERE!
+            await axios.post(`${BACKEND_URL}/api/folders/create`, payload);
+            
+            // 3. Success handling (Replacing the mock logic)
+            alert(`Folder '${newFolderName}' created successfully.`);
+            
+            // This function needs to fetch the new list from the server to refresh the view
+            // You will need to create a new function that calls the /api/folders endpoint.
+            // For now, let's assume `MapsToFolder` reloads the data from the server.
+            navigateToFolder(currentPath); 
+
+        } catch (error) {
+            console.error("Error creating folder:", error.response ? error.response.data : error.message);
+            alert(`Error creating folder: ${error.response ? error.response.data.error : 'Network or server issue'}`);
+        }
+        
+        // ❌ REMOVE ALL THE OLD MOCK LOGIC BELOW ❌
+        /*
+        if (!fileSystem.hasOwnProperty(currentPath)) { ... }
+        if (fileSystem[currentPath].some(item => ...)) { ... return; }
+        fileSystem[currentPath].push({ ... });
+        fileSystem[newPath] = [];
+        navigateToFolder(currentPath);
+        alert(...);
+        */
+    }
+};
 
 // --- Initial Load ---
 document.addEventListener("DOMContentLoaded", () => {
