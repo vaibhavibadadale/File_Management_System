@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import axios from "axios";
 import { Container, Table, Button, Form, Breadcrumb, Row, Col, InputGroup } from 'react-bootstrap';
 import { FolderFill, FileEarmarkFill, HouseFill, Upload, PlusSquare, Send, Search, XCircle } from 'react-bootstrap-icons';
-import TransferModal from "./TransferModal"; 
+import TransferModal from "../components/TransferModal"; 
 
 function UploadFilePage({ currentTheme, user }) {
     const [folders, setFolders] = useState([]);
