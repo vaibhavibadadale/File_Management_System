@@ -1,0 +1,49 @@
+.file-explorer-container {
+  padding: 20px;
+  background-color: #f7f9fc;
+  min-height: 90vh;
+  border-radius: 10px;
+}
+
+.file-toolbar {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 20px;
+  gap: 15px;
+}
+
+.folder-controls,
+.upload-controls {
+  display: flex;
+  gap: 10px;
+}
+
+.file-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, 150px);
+  gap: 15px;
+}
+
+.file-card {
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 10px;
+  padding: 15px;
+  text-align: center;
+  cursor: pointer;
+  transition: 0.2s ease;
+}
+
+.file-card:hover {
+  background: #eaf2ff;
+  transform: scale(1.05);
+}
+
+.folder {
+  color: #007bff;
+  font-weight: 500;
+}
+
+.file {
+  color: #333;
+}
