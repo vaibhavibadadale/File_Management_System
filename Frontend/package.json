@@ -3,7 +3,6 @@
   "version": "1.0.0",
   "main": "index.js",
   "proxy": "http://localhost:5000",
-
   "scripts": {
     "start": "react-scripts start",
     "build": "react-scripts build",
@@ -30,7 +29,7 @@
     "react-bootstrap": "^2.10.10",
     "react-bootstrap-icons": "^1.11.6",
     "react-dom": "^18.2.0",
-    "react-router-dom": "^7.10.1",
+    "react-router-dom": "^7.11.0",
     "react-scripts": "^5.0.1",
     "react-toastify": "^11.0.5"
   },

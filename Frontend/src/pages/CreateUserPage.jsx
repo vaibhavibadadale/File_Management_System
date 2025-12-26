@@ -1,14 +1,31 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Form, Button } from "react-bootstrap";
 import axios from "axios";
 
 const CreateUserPage = () => {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
-  const [department, setDepartment] = useState("");
+  const [department, setDepartment] = useState(""); // Stores Name for display
+  const [departmentId, setDepartmentId] = useState(""); // Stores MongoDB ID for link
   const [role, setRole] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  
+  // --- NEW: State for dynamic departments ---
+  const [deptList, setDeptList] = useState([]);
+
+  // --- NEW: Fetch departments from Backend on load ---
+  useEffect(() => {
+    const fetchDepts = async () => {
+      try {
+        const res = await axios.get("http://localhost:5000/api/departments");
+        setDeptList(res.data);
+      } catch (err) {
+        console.error("Error fetching departments for dropdown:", err);
+      }
+    };
+    fetchDepts();
+  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -16,23 +33,37 @@ const CreateUserPage = () => {
       await axios.post("http://localhost:5000/api/users", {
         name,
         email,
-        department,
+        department,   // The string name
+        departmentId, // The MongoDB ObjectId (Crucial for the staff list page)
         role,
         username,
         password,
+        employeeId: `EMP-${Date.now()}`, 
       });
-      alert(`${role} user created successfully!`);
+
+      alert(`${role} user created successfully! Folder created for ${username}.`);
+      
       // Reset form
       setName("");
       setEmail("");
       setDepartment("");
+      setDepartmentId("");
       setRole("");
       setUsername("");
       setPassword("");
     } catch (err) {
       console.error(err);
-      alert("Error creating user");
+      alert("Error creating user: " + (err.response?.data?.error || err.message));
     }
+  };
+
+  // Helper to handle department selection
+  const handleDeptChange = (e) => {
+    const selectedId = e.target.value;
+    const selectedDept = deptList.find(d => d._id === selectedId);
+    
+    setDepartmentId(selectedId);
+    setDepartment(selectedDept ? selectedDept.departmentName : "");
   };
 
   return (
@@ -61,19 +92,20 @@ const CreateUserPage = () => {
           />
         </Form.Group>
 
-        {/* Department */}
+        {/* Dynamic Department Selection */}
         <Form.Group className="mb-3" controlId="department">
           <Form.Label>Department</Form.Label>
           <Form.Select
-            value={department}
-            onChange={(e) => setDepartment(e.target.value)}
+            value={departmentId}
+            onChange={handleDeptChange}
             required
           >
             <option value="">Select Department</option>
-            <option value="NEWS Uncut">NEWS Uncut</option>
-            <option value="Swarang">Swarang</option>
-            <option value="Praja Jagrut">Praja Jagrut</option>
-            <option value="Swaroop Creation">Swaroop Creation</option>
+            {deptList.map((d) => (
+              <option key={d._id} value={d._id}>
+                {d.departmentName}
+              </option>
+            ))}
           </Form.Select>
         </Form.Group>
 

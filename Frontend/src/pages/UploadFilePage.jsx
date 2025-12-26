@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from "react";
 import axios from "axios";
+import { useNavigate } from "react-router-dom"; // 1. Import useNavigate
 import "../styles/UploadFilePage.css"; 
-
-// Ensure this import matches your file name
 import TransferModal from "../components/TransferModal"; 
 
 const DEPARTMENT_ID = "694050d65c12077b1957bc98";
@@ -22,6 +21,12 @@ const getFileIcon = (mimeType) => {
     return 'fas fa-file';
 };
 
+const formatMimeType = (mime) => {
+    if (!mime || mime === 'application/octet-stream') return 'File';
+    if (mime.includes('/')) return mime.split('/')[1].toUpperCase();
+    return mime;
+};
+
 const formatBytes = (bytes, decimals = 2) => {
     if (bytes === 0 || bytes === null || bytes === undefined) return '—';
     const k = 1024;
@@ -32,6 +37,7 @@ const formatBytes = (bytes, decimals = 2) => {
 };
 
 function UploadFilePage({ user }) {
+    const navigate = useNavigate(); // 2. Initialize navigate
     const [foldersInCurrentView, setFoldersInCurrentView] = useState([]);
     const [filesInCurrentView, setFilesInCurrentView] = useState([]);
     const [selectedFile, setSelectedFile] = useState(null);
@@ -68,18 +74,24 @@ function UploadFilePage({ user }) {
     const handleFileUpload = async () => {
         if (!selectedFile) return alert("Please select a file first.");
         const formData = new FormData();
-        formData.append("file", selectedFile);
+        formData.append("username", user?.username || "Admin"); 
         formData.append("folderId", currentFolderId || "null");
         formData.append("uploadedBy", USER_ID);
         formData.append("departmentId", DEPARTMENT_ID);
+        formData.append("file", selectedFile);
 
         try {
             await axios.post(`${BACKEND_URL}/api/files/upload`, formData);
             setSelectedFile(null);
-            document.getElementById('file-input').value = '';
+            if(document.getElementById('file-input')) {
+                document.getElementById('file-input').value = '';
+            }
             loadContent(currentFolderId); 
-            alert("Uploaded!");
-        } catch (err) { console.error("Upload error", err); }
+            alert(`Uploaded successfully!`);
+        } catch (err) { 
+            console.error("Upload error", err); 
+            alert("Upload failed.");
+        }
     };
 
     const handleCreateFolder = async () => {
@@ -106,6 +118,16 @@ function UploadFilePage({ user }) {
         }
     };
 
+    const handleGoBack = () => {
+        if (currentPath.length > 1) {
+            const newPath = [...currentPath];
+            newPath.pop(); 
+            const parentFolder = newPath[newPath.length - 1];
+            setCurrentPath(newPath);
+            setCurrentFolderId(parentFolder._id);
+        }
+    };
+
     const handleFileSelect = (id) => {
         setFilesToTransfer(prev => ({ ...prev, [id]: !prev[id] }));
     };
@@ -126,10 +148,27 @@ function UploadFilePage({ user }) {
         setIsTransferModalOpen(true);
     };
 
-    let itemsInCurrentView = [
-        ...foldersInCurrentView.map(f => ({...f, type: 'Folder', name: f.folderName, originalname: f.folderName})),
-        ...filesInCurrentView.map(f => ({...f, type: f.mimetype || 'application/octet-stream', originalname: f.originalname}))
-    ];
+    let itemsInCurrentView = [];
+    if (currentFolderId === null) {
+        itemsInCurrentView = foldersInCurrentView.map(f => ({
+            ...f, type: 'Folder', name: f.folderName, originalname: f.folderName
+        }));
+    } else {
+        itemsInCurrentView = [
+            ...foldersInCurrentView.map(f => ({...f, type: 'Folder', name: f.folderName, originalname: f.folderName})),
+            ...filesInCurrentView.map(f => ({
+                ...f, 
+                type: f.mimetype || 'File', 
+                displayName: f.originalname || f.originalName || "Unnamed File" 
+            }))
+        ];
+    }
+
+    if (searchQuery) {
+        itemsInCurrentView = itemsInCurrentView.filter(item => 
+            (item.displayName || item.originalname).toLowerCase().includes(searchQuery.toLowerCase())
+        );
+    }
 
     const showTransferButton = Object.values(filesToTransfer).filter(Boolean).length > 0;
     const isAllSelected = itemsInCurrentView.length > 0 && itemsInCurrentView.every(item => filesToTransfer[item._id]);
@@ -137,24 +176,61 @@ function UploadFilePage({ user }) {
     return (
         <div className="file-explorer-app-single-pane">
             <main className="main-content">
-                <header className="main-header"><h1>📁 File Manager</h1></header>
+                <header className="main-header d-flex justify-content-between align-items-center">
+                    <h1>📁 File Manager</h1>
+                    {/* 3. Add the Ventures Button */}
+                    <button 
+                        className="btn btn-primary" 
+                        onClick={() => navigate("/ventures")}
+                        style={{ borderRadius: '20px', padding: '8px 20px', fontWeight: '600' }}
+                    >
+                        <i className="fas fa-rocket me-2"></i> Ventures
+                    </button>
+                </header>
                 
                 <div className="main-actions-toolbar">
-                    <div className="action-group create-group">
-                        <input type="text" placeholder="New folder name" value={folderName} onChange={(e) => setFolderName(e.target.value)} className="create-input" />
-                        <button onClick={handleCreateFolder} className="create-btn"><i className="fas fa-plus"></i> Create Folder</button>
+                    <div className="action-group create-group d-flex align-items-center">
+                        <button 
+                            className="btn btn-outline-secondary me-2" 
+                            onClick={handleGoBack}
+                            disabled={currentFolderId === null}
+                            title="Go Back"
+                        >
+                            <i className="fas fa-arrow-left"></i>
+                        </button>
+
+                        <input 
+                            type="text" 
+                            placeholder="New folder name" 
+                            value={folderName} 
+                            onChange={(e) => setFolderName(e.target.value)} 
+                            className="create-input" 
+                        />
+                        <button onClick={handleCreateFolder} className="create-btn">
+                            <i className="fas fa-plus"></i> Create Folder
+                        </button>
                     </div>
 
                     {currentFolderId !== null && (
                         <div className="action-group upload-group">
-                            <label className="upload-label-main" htmlFor="file-input"><i className="fas fa-upload"></i> Upload</label>
+                            <label className="upload-label-main" htmlFor="file-input">
+                                <i className="fas fa-upload"></i> Upload
+                            </label>
                             <input id="file-input" type="file" onChange={(e) => setSelectedFile(e.target.files[0])} hidden />
-                            <button onClick={handleFileUpload} disabled={!selectedFile} className="upload-btn-main">Upload</button>
+                            <button onClick={handleFileUpload} disabled={!selectedFile} className="upload-btn-main">
+                                Upload
+                            </button>
                         </div>
                     )}
 
                     <div className="action-group search-group">
-                        <input type="text" placeholder="Search..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="search-input" />
+                        <input 
+                            type="text" 
+                            placeholder="Search..." 
+                            value={searchQuery} 
+                            onChange={(e) => setSearchQuery(e.target.value)} 
+                            className="search-input" 
+                        />
                     </div>
                 </div>
 
@@ -167,7 +243,7 @@ function UploadFilePage({ user }) {
                 </div>
 
                 <div className="list-toolbar">
-                    <h2>Content</h2>
+                    <h2>{currentFolderId === null ? "Root Folders" : "Folder Contents"}</h2>
                     <button onClick={handleTransferFiles} disabled={!showTransferButton} className="transfer-btn">
                         <i className="fas fa-share-square"></i> 
                         {showTransferButton ? ` Transfer Selected (${Object.values(filesToTransfer).filter(Boolean).length})` : ' Transfer Selected'}
@@ -186,39 +262,46 @@ function UploadFilePage({ user }) {
                             </tr>
                         </thead>
                         <tbody>
-                            {itemsInCurrentView.map((item) => (
-                                <tr key={item._id} onDoubleClick={item.type === 'Folder' ? () => handleFolderClick(item) : null}>
+                            {itemsInCurrentView.length > 0 ? itemsInCurrentView.map((item) => (
+                                <tr 
+                                    key={item._id} 
+                                    onDoubleClick={item.type === 'Folder' ? () => handleFolderClick(item) : null}
+                                >
                                     <td><input type="checkbox" checked={!!filesToTransfer[item._id]} onChange={() => handleFileSelect(item._id)} /></td>
                                     <td>
-                                        <i className={`${item.type === 'Folder' ? 'fas fa-folder' : getFileIcon(item.type)} file-icon`}></i>
-                                        {item.originalname}
+                                        <i className={`${item.type === 'Folder' ? 'fas fa-folder text-warning' : getFileIcon(item.type)} file-icon me-2`}></i>
+                                        {item.type === 'Folder' ? item.originalname : item.displayName}
                                     </td>
-                                    <td>{item.type}</td>
+                                    <td>{formatMimeType(item.type)}</td>
                                     <td>{new Date(item.updatedAt || item.createdAt).toLocaleDateString()}</td>
                                     <td>{item.type === 'Folder' ? '—' : formatBytes(item.size)}</td>
                                 </tr>
-                            ))}
+                            )) : (
+                                <tr>
+                                    <td colSpan="5" className="text-center py-5 text-muted">
+                                        Empty
+                                    </td>
+                                </tr>
+                            )}
                         </tbody>
                     </table>
                 </div>
             </main>
 
-            {/* Modal Integration - Using a fallback for senderUsername */}
             {isTransferModalOpen && (
-    <TransferModal 
-        selectedIds={Object.keys(filesToTransfer).filter(id => filesToTransfer[id])}
-        // Force "Admin" if user name is missing to test the database save
-        senderUsername={user?.name || "Admin"} 
-        onClose={() => setIsTransferModalOpen(false)}
-        onSuccess={() => { 
-            setFilesToTransfer({}); 
-            setIsTransferModalOpen(false); 
-            loadContent(currentFolderId); 
-        }}
-    />
-)}
+                <TransferModal 
+                    selectedIds={Object.keys(filesToTransfer).filter(id => filesToTransfer[id])}
+                    senderUsername={user?.username || "Admin"} 
+                    onClose={() => setIsTransferModalOpen(false)}
+                    onSuccess={() => { 
+                        setFilesToTransfer({}); 
+                        setIsTransferModalOpen(false); 
+                        loadContent(currentFolderId); 
+                    }}
+                />
+            )}
         </div>
     );
-}
+} 
 
 export default UploadFilePage;

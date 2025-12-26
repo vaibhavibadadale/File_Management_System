@@ -6,14 +6,16 @@ import UploadFileIcon from "@mui/icons-material/UploadFile";
 import SendIcon from "@mui/icons-material/Send";
 import StarIcon from "@mui/icons-material/Star";
 import SettingsApplicationsIcon from "@mui/icons-material/SettingsApplications";
+import BusinessIcon from "@mui/icons-material/Business"; // For Ventures
 
 const sidebarItems = [
   { text: "Dashboard", icon: <DashboardIcon />, path: "/" },
+  { text: "Ventures", icon: <BusinessIcon />, path: "/ventures" },
   { text: "Upload File", icon: <UploadFileIcon />, path: "/upload" },
-  { text: "Transfer File", icon: <SendIcon />, path: "/transfer" },
-  { text: "Edit/Delete Request", icon: <SettingsApplicationsIcon />, path: "/edit" },
-  { text: "Important Files", icon: <StarIcon />, path: "/important" },
-  { text: "Pending Requests", icon: <StarIcon />, path: "/pending-requests" },
+  { text: "Transfer File", icon: <SendIcon />, path: "" },
+  { text: "Edit/Delete Request", icon: <SettingsApplicationsIcon />, path: "" },
+  { text: "Important Files", icon: <StarIcon />, path: "" },
+  { text: "Pending Requests", icon: <StarIcon />, path: "" },
   { text: "Create User", icon: <SettingsApplicationsIcon />, path: "/create-user" },
 ];
 
@@ -22,7 +24,6 @@ function Sidebar({ themeMode }) {
   const [show, setShow] = useState(false);
 
   const isDark = themeMode === "dark";
-
   const bgColor = isDark ? "#1E1E1E" : "#FFFFFF";
   const textColor = isDark ? "#E0E0E0" : "#212529";
   const borderColor = isDark ? "#333" : "#dee2e6";
@@ -58,7 +59,6 @@ function Sidebar({ themeMode }) {
 
   return (
     <>
-      {/* Toggle button for small screens */}
       <Button
         variant={isDark ? "outline-light" : "outline-dark"}
         className="d-lg-none m-2"
@@ -67,7 +67,6 @@ function Sidebar({ themeMode }) {
         ☰ Menu
       </Button>
 
-      {/* Large screen sidebar */}
       <nav
         className="d-none d-lg-flex flex-column p-3 flex-shrink-0"
         style={{
@@ -79,25 +78,13 @@ function Sidebar({ themeMode }) {
           transition: "background 0.3s, color 0.3s",
         }}
       >
-        <h5
-          className="text-center py-2 border-bottom mb-3"
-          style={{ borderColor, color: textColor }}
-        >
-          File Dash
+        <h5 className="text-center py-2 border-bottom mb-3" style={{ borderColor, color: textColor }}>
+          File Dashboard
         </h5>
         <ul className="nav nav-pills flex-column mb-auto">{renderLinks()}</ul>
       </nav>
 
-      {/* Offcanvas sidebar for small screens */}
-      <Offcanvas
-        show={show}
-        onHide={() => setShow(false)}
-        style={{
-          backgroundColor: bgColor,
-          color: textColor,
-          transition: "background 0.3s, color 0.3s",
-        }}
-      >
+      <Offcanvas show={show} onHide={() => setShow(false)} style={{ backgroundColor: bgColor, color: textColor }}>
         <Offcanvas.Header closeButton>
           <Offcanvas.Title>File Dashboard</Offcanvas.Title>
         </Offcanvas.Header>

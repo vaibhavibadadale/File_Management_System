@@ -1,6 +1,4 @@
-// server.js
 require("dotenv").config();
-
 const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
@@ -8,15 +6,6 @@ const path = require("path");
 const fs = require("fs");
 
 const app = express();
-const folderRoutes = require("./routes/folder.routes"); // Fixed typo
-
-const transferRoutes = require('./routes/transfer.routes'); // Corrected import
-
-const fileRoutes = require("./routes/file.routes");
-
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-
 
 // ================= CONFIG =================
 const PORT = process.env.PORT || 5000;
@@ -31,7 +20,10 @@ if (!fs.existsSync(UPLOADS_DIR)) {
 }
 
 // ================= MIDDLEWARE =================
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
+// CORS is already correctly pointing to your React frontend
 app.use(
   cors({
     origin: "http://localhost:3000",
@@ -44,13 +36,13 @@ app.use(
 app.use("/uploads", express.static(UPLOADS_DIR));
 
 // ================= ROUTES =================
+// These match the logic for fetching Departments and Users
 app.use("/api/users", require("./routes/user.routes"));
 app.use("/api/departments", require("./routes/department.routes"));
 app.use("/api/folders", require("./routes/folder.routes"));
 app.use("/api/files", require("./routes/file.routes"));
 app.use("/api/logs", require("./routes/log.routes"));
-app.use('/api/transfer', require("./routes/transfer.routes"));
-app.use('/api/transfer', transferRoutes);
+app.use("/api/transfer", require("./routes/transfer.routes"));
 
 // ================= DATABASE =================
 const connectWithRetry = () => {
