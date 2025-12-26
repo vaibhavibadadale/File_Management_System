@@ -1,0 +1,242 @@
+/* --- Global Reset & Base Styles --- */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    /* Critical: Remove old login centering and padding */
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
+    background: #f8f9fa; /* Light background for the application area */
+    min-height: 100vh;
+    display: block; 
+    padding: 0;
+}
+
+/* ------------------------------------------------ */
+/* --- NEW FILE EXPLORER LAYOUT STYLES --- */
+/* ------------------------------------------------ */
+
+/* Container for the entire File Explorer application */
+.file-explorer-app {
+    display: flex;
+    height: 100vh; /* Takes full height of the viewport */
+    border: 1px solid #e2e8f0;
+    background: #ffffff;
+}
+
+/* --- 1. LEFT SIDEBAR (Navigation & Actions) --- */
+.sidebar {
+    width: 280px;
+    padding: 15px;
+    background: #f9f9f9; 
+    border-right: 1px solid #e2e8f0;
+    flex-shrink: 0;
+    overflow-y: auto;
+}
+
+/* Action Buttons (Create Folder, Upload) */
+.actions-pane {
+    padding-bottom: 15px;
+    margin-bottom: 15px;
+    border-bottom: 1px solid #e9e9e9;
+}
+
+.action-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 10px 12px;
+    margin-bottom: 8px;
+    background-color: #3b82f6; 
+    color: white;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 15px;
+    transition: background-color 0.2s;
+}
+
+.action-btn:hover {
+    background-color: #2563eb;
+}
+
+/* File input hidden behind the button */
+#fileUpload {
+    display: none;
+}
+
+/* Folder Tree Structure */
+.folder-tree {
+    list-style: none;
+    padding: 0;
+}
+
+.tree-item {
+    padding: 6px 10px;
+    cursor: pointer;
+    font-size: 15px;
+    color: #4a5568;
+    display: flex;
+    align-items: center;
+    border-radius: 4px; 
+    margin-bottom: 2px;
+}
+
+.tree-item i {
+    margin-right: 8px;
+    color: #718096;
+}
+
+.tree-item.selected {
+    background-color: #e5f0ff; 
+    color: #3b82f6;
+    font-weight: 600;
+}
+.tree-item.selected i {
+    color: #3b82f6;
+}
+
+/* --- 2. MAIN CONTENT AREA (Horizontal File List) --- */
+.file-list-main {
+    flex-grow: 1;
+    padding: 20px;
+    overflow-y: auto;
+}
+
+.list-toolbar {
+    display: flex;
+    justify-content: flex-end; 
+    margin-bottom: 15px;
+}
+
+#transferSelectedBtn {
+    padding: 8px 15px;
+    background: #28a745; 
+    color: white;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: opacity 0.2s;
+    font-weight: 500;
+}
+
+#transferSelectedBtn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* Table Style for Horizontal List View */
+.file-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.file-table thead th {
+    background-color: #f7f7f7;
+    border-bottom: 2px solid #e2e8f0;
+    padding: 12px 10px;
+    text-align: left;
+    font-weight: 600;
+    color: #4a5568;
+    cursor: pointer;
+}
+
+.file-table tbody td {
+    padding: 10px;
+    border-bottom: 1px solid #f0f0f0;
+    transition: background-color 0.1s;
+}
+
+.file-table tbody tr:hover {
+    background-color: #fafafa;
+}
+
+.file-table .file-icon {
+    width: 20px;
+    margin-right: 8px;
+    color: #718096;
+}
+
+/* ------------------------------------------------ */
+/* --- ADDED: GLOBAL HEADER & FOOTER STYLES --- */
+/* ------------------------------------------------ */
+
+header, footer {
+    /* Ensuring font matches the sidebar and system standards */
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
+}
+
+.role-text {
+    font-family: inherit;
+    letter-spacing: 0.3px;
+    opacity: 0.9;
+    font-size: 11px;
+    text-transform: capitalize;
+}
+.header-profile-group:hover {
+    cursor: pointer;
+    opacity: 0.8;
+}
+
+
+hover-gray:hover {
+    background-color: rgba(0, 0, 0, 0.05);
+}
+
+[data-bs-theme="dark"] .hover-gray:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+}
+
+.dropdown-item {
+    transition: background 0.2s ease;
+    cursor: pointer;
+}
+
+/* Transition for smooth theme switching */
+header, footer, .sidebar, .flex-grow-1 {
+    transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease;
+}
+
+/* Circular Profile Icon */
+.profile-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    background-color: #3b82f6;
+    color: #ffffff;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+/* Round Theme Toggle Hover Animation */
+.theme-toggle-btn {
+    transition: transform 0.2s ease;
+}
+
+.theme-toggle-btn:hover {
+    transform: rotate(15deg) scale(1.1);
+}
+
+/* Sticky Footer at the bottom */
+footer {
+    border-top: 1px solid #e2e8f0;
+    font-size: 14px;
+}
+
+/* Dark Theme Overrides for Header/Footer */
+[data-bs-theme="dark"] header {
+    background-color: #1a202c !important;
+    border-bottom: 1px solid #2d3748 !important;
+}
+
+[data-bs-theme="dark"] footer {
+    background-color: #1a202c !important;
+    border-top: 1px solid #2d3748 !important;
+    color: #a0aec0 !important;
+}
