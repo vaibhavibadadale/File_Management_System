@@ -6,17 +6,19 @@ import UploadFileIcon from "@mui/icons-material/UploadFile";
 import SendIcon from "@mui/icons-material/Send";
 import StarIcon from "@mui/icons-material/Star";
 import SettingsApplicationsIcon from "@mui/icons-material/SettingsApplications";
-import BusinessIcon from "@mui/icons-material/Business"; // For Ventures
+import BusinessIcon from "@mui/icons-material/Business"; 
+import PeopleIcon from "@mui/icons-material/People"; // Icon for Users management
 
+// Updated sidebarItems: Removed 'Create User' and added 'Users'
 const sidebarItems = [
   { text: "Dashboard", icon: <DashboardIcon />, path: "/" },
   { text: "Ventures", icon: <BusinessIcon />, path: "/ventures" },
+  { text: "Users", icon: <PeopleIcon />, path: "/users" }, // Changed from Create User
   { text: "Upload File", icon: <UploadFileIcon />, path: "/upload" },
   { text: "Transfer File", icon: <SendIcon />, path: "" },
   { text: "Edit/Delete Request", icon: <SettingsApplicationsIcon />, path: "" },
   { text: "Important Files", icon: <StarIcon />, path: "" },
   { text: "Pending Requests", icon: <StarIcon />, path: "" },
-  { text: "Create User", icon: <SettingsApplicationsIcon />, path: "/create-user" },
 ];
 
 function Sidebar({ themeMode }) {
@@ -85,7 +87,7 @@ function Sidebar({ themeMode }) {
       </nav>
 
       <Offcanvas show={show} onHide={() => setShow(false)} style={{ backgroundColor: bgColor, color: textColor }}>
-        <Offcanvas.Header closeButton>
+        <Offcanvas.Header closeButton closeVariant={isDark ? "white" : ""}>
           <Offcanvas.Title>File Dashboard</Offcanvas.Title>
         </Offcanvas.Header>
         <Offcanvas.Body>

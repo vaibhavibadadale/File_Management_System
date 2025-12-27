@@ -7,27 +7,26 @@ const {
   softDeleteUser,
   getUsers,
   login,
-  getUsersByDepartment
+  getUsersByDepartment,
+  toggleUserStatus,
+  getUserFiles
 } = require("../controllers/user.controller");
 
-// Create user (and folder)
-router.post("/", createUser);
-
-// Get all users (detailed)
-router.get("/", getAllUsers);
-
-// Get active users (limited fields)
-router.get("/active", getUsers);
-
-// Get specific user by ID
-router.get("/:id", getUserById);
-
-// Soft delete user
-router.delete("/:id", softDeleteUser);
-
+// 1. FIXED: Static/Specific POST routes should come first
 router.post("/login", login);
+// router.post('/verify-password', verifyPassword); 
 
-// router.get("/department/:deptId", getUsersByDepartment);
+// 2. Fixed/Specific GET routes
+router.get("/", getAllUsers);
+router.get("/active", getUsers);
 router.get("/department/:deptId", getUsersByDepartment);
+router.get("/files/:username", getUserFiles);
+
+// 3. Dynamic routes (the ones with :id) must come LAST
+// If these are at the top, they can "swallow" other requests
+router.post("/", createUser);
+router.get("/:id", getUserById);
+router.patch('/toggle-status/:id', toggleUserStatus);
+router.delete("/:id", softDeleteUser);
 
 module.exports = router;

@@ -23,11 +23,10 @@ if (!fs.existsSync(UPLOADS_DIR)) {
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// CORS is already correctly pointing to your React frontend
 app.use(
   cors({
     origin: "http://localhost:3000",
-    methods: ["GET", "POST", "PUT", "DELETE"],
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE"], 
     credentials: true,
   })
 );
@@ -36,7 +35,6 @@ app.use(
 app.use("/uploads", express.static(UPLOADS_DIR));
 
 // ================= ROUTES =================
-// These match the logic for fetching Departments and Users
 app.use("/api/users", require("./routes/user.routes"));
 app.use("/api/departments", require("./routes/department.routes"));
 app.use("/api/folders", require("./routes/folder.routes"));
@@ -66,6 +64,7 @@ app.get("/", (req, res) => {
 });
 
 // ================= 404 HANDLER =================
+// Keep this at the bottom to catch invalid URLs
 app.use((req, res) => {
   res.status(404).json({ message: "Route not found" });
 });

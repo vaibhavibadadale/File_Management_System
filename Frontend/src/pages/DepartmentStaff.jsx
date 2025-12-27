@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import axios from "axios";
+import { Badge, Table, Card, Spinner } from "react-bootstrap";
 
-const DepartmentStaff = () => {
+const DepartmentStaff = ({ currentTheme }) => {
     const { deptId } = useParams();
     const [staff, setStaff] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -10,7 +11,7 @@ const DepartmentStaff = () => {
     useEffect(() => {
         const fetchStaff = async () => {
             try {
-                // Ensure this matches the new route we will create in your backend
+                // Fetching users filtered by Department ID
                 const res = await axios.get(`http://localhost:5000/api/users/department/${deptId}`);
                 setStaff(res.data);
             } catch (err) {
@@ -22,51 +23,56 @@ const DepartmentStaff = () => {
         if (deptId) fetchStaff();
     }, [deptId]);
 
-    // Separate HODs and Employees (Case-insensitive check)
-    const hods = staff.filter(u => ["HOD", "ADMIN", "SUPER_ADMIN", "SUPERADMIN"].includes(u.role?.toUpperCase()));
+    const isDark = currentTheme === "dark";
+
+    // Filter Logic
+    const hods = staff.filter(u => ["HOD", "ADMIN", "SUPERADMIN"].includes(u.role?.toUpperCase()));
     const employees = staff.filter(u => ["EMPLOYEE"].includes(u.role?.toUpperCase()));
 
     if (loading) return (
         <div className="d-flex justify-content-center align-items-center vh-100">
-            <div className="spinner-border text-primary" role="status">
-                <span className="visually-hidden">Loading...</span>
-            </div>
+            <Spinner animation="border" variant="primary" />
         </div>
     );
 
     return (
-        <div className="container py-5">
-            <div className="d-flex align-items-center mb-4">
-                <h2 className="mb-0">Department Directory</h2>
+        <div className={`container-fluid py-4 ${isDark ? "text-white" : "text-dark"}`}>
+            <div className="mb-4">
+                <h2>Department Directory</h2>
+                <p className="text-muted">Viewing all members assigned to this venture.</p>
             </div>
             
             {/* HOD SECTION */}
             <section className="mb-5">
-                <h4 className="text-primary border-bottom pb-2 mb-4">Heads of Department (HOD)</h4>
+                <h4 className={`border-bottom pb-2 mb-4 ${isDark ? "border-secondary" : ""}`}>
+                    Heads of Department (HOD)
+                </h4>
                 {hods.length > 0 ? (
                     <div className="row">
                         {hods.map(h => (
                             <div key={h._id} className="col-md-4 mb-3">
-                                <div className="card border-primary h-100 shadow-sm">
-                                    <div className="card-body">
-                                        <h5 className="card-title mb-1">{h.name}</h5>
-                                        <p className="text-muted small mb-2">{h.email}</p>
-                                        <span className="badge bg-primary-subtle text-primary border border-primary">{h.role}</span>
-                                    </div>
-                                </div>
+                                <Card className={`h-100 shadow-sm ${isDark ? "bg-dark text-white border-secondary" : "border-primary"}`}>
+                                    <Card.Body>
+                                        <h5 className="mb-1">{h.name}</h5>
+                                        <p className={`${isDark ? "text-info" : "text-muted"} small mb-2`}>{h.email}</p>
+                                        <Badge bg={isDark ? "info" : "primary"}>{h.role}</Badge>
+                                    </Card.Body>
+                                </Card>
                             </div>
                         ))}
                     </div>
-                ) : <div className="alert alert-light border">No HOD assigned to this department.</div>}
+                ) : <div className="alert alert-secondary">No HOD assigned to this department.</div>}
             </section>
 
             {/* EMPLOYEES SECTION */}
             <section>
-                <h4 className="text-secondary border-bottom pb-2 mb-4">Employees</h4>
+                <h4 className={`border-bottom pb-2 mb-4 ${isDark ? "border-secondary" : ""}`}>
+                    Employees
+                </h4>
                 {employees.length > 0 ? (
-                    <div className="card border-0 shadow-sm">
-                        <table className="table table-hover mb-0">
-                            <thead className="table-light">
+                    <div className={`card shadow-sm border-0 ${isDark ? "bg-dark" : ""}`}>
+                        <Table hover responsive className={`mb-0 ${isDark ? "table-dark" : ""}`}>
+                            <thead>
                                 <tr>
                                     <th className="ps-4">Employee ID</th>
                                     <th>Full Name</th>
@@ -75,16 +81,16 @@ const DepartmentStaff = () => {
                             </thead>
                             <tbody>
                                 {employees.map(e => (
-                                    <tr key={e._id} className="align-middle">
+                                    <tr key={e._id}>
                                         <td className="ps-4"><code>{e.employeeId}</code></td>
                                         <td className="fw-bold">{e.name}</td>
-                                        <td className="text-muted">{e.email}</td>
+                                        <td>{e.email}</td>
                                     </tr>
                                 ))}
                             </tbody>
-                        </table>
+                        </Table>
                     </div>
-                ) : <div className="alert alert-light border">No employees found for this department.</div>}
+                ) : <div className="alert alert-secondary">No employees found for this department.</div>}
             </section>
         </div>
     );
