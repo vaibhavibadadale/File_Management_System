@@ -6,10 +6,14 @@ import Footer from "./components/Footer"; // Global Footer
 import FileDashboard from "./pages/FileDashboard";  
 import UploadFilePage from "./pages/UploadFilePage";
 import LoginPage from "./pages/LoginPage";
-import CreateUserPage from "./pages/CreateUserPage";
 import VenturesPage from "./pages/VenturesPage"; 
-// 1. IMPORT the new DepartmentStaff page
 import DepartmentStaff from "./pages/DepartmentStaff"; 
+
+// 1. UPDATED: Imports for User Management and the new Storage Log page
+import UsersPage from "./pages/UsersPage"; 
+import UserFilesView from "./pages/UserFilesView"; 
+
+// REMOVED: ArchivedDepartments import was here (File deleted)
 
 // --- BOOTSTRAP AND GLOBAL STYLES ---
 import 'bootstrap/dist/css/bootstrap.min.css';
@@ -83,13 +87,16 @@ function App() {
                         <Routes>
                             <Route path="/" element={<FileDashboard user={user} />} />
                             <Route path="/upload" element={<UploadFilePage user={user} />} />
-                            <Route path="/ventures" element={<VenturesPage user={user} />} />
+                            <Route path="/ventures" element={<VenturesPage user={user} currentTheme={themeMode} />} />
                             
-                            {/* 2. ADD the dynamic route for Department Staff */}
-                            {/* The path MUST match what you used in VenturesPage: /department-staff/:deptId */}
-                            <Route path="/department-staff/:deptId" element={<DepartmentStaff />} />
+                            <Route path="/department-staff/:deptId" element={<DepartmentStaff currentTheme={themeMode} />} />
                             
-                            <Route path="/create-user" element={<CreateUserPage />} />
+                            <Route path="/users" element={<UsersPage currentTheme={themeMode} />} />
+                            
+                            <Route path="/user-files/:username" element={<UserFilesView currentTheme={themeMode} />} />
+
+                            {/* REMOVED: /archived-departments route was here */}
+                            
                             <Route path="/login" element={<Navigate to="/" />} />
                             <Route path="*" element={<Navigate to="/" />} />
                         </Routes>
