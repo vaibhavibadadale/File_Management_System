@@ -1,8 +1,7 @@
 const Department = require("../models/Department");
-const User = require("../models/User"); // Path to your User model
+const User = require("../models/User");
 const bcrypt = require("bcryptjs");
 
-// Create Department - Kept as is
 exports.createDepartment = async (req, res) => {
     try {
         const department = await Department.create(req.body);
@@ -15,48 +14,39 @@ exports.createDepartment = async (req, res) => {
     }
 };
 
-// Get All - Kept with your logic
+// UPDATED: Now returns all departments so they appear on the same page
 exports.getAllDepartments = async (req, res) => {
     try {
-        const showHidden = req.query.hidden === 'true';
+        // We removed the 'isActive' filter requirement 
+        // to show both Active and Inactive depts in one list
         const filter = {
-            deletedAt: null,
-            isActive: showHidden ? false : { $ne: false }
+            deletedAt: null
         };
-        const departments = await Department.find(filter);
+        
+        const departments = await Department.find(filter).sort({ createdAt: -1 });
         res.json(departments);
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
 };
 
-// Toggle Status - Verification against real User Password
+// KEPT: Simplified toggle logic without password requirement
 exports.toggleDepartmentStatus = async (req, res) => {
     try {
-        const { password, userId } = req.body; // userId can come from req.user if using Auth middleware
         const department = await Department.findById(req.params.id);
-        
-        if (!department) return res.status(404).json({ error: "Department not found" });
 
-        // Logic: Verify password only when deactivating
-        if (department.isActive === true) {
-            if (!password) return res.status(400).json({ error: "Password is required for deactivation" });
-
-            // 1. Find the user attempting the action
-            const user = await User.findById(userId || req.user.id);
-            if (!user) return res.status(404).json({ error: "User not found" });
-
-            // 2. Compare provided password with hashed password in DB
-            const isMatch = await bcrypt.compare(password, user.password);
-            if (!isMatch) {
-                return res.status(401).json({ error: "Invalid password. Action unauthorized." });
-            }
+        if (!department) {
+            return res.status(404).json({ error: "Department not found" });
         }
 
-        department.isActive = !department.isActive;
+        // Logic: Simply flip the status (true to false, or false to true)
+        // If isActive is undefined or true, it becomes false. If false, it becomes true.
+        department.isActive = department.isActive === false ? true : false;
+        
         await department.save();
         res.json(department);
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        console.error("Toggle Status Error:", error.message);
+        res.status(500).json({ error: "Server Error" });
     }
 };

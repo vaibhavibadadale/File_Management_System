@@ -10,13 +10,10 @@ function LoginPage({ onLogin }) {
   const [department, setDepartment] = useState("n");
   const [activeRole, setActiveRole] = useState("");
   const [isLoading, setIsLoading] = useState(false); 
-  
-  // --- NEW STATE: Dynamic Department List ---
   const [deptList, setDeptList] = useState([]);
 
   const navigate = useNavigate();
 
-  // --- NEW LOGIC: Fetch Departments on Load to populate dropdown ---
   useEffect(() => {
     const fetchDepartments = async () => {
       try {
@@ -29,7 +26,6 @@ function LoginPage({ onLogin }) {
     fetchDepartments();
   }, []);
 
-  // --- KEPT OLD LOGIC: Visual logo prefix logic ---
   const handleUsernameChange = (e) => {
     const value = e.target.value;
     setUsername(value);
@@ -50,14 +46,16 @@ function LoginPage({ onLogin }) {
     }
 
     setIsLoading(true);
-
     try {
         const response = await axios.post("http://localhost:5000/api/users/login", {
             username: username,
             password: password
         });
 
-        const userData = response.data;
+        // FIX: Extract user data and save to localStorage
+        const userData = response.data.user || response.data;
+        localStorage.setItem("user", JSON.stringify(userData)); 
+
         alert(`Welcome ${userData.name || username}! Redirecting...`);
         
         onLogin(userData); 
@@ -65,13 +63,12 @@ function LoginPage({ onLogin }) {
 
     } catch (error) {
         console.error("Login Error:", error);
-        const message = error.response?.data?.message || "❌ Login failed. Please check your credentials.";
+        const message = error.response?.data?.message || "❌ Login failed.";
         alert(message);
     } finally {
         setIsLoading(false);
     }
-  };
-
+};
   return (
     <div className="login-container">
       <div className="login-card">
@@ -114,7 +111,6 @@ function LoginPage({ onLogin }) {
             </div>
           </div>
 
-          {/* --- DYNAMIC DROPDOWN WITH OLD STYLING --- */}
           <div className="form-group">
             <div className="input-wrapper select-wrapper">
               <select 
@@ -124,7 +120,6 @@ function LoginPage({ onLogin }) {
                 required 
               >
                 <option value="n">Select Your Department</option>
-                {/* Dynamically rendering options from the Database */}
                 {deptList.map((dept) => (
                   <option key={dept._id} value={dept.departmentName}>
                     {dept.departmentName}

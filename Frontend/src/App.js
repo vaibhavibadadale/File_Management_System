@@ -9,11 +9,9 @@ import LoginPage from "./pages/LoginPage";
 import VenturesPage from "./pages/VenturesPage"; 
 import DepartmentStaff from "./pages/DepartmentStaff"; 
 
-// 1. UPDATED: Imports for User Management and the new Storage Log page
+// 1. UPDATED: Imports for User Management and the Storage Log page
 import UsersPage from "./pages/UsersPage"; 
 import UserFilesView from "./pages/UserFilesView"; 
-
-// REMOVED: ArchivedDepartments import was here (File deleted)
 
 // --- BOOTSTRAP AND GLOBAL STYLES ---
 import 'bootstrap/dist/css/bootstrap.min.css';
@@ -85,18 +83,27 @@ function App() {
 
                     <main className="flex-grow-1 p-4">
                         <Routes>
+                            {/* Dashboard & Core Features */}
                             <Route path="/" element={<FileDashboard user={user} />} />
                             <Route path="/upload" element={<UploadFilePage user={user} />} />
+                            
+                            {/* Venture & Department Management */}
                             <Route path="/ventures" element={<VenturesPage user={user} currentTheme={themeMode} />} />
+                            <Route 
+                                path="/department-staff/:deptId" 
+                                element={<DepartmentStaff currentTheme={themeMode} />} 
+                            />
                             
-                            <Route path="/department-staff/:deptId" element={<DepartmentStaff currentTheme={themeMode} />} />
-                            
+                            {/* User Management & Profile Views */}
                             <Route path="/users" element={<UsersPage currentTheme={themeMode} />} />
                             
-                            <Route path="/user-files/:username" element={<UserFilesView currentTheme={themeMode} />} />
+                            {/* This route handles the redirection from DepartmentStaff 'View Profile' buttons */}
+                            <Route 
+                                path="/user-files/:username" 
+                                element={<UserFilesView currentTheme={themeMode} />} 
+                            />
 
-                            {/* REMOVED: /archived-departments route was here */}
-                            
+                            {/* Auth Redirection Logic */}
                             <Route path="/login" element={<Navigate to="/" />} />
                             <Route path="*" element={<Navigate to="/" />} />
                         </Routes>
