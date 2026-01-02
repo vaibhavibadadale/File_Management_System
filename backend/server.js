@@ -23,9 +23,10 @@ if (!fs.existsSync(UPLOADS_DIR)) {
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// UPDATED CORS: Added localhost:3001 to the allowed origins
 app.use(
   cors({
-    origin: "http://localhost:3000",
+    origin: ["http://localhost:3000", "http://localhost:3001"], 
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE"], 
     credentials: true,
   })
@@ -64,7 +65,6 @@ app.get("/", (req, res) => {
 });
 
 // ================= 404 HANDLER =================
-// Keep this at the bottom to catch invalid URLs
 app.use((req, res) => {
   res.status(404).json({ message: "Route not found" });
 });

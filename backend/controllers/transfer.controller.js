@@ -2,50 +2,83 @@ const Transfer = require('../models/Transfer');
 const File = require('../models/File');
 const User = require('../models/User');
 
+// --- 1. INITIAL TRANSFER REQUEST ---
 exports.secureTransfer = async (req, res) => {
-    // 1. Get the data from the request body
     const { senderUsername, password, recipientId, fileIds } = req.body;
-    console.log(`--- Controller received: ${senderUsername} ---`);
 
     try {
-        // 2. Find the user (case-insensitive)
         const user = await User.findOne({ 
             username: { $regex: new RegExp(`^${senderUsername}$`, 'i') } 
         });
 
-        if (!user) {
-            return res.status(404).json({ message: "Sender account not found." });
+        if (!user) return res.status(404).json({ message: "Sender account not found." });
+        if (password !== user.password) return res.status(401).json({ message: "Incorrect password." });
+
+        // Logic: Check role for hierarchy
+        let status = "completed"; 
+        let message = "Transfer successful!";
+
+        // If HOD or Employee, it MUST be a pending request
+        if (user.role === 'Employee' || user.role === 'HOD') {
+            status = "pending";
+            message = "Transfer request sent to Authority for approval.";
         }
 
-        // 3. Password Check (Plain text "admin123")
-        if (password !== user.password) {
-            return res.status(401).json({ message: "Incorrect password." });
-        }
-
-        console.log("✅ Verified. Forcing save with senderUsername...");
-
-        // 4. THE FIX: Explicitly define every field from the Schema
         const newTransfer = new Transfer({
-            fileIds: fileIds,                  // From Schema
-            senderUsername: user.username || senderUsername, // THE FIX: If one is missing, use the other
-            recipientId: recipientId,          // From Schema
-            transferDate: new Date()           // From Schema
+            fileIds: fileIds,
+            senderUsername: user.username,
+            senderRole: user.role, // Track role for the pending list
+            recipientId: recipientId,
+            status: status,
+            transferDate: new Date()
         });
 
-        // 5. Use .save() instead of .create() for better error catching
-        const savedLog = await newTransfer.save();
+        await newTransfer.save();
 
-        // 6. Update File ownership
-        await File.updateMany(
-            { _id: { $in: fileIds } },
-            { $set: { uploadedBy: recipientId } }
-        );
+        // Execution: Only change ownership if Admin/SuperAdmin
+        if (status === "completed") {
+            await File.updateMany(
+                { _id: { $in: fileIds } },
+                { $set: { uploadedBy: recipientId } }
+            );
+        }
 
-        console.log("✅ SUCCESS: Saved to MongoDB with ID:", savedLog._id);
-        return res.status(200).json({ message: "Transfer successful!" });
+        return res.status(200).json({ message, status });
 
     } catch (err) {
-        console.error("🔴 Server Error:", err.message);
-        return res.status(500).json({ message: "Database Save Error", error: err.message });
+        return res.status(500).json({ message: "Server Error", error: err.message });
+    }
+};
+
+// --- 2. APPROVE TRANSFER (For Authority) ---
+exports.approveTransfer = async (req, res) => {
+    const { transferId } = req.params;
+    try {
+        const transfer = await Transfer.findById(transferId);
+        if (!transfer) return res.status(404).json({ message: "Request not found" });
+
+        // Change ownership only upon approval
+        await File.updateMany(
+            { _id: { $in: transfer.fileIds } },
+            { $set: { uploadedBy: transfer.recipientId } }
+        );
+
+        transfer.status = "completed";
+        await transfer.save();
+
+        res.status(200).json({ message: "Transfer approved and files moved!" });
+    } catch (err) {
+        res.status(500).json({ message: "Approval failed", error: err.message });
+    }
+};
+
+// --- 3. GET PENDING REQUESTS ---
+exports.getPendingTransfers = async (req, res) => {
+    try {
+        const pending = await Transfer.find({ status: 'pending' })
+            .populate('recipientId', 'name username');
+        res.status(200).json(pending);
+    } catch (err) {
+        res.status(500).json({ message: "Error fetching requests", error: err.message });
     }
 };

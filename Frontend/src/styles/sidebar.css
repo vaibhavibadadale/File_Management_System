@@ -1,0 +1,109 @@
+/* Sidebar Main Container */
+.sidebar-container {
+  width: 260px;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  padding: 1.25rem 0.75rem;
+  border-right: 1px solid transparent;
+  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  position: sticky;
+  top: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* Theme Setup */
+.light-theme {
+  background-color: #ffffff;
+  color: #343a40;
+  border-color: #dee2e6;
+}
+
+.dark-theme {
+  background-color: #1a1a1a;
+  color: #e9ecef;
+  border-color: #333333;
+}
+
+/* Header */
+.sidebar-header {
+  padding: 0 1rem 1.5rem 1rem;
+  margin-bottom: 1rem;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+  text-align: center;
+}
+
+.dark-theme .sidebar-header {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.sidebar-header h5 {
+  font-weight: 800;
+  font-size: 1rem;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin: 0;
+}
+
+/* Links & Icons */
+.nav-link-custom {
+  display: flex;
+  align-items: center;
+  padding: 0.85rem 1rem;
+  text-decoration: none !important;
+  color: inherit !important;
+  border-radius: 12px;
+  transition: all 0.2s ease;
+  margin-bottom: 4px;
+}
+
+.nav-link-custom:hover {
+  background-color: rgba(13, 110, 253, 0.08);
+  transform: translateX(5px);
+}
+
+.dark-theme .nav-link-custom:hover {
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+.nav-link-custom.active {
+  background: linear-gradient(135deg, #0d6efd, #0043a8) !important;
+  color: #ffffff !important;
+  box-shadow: 0 4px 15px rgba(13, 110, 253, 0.3);
+}
+
+.icon-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 30px;
+}
+
+.link-text {
+  margin-left: 1rem;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+/* RESPONSIVE DESIGN: Icon-only bar for mobile */
+@media (max-width: 991.98px) {
+  .sidebar-container {
+    width: 85px; /* Narrow width */
+    padding: 1rem 0.5rem;
+  }
+
+  .sidebar-header h5, 
+  .link-text {
+    display: none !important; /* Hide all text */
+  }
+
+  .nav-link-custom {
+    justify-content: center;
+    padding: 1rem 0;
+  }
+
+  .nav-link-custom:hover {
+    transform: none; /* Disable shift on mobile */
+  }
+}
