@@ -5,7 +5,8 @@ import { Visibility, Person, Business, Email, Badge as BadgeIcon, Search, ArrowB
 import axios from "axios";
 
 const UserFilesView = ({ currentTheme }) => {
-  const { username } = useParams();
+  // 'username' here represents the :id param from the route
+  const { username: userId } = useParams(); 
   const navigate = useNavigate();
   const [files, setFiles] = useState([]);
   const [userData, setUserData] = useState(null);
@@ -18,30 +19,34 @@ const UserFilesView = ({ currentTheme }) => {
     const fetchUserDataAndLogs = async () => {
       try {
         setLoading(true);
-        // 1. Fetch File Logs from physical directory
-        const fileRes = await axios.get(`http://localhost:5000/api/users/files/${username}`);
-        setFiles(fileRes.data);
 
-        // 2. Fetch User Profile Details
-        const userRes = await axios.get("http://localhost:5000/api/users");
-        const profile = userRes.data.find((u) => u.username === username);
+        // 1. Fetch User Profile from Database using the unique ID
+        // This hits your backend: router.get("/:id", userController.getUserById)
+        const userRes = await axios.get(`http://localhost:5000/api/users/${userId}`);
+        const profile = userRes.data;
         setUserData(profile);
+
+        // 2. Fetch Files using the 'username' field inside the fetched profile
+        // This hits your backend: router.get("/files/:username", userController.getUserFiles)
+        if (profile && profile.username) {
+            const fileRes = await axios.get(`http://localhost:5000/api/users/files/${profile.username}`);
+            setFiles(fileRes.data);
+        }
       } catch (err) {
         console.error("Error fetching user audit data:", err);
       } finally {
         setLoading(false);
       }
     };
-    fetchUserDataAndLogs();
-  }, [username]);
+    if (userId) fetchUserDataAndLogs();
+  }, [userId]);
 
-  // Handle viewing the file
   const handleViewFile = (fileName) => {
-    const fileUrl = `http://localhost:5000/uploads/${username}/${fileName}`;
+    // Uses the username from the fetched database profile for the URL path
+    const fileUrl = `http://localhost:5000/uploads/${userData.username}/${fileName}`;
     window.open(fileUrl, "_blank");
   };
 
-  // Filter files based on search input
   const filteredFiles = files.filter((file) =>
     file.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
@@ -49,16 +54,15 @@ const UserFilesView = ({ currentTheme }) => {
   return (
     <Container fluid className={`py-4 ${isDark ? "bg-secondary" : "bg-light"}`} style={{ minHeight: "100vh" }}>
       <div className="container">
-        {/* Navigation & Back Button */}
         <Button 
           variant={isDark ? "outline-light" : "outline-primary"} 
           className="mb-4" 
-          onClick={() => window.close()}
+          onClick={() => navigate(-1)} // Go back to the Department List
         >
-          <ArrowBack className="me-2" /> Back to User Management
+          <ArrowBack className="me-2" /> Back
         </Button>
 
-        {/* --- SECTION 1: USER INFORMATION PROFILE --- */}
+        {/* PROFILE SECTION */}
         <Card className={`mb-4 shadow-sm border-0 ${isDark ? "bg-dark text-white" : ""}`}>
           <Card.Body className="p-4">
             <Row className="align-items-center">
@@ -66,38 +70,32 @@ const UserFilesView = ({ currentTheme }) => {
                 <div className="bg-primary bg-opacity-10 rounded-circle d-inline-flex p-4 mb-2">
                   <Person style={{ fontSize: "60px", color: "#0d6efd" }} />
                 </div>
-                <h5 className="mb-0 fw-bold">{userData?.name || "System User"}</h5>
-                <small className="text-muted">@{username}</small>
+                <h5 className="mb-0 fw-bold">{userData?.name || "User Profile"}</h5>
+                <small className="text-muted">@{userData?.username || "loading..."}</small>
               </Col>
               
               <Col md={10} className="ps-md-5">
                 <h4 className="mb-4">User Profile Details</h4>
                 <Row>
                   <Col md={4} className="mb-3">
-                    <div className="d-flex align-items-center">
-                      <Email className="text-primary me-2" />
-                      <div>
-                        <small className="text-muted d-block">Email Address</small>
-                        <strong>{userData?.email || "N/A"}</strong>
-                      </div>
+                    <Email className="text-primary me-2" />
+                    <div>
+                      <small className="text-muted d-block">Email</small>
+                      <strong>{userData?.email || "N/A"}</strong>
                     </div>
                   </Col>
                   <Col md={4} className="mb-3">
-                    <div className="d-flex align-items-center">
-                      <BadgeIcon className="text-primary me-2" />
-                      <div>
-                        <small className="text-muted d-block">Designated Role</small>
-                        <Badge bg="info" className="text-dark">{userData?.role || "Employee"}</Badge>
-                      </div>
+                    <BadgeIcon className="text-primary me-2" />
+                    <div>
+                      <small className="text-muted d-block">Role</small>
+                      <Badge bg="info" className="text-dark">{userData?.role || "Employee"}</Badge>
                     </div>
                   </Col>
                   <Col md={4} className="mb-3">
-                    <div className="d-flex align-items-center">
-                      <Business className="text-primary me-2" />
-                      <div>
-                        <small className="text-muted d-block">Department</small>
-                        <strong>{userData?.department || "General"}</strong>
-                      </div>
+                    <Business className="text-primary me-2" />
+                    <div>
+                      <small className="text-muted d-block">Department</small>
+                      <strong>{userData?.department || "General"}</strong>
                     </div>
                   </Col>
                 </Row>
@@ -106,15 +104,14 @@ const UserFilesView = ({ currentTheme }) => {
           </Card.Body>
         </Card>
 
-        {/* --- SECTION 2: FILE LOGS WITH SEARCH --- */}
+        {/* FILES TABLE */}
         <Card className={`shadow-sm border-0 ${isDark ? "bg-dark text-white" : ""}`}>
           <Card.Header className={`py-3 bg-white ${isDark ? "bg-dark border-secondary" : ""}`}>
             <Row className="align-items-center">
               <Col md={6}>
                 <h5 className="mb-0 d-flex align-items-center">
                   <Storage className="me-2 text-primary" /> 
-                  File Storage Logs 
-                  <Badge bg="primary" className="ms-2 fs-6">{files.length}</Badge>
+                  User File Storage <Badge bg="primary" className="ms-2 fs-6">{files.length}</Badge>
                 </h5>
               </Col>
               <Col md={6}>
@@ -123,7 +120,7 @@ const UserFilesView = ({ currentTheme }) => {
                     <Search size={18} />
                   </InputGroup.Text>
                   <Form.Control
-                    placeholder="Search file name..."
+                    placeholder="Search files..."
                     className={isDark ? "bg-dark text-white border-secondary" : "bg-light border-start-0"}
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
@@ -132,13 +129,9 @@ const UserFilesView = ({ currentTheme }) => {
               </Col>
             </Row>
           </Card.Header>
-          
           <Card.Body className="p-0">
             {loading ? (
-              <div className="text-center py-5">
-                <Spinner animation="border" variant="primary" />
-                <p className="mt-3">Scanning storage directory...</p>
-              </div>
+              <div className="text-center py-5"><Spinner animation="border" variant="primary" /></div>
             ) : (
               <div className="table-responsive">
                 <Table hover className={`mb-0 ${isDark ? "table-dark" : ""}`}>
@@ -146,8 +139,6 @@ const UserFilesView = ({ currentTheme }) => {
                     <tr>
                       <th className="ps-4">#</th>
                       <th>File Name</th>
-                      <th>Size</th>
-                      <th>Creation Date</th>
                       <th className="text-center">Action</th>
                     </tr>
                   </thead>
@@ -157,25 +148,15 @@ const UserFilesView = ({ currentTheme }) => {
                         <tr key={idx} className="align-middle">
                           <td className="ps-4 text-muted">{idx + 1}</td>
                           <td className="fw-bold">{file.name}</td>
-                          <td><Badge bg="secondary" text="white">{file.size}</Badge></td>
-                          <td>{new Date(file.createdAt).toLocaleString()}</td>
                           <td className="text-center">
-                            <Button 
-                              variant="outline-primary" 
-                              size="sm" 
-                              onClick={() => handleViewFile(file.name)}
-                            >
+                            <Button variant="outline-primary" size="sm" onClick={() => handleViewFile(file.name)}>
                               <Visibility size={16} className="me-1" /> View
                             </Button>
                           </td>
                         </tr>
                       ))
                     ) : (
-                      <tr>
-                        <td colSpan="5" className="text-center py-5 text-muted">
-                          No matching files found in the directory.
-                        </td>
-                      </tr>
+                      <tr><td colSpan="3" className="text-center py-5 text-muted">No files found in folder.</td></tr>
                     )}
                   </tbody>
                 </Table>

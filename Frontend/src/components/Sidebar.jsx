@@ -15,7 +15,7 @@ const sidebarItems = [
   { text: "File Manager", icon: <FolderCopyIcon />, path: "/file-manager", roles: ["EMPLOYEE", "HOD", "ADMIN", "SUPER_ADMIN"] },
   { text: "Pending Request", icon: <PendingActionsIcon />, path: "/pending", roles: ["EMPLOYEE", "HOD", "ADMIN", "SUPER_ADMIN"] },
   { text: "Important Files", icon: <StarIcon />, path: "/important", roles: ["EMPLOYEE", "HOD", "ADMIN", "SUPER_ADMIN"] },
-  { text: "Create User", icon: <PersonAddIcon />, path: "/users", roles: ["HOD", "ADMIN", "SUPER_ADMIN"] },
+  { text: "Users", icon: <PersonAddIcon />, path: "/users", roles: ["HOD", "ADMIN", "SUPER_ADMIN"] },
   { text: "Trash", icon: <DeleteIcon />, path: "/trash", roles: ["HOD", "ADMIN", "SUPER_ADMIN"] },
 ];
 
