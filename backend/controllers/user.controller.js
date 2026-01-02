@@ -1,16 +1,15 @@
 const User = require("../models/User");
 const fs = require("fs");
 const path = require("path");
+const mongoose = require("mongoose");
 
-// 1. CREATE USER (Strict Hierarchy Enforcement)
+// 1. CREATE USER
 exports.createUser = async (req, res) => {
     const { role, username } = req.body;
-    // Get creator role from the header we send from Frontend
     const creatorRoleRaw = req.headers['creator-role'] || "";
     const creatorRole = creatorRoleRaw.trim().toLowerCase();
 
     try {
-        // Hierarchy Definition
         const allowedRolesByCreator = {
             superadmin: ["superadmin", "admin", "hod", "employee"],
             admin: ["hod", "employee"],
@@ -21,7 +20,6 @@ exports.createUser = async (req, res) => {
         const requestedRole = (role || "").trim().toLowerCase();
         const allowed = allowedRolesByCreator[creatorRole] || [];
 
-        // Server-side block
         if (!allowed.includes(requestedRole)) {
             return res.status(403).json({
                 error: `Access Denied: As a ${creatorRole}, you cannot create a ${role}.`
@@ -35,7 +33,6 @@ exports.createUser = async (req, res) => {
 
         const user = await User.create(userData);
 
-        // Folder creation
         const folderPath = path.join(__dirname, "..", "uploads", user.username);
         if (!fs.existsSync(folderPath)) {
             fs.mkdirSync(folderPath, { recursive: true });
@@ -47,7 +44,7 @@ exports.createUser = async (req, res) => {
     }
 };
 
-// 2. VERIFY PASSWORD (Fixes the crash error)
+// 2. VERIFY PASSWORD
 exports.verifyPassword = async (req, res) => {
     try {
         const { username, password } = req.body;
@@ -61,7 +58,7 @@ exports.verifyPassword = async (req, res) => {
     }
 };
 
-// --- Standard User Methods ---
+// 3. LOGIN
 exports.login = async (req, res) => {
     try {
         const { username, password } = req.body;
@@ -71,6 +68,7 @@ exports.login = async (req, res) => {
     } catch (error) { res.status(500).json({ error: error.message }); }
 };
 
+// 4. GET ALL USERS
 exports.getAllUsers = async (req, res) => {
     try {
         const users = await User.find({ deletedAt: null }).populate("departmentId");
@@ -78,13 +76,42 @@ exports.getAllUsers = async (req, res) => {
     } catch (error) { res.status(500).json({ error: error.message }); }
 };
 
+// 5. GET USERS BY DEPARTMENT (STRICT ROLE SEPARATION)
 exports.getUsersByDepartment = async (req, res) => {
     try {
-        const users = await User.find({ departmentId: req.params.deptId, deletedAt: null });
-        res.json(users);
-    } catch (error) { res.status(500).json({ error: error.message }); }
+        const { deptId } = req.params;
+        
+        const mongoId = mongoose.Types.ObjectId.isValid(deptId) 
+            ? new mongoose.Types.ObjectId(deptId) 
+            : null;
+
+        // Fetch all users linked to this department
+        const allUsers = await User.find({
+            deletedAt: null,
+            $or: [
+                { departmentId: mongoId },
+                { departmentId: deptId },
+                { department: deptId }
+            ]
+        }).lean();
+
+        // STRICT FILTERING: 
+        // 1. Only users with role exactly "HOD" (ignores Admin/SuperAdmin)
+        const hodsOnly = allUsers.filter(u => u.role?.toUpperCase() === "HOD");
+        
+        // 2. Only users with role exactly "EMPLOYEE"
+        const employeesOnly = allUsers.filter(u => u.role?.toUpperCase() === "EMPLOYEE");
+
+        res.json({
+            hods: hodsOnly,
+            employees: employeesOnly
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
 };
 
+// 6. GET USER BY ID
 exports.getUserById = async (req, res) => {
     try {
         const user = await User.findById(req.params.id).populate("departmentId");
@@ -92,6 +119,7 @@ exports.getUserById = async (req, res) => {
     } catch (error) { res.status(500).json({ error: error.message }); }
 };
 
+// 7. TOGGLE USER STATUS
 exports.toggleUserStatus = async (req, res) => {
     try {
         const user = await User.findById(req.params.id);
@@ -100,6 +128,7 @@ exports.toggleUserStatus = async (req, res) => {
     } catch (error) { res.status(500).json({ error: error.message }); }
 };
 
+// 8. GET USER FILES
 exports.getUserFiles = async (req, res) => {
     try {
         const folderPath = path.join(__dirname, "..", "uploads", req.params.username);
@@ -109,6 +138,7 @@ exports.getUserFiles = async (req, res) => {
     } catch (error) { res.status(500).json({ error: error.message }); }
 };
 
+// 9. SOFT DELETE USER
 exports.softDeleteUser = async (req, res) => {
     try {
         await User.findByIdAndUpdate(req.params.id, { deletedAt: new Date() });
