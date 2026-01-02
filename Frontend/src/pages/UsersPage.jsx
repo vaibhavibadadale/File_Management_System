@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from "react";
 import { Modal, Button, Form, Table, Badge, Row, Col } from "react-bootstrap";
-import { Visibility, ToggleOn, ToggleOff, RestartAlt } from "@mui/icons-material";
+import { Visibility, ToggleOn, ToggleOff, PersonAdd, RestartAlt } from "@mui/icons-material";
 import axios from "axios";
 
-const UsersPage = ({ currentTheme }) => {
+const UsersPage = ({ currentTheme, user }) => {
   const [users, setUsers] = useState([]);
   const [deptList, setDeptList] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -12,6 +12,9 @@ const UsersPage = ({ currentTheme }) => {
   const [searchTerm, setSearchTerm] = useState("");
   const [filterDept, setFilterDept] = useState("");
   const [filterRole, setFilterRole] = useState("");
+
+  const isDark = currentTheme === "dark";
+  const myRole = (user?.role || "").toLowerCase();
 
   const [formData, setFormData] = useState({
     name: "",
@@ -30,6 +33,8 @@ const UsersPage = ({ currentTheme }) => {
         axios.get("http://localhost:5000/api/users"),
         axios.get("http://localhost:5000/api/departments"),
       ]);
+      
+      console.log("Users received from server:", userRes.data);
       setUsers(userRes.data);
       setDeptList(deptRes.data);
     } catch (err) {
@@ -39,39 +44,48 @@ const UsersPage = ({ currentTheme }) => {
     }
   };
 
-  useEffect(() => { fetchData(); }, []);
-
-  const getRoleBadge = (role) => {
-    const roleStyles = {
-      SuperAdmin: { bg: "#FF0000", color: "#FFFFFF" }, 
-      Admin: { bg: "#FF0000", color: "#FFFFFF" },      
-      HOD: { bg: "#000000", color: "#FFFFFF" },        
-      Employee: { bg: "#007BFF", color: "#FFFFFF" }     
-    };
-
-    const style = roleStyles[role] || { bg: "#9e9e9e", color: "white" };
-
-    return (
-      <div style={{ 
-        backgroundColor: style.bg, 
-        color: style.color, 
-        width: '100px', 
-        padding: '6px 0',
-        borderRadius: '4px',
-        fontWeight: '500', 
-        fontSize: '0.85rem', 
-        textAlign: 'center',
-        display: 'inline-block'
-      }}>
-        {role}
-      </div>
-    );
-  };
+  useEffect(() => { 
+    fetchData(); 
+  }, []);
 
   const handleReset = () => {
     setSearchTerm("");
     setFilterDept("");
     setFilterRole("");
+  };
+
+  const handleInputChange = (e) => {
+    const { name, value } = e.target;
+    if (name === "departmentId") {
+      if (value === "ALL_DEPT") {
+        setFormData({ ...formData, departmentId: "ALL_DEPT", department: "All" });
+      } else {
+        const selectedDept = deptList.find((d) => d._id === value);
+        setFormData({
+          ...formData,
+          departmentId: value,
+          department: selectedDept ? selectedDept.departmentName : "",
+        });
+      }
+    } else {
+      setFormData({ ...formData, [name]: value });
+    }
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      await axios.post("http://localhost:5000/api/users", 
+        { ...formData, employeeId: `EMP-${Date.now()}` },
+        { headers: { "creator-role": user?.role } }
+      );
+      alert(`User Created Successfully!`);
+      setShowModal(false);
+      setFormData({ name: "", email: "", department: "", departmentId: "", role: "", username: "", password: "" });
+      fetchData();
+    } catch (err) {
+      alert("Error: " + (err.response?.data?.error || err.message));
+    }
   };
 
   const toggleStatus = async (userId) => {
@@ -83,64 +97,68 @@ const UsersPage = ({ currentTheme }) => {
     }
   };
 
-  const viewUserFiles = (username) => {
-    window.open(`/user-files/${username}`, "_blank");
+  const renderRoleOptions = () => {
+    if (!user) return <option value="">Loading permissions...</option>;
+    return (
+      <>
+        <option value="">Select Role</option>
+        <option value="Employee">Employee</option>
+        {(myRole === "admin" || myRole === "superadmin") && <option value="HOD">HOD</option>}
+        {myRole === "superadmin" && (
+          <>
+            <option value="Admin">Admin</option>
+            <option value="SuperAdmin">SuperAdmin</option>
+          </>
+        )}
+      </>
+    );
   };
 
-  const handleInputChange = (e) => {
-    const { name, value } = e.target;
-    if (name === "departmentId") {
-      const selectedDept = deptList.find((d) => d._id === value);
-      setFormData({
-        ...formData,
-        departmentId: value,
-        department: selectedDept ? selectedDept.departmentName : "",
-      });
-    } else {
-      setFormData({ ...formData, [name]: value });
-    }
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    try {
-      await axios.post("http://localhost:5000/api/users", {
-        ...formData,
-        employeeId: `EMP-${Date.now()}`,
-      });
-      alert(`User Created Successfully!`);
-      setShowModal(false);
-      setFormData({ name: "", email: "", department: "", departmentId: "", role: "", username: "", password: "" });
-      fetchData();
-    } catch (err) {
-      alert("Error: " + (err.response?.data?.error || err.message));
-    }
+  const getRoleBadge = (role) => {
+    const roleStyles = {
+      SuperAdmin: { bg: "#FF0000", color: "#FFFFFF" }, 
+      Admin: { bg: "#FF0000", color: "#FFFFFF" },      
+      HOD: { bg: "#000000", color: "#FFFFFF" },        
+      Employee: { bg: "#007BFF", color: "#FFFFFF" }     
+    };
+    const style = roleStyles[role] || { bg: "#9e9e9e", color: "white" };
+    return (
+      <div style={{ 
+        backgroundColor: style.bg, color: style.color, width: '100px', 
+        padding: '6px 0', borderRadius: '4px', fontWeight: '500', 
+        fontSize: '0.85rem', textAlign: 'center', display: 'inline-block'
+      }}>
+        {role}
+      </div>
+    );
   };
 
   const filteredUsers = users.filter((u) => {
-    const matchesSearch = u.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                          u.username?.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesSearch = (u.name || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+                          (u.username || "").toLowerCase().includes(searchTerm.toLowerCase());
     const matchesDept = filterDept === "" || u.department === filterDept;
     const matchesRole = filterRole === "" || u.role === filterRole;
     return matchesSearch && matchesDept && matchesRole;
   });
 
-  const isDark = currentTheme === "dark";
-
-  const tableTextStyle = {
-    fontSize: '0.9rem',
-    fontWeight: '500',
-    fontFamily: 'inherit'
-  };
-
   return (
     <div className="p-4">
-      {/* Header with Working "Add New User" Button */}
+      {/* Header with Aligned Button Sizing */}
       <div className="d-flex justify-content-between align-items-center mb-4">
         <h3 className={isDark ? "text-white" : "text-dark"}>User Management</h3>
-        <Button variant="primary" onClick={() => setShowModal(true)}>
-          <i className="fa fa-plus me-2"></i> Add New User
-        </Button>
+        
+        {myRole !== "employee" && (
+            <Col md={2} className="px-0 text-end">
+                <Button 
+                    variant="primary" 
+                    className="w-100 py-2 d-flex align-items-center justify-content-center" 
+                    onClick={() => setShowModal(true)}
+                    style={{ height: '45px' }} 
+                >
+                    <PersonAdd className="me-2" fontSize="small" /> Add New User
+                </Button>
+            </Col>
+        )}
       </div>
 
       {/* Filter Section */}
@@ -177,18 +195,18 @@ const UsersPage = ({ currentTheme }) => {
           </Form.Select>
         </Col>
         <Col md={2}>
-          <Button variant="outline-secondary" className="w-100" onClick={handleReset}>
-             Reset
+          <Button variant="outline-secondary" className="w-100 py-2 d-flex align-items-center justify-content-center" style={{ height: '45px' }} onClick={handleReset}>
+            <RestartAlt className="me-1" /> Reset
           </Button>
         </Col>
       </Row>
 
-      {/* User Table Section */}
+      {/* User Table */}
       <div className={`card shadow-sm border-0 ${isDark ? "bg-dark" : ""}`}>
         <div className="table-responsive">
           <Table hover className={`mb-0 ${isDark ? "table-dark" : ""}`}>
-            <thead className={isDark ? "table-dark" : "table-light"}>
-              <tr style={tableTextStyle}>
+            <thead>
+              <tr style={{ fontSize: '0.9rem', fontWeight: '500' }}>
                 <th className="ps-4">Full Name</th>
                 <th>Username</th>
                 <th>Role</th>
@@ -199,43 +217,41 @@ const UsersPage = ({ currentTheme }) => {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan="6" className="text-center py-4">Loading...</td></tr>
+                <tr><td colSpan="6" className="text-center py-4">Loading Users...</td></tr>
               ) : filteredUsers.length > 0 ? (
-                filteredUsers.map((user) => (
-                  <tr key={user._id} className="align-middle" style={tableTextStyle}>
-                    <td className="ps-4">{user.name}</td>
-                    <td>{user.username}</td>
-                    <td>{getRoleBadge(user.role)}</td>
-                    <td>{user.department || "General"}</td>
+                filteredUsers.map((u) => (
+                  <tr key={u._id} className="align-middle">
+                    <td className="ps-4">{u.name}</td>
+                    <td>{u.username}</td>
+                    <td>{getRoleBadge(u.role)}</td>
+                    <td>{u.department || "All"}</td>
                     <td className="text-center">
-                      <div style={{ cursor: 'pointer' }} onClick={() => toggleStatus(user._id)}>
-                        <Badge 
-                          bg={user.isActive !== false ? "success" : "danger"} 
-                          className="p-2 d-flex align-items-center justify-content-center mx-auto"
-                          style={{ width: '85px', fontSize: '0.8rem', fontWeight: '500' }}
-                        >
-                          {user.isActive !== false ? <><ToggleOn className="me-1"/> Active</> : <><ToggleOff className="me-1"/> Inactive</>}
-                        </Badge>
-                      </div>
+                      <Badge 
+                        bg={u.isActive !== false ? "success" : "danger"} 
+                        onClick={() => toggleStatus(u._id)}
+                        style={{ cursor: 'pointer', width: '85px', padding: '8px' }}
+                      >
+                        {u.isActive !== false ? "Active" : "Inactive"}
+                      </Badge>
                     </td>
                     <td className="text-center">
-                      <Button variant="outline-primary" size="sm" onClick={() => viewUserFiles(user.username)}>
+                      <Button variant="outline-primary" size="sm" onClick={() => window.open(`/user-files/${u.username}`, "_blank")}>
                         <Visibility fontSize="small" />
                       </Button>
                     </td>
                   </tr>
                 ))
               ) : (
-                <tr><td colSpan="6" className="text-center py-4">No records found.</td></tr>
+                <tr><td colSpan="6" className="text-center py-4 text-muted">No users found match your filters.</td></tr>
               )}
             </tbody>
           </Table>
         </div>
       </div>
 
-      {/* MODAL: Create New User (Fixed and Integrated) */}
+      {/* Modal with "All" Department logic */}
       <Modal show={showModal} onHide={() => setShowModal(false)} centered size="lg">
-        <div className={isDark ? "bg-dark text-white border border-secondary rounded" : ""}>
+        <div className={isDark ? "bg-dark text-white border border-secondary" : ""}>
           <Modal.Header closeButton closeVariant={isDark ? "white" : undefined}>
             <Modal.Title>Create New User</Modal.Title>
           </Modal.Header>
@@ -244,71 +260,34 @@ const UsersPage = ({ currentTheme }) => {
               <Row>
                 <Col md={6} className="mb-3">
                   <Form.Label>Full Name</Form.Label>
-                  <Form.Control 
-                    name="name" required 
-                    value={formData.name} 
-                    onChange={handleInputChange} 
-                    className={isDark ? "bg-dark text-white border-secondary" : ""} 
-                  />
+                  <Form.Control name="name" required value={formData.name} onChange={handleInputChange} />
                 </Col>
                 <Col md={6} className="mb-3">
                   <Form.Label>Office Email</Form.Label>
-                  <Form.Control 
-                    type="email" name="email" required 
-                    value={formData.email} 
-                    onChange={handleInputChange} 
-                    className={isDark ? "bg-dark text-white border-secondary" : ""} 
-                  />
+                  <Form.Control name="email" type="email" required value={formData.email} onChange={handleInputChange} />
                 </Col>
               </Row>
               <Row>
                 <Col md={6} className="mb-3">
                   <Form.Label>Department</Form.Label>
-                  <Form.Select 
-                    name="departmentId" required 
-                    value={formData.departmentId} 
-                    onChange={handleInputChange} 
-                    className={isDark ? "bg-dark text-white border-secondary" : ""}
-                  >
+                  <Form.Select name="departmentId" required value={formData.departmentId} onChange={handleInputChange}>
                     <option value="">Select Department</option>
+                    {(myRole === "admin" || myRole === "superadmin") && (
+                        <option value="ALL_DEPT">All (Admin/Super Admin)</option>
+                    )}
                     {deptList.map((d) => <option key={d._id} value={d._id}>{d.departmentName}</option>)}
                   </Form.Select>
                 </Col>
                 <Col md={6} className="mb-3">
                   <Form.Label>Assign Role</Form.Label>
-                  <Form.Select 
-                    name="role" required 
-                    value={formData.role} 
-                    onChange={handleInputChange} 
-                    className={isDark ? "bg-dark text-white border-secondary" : ""}
-                  >
-                    <option value="">Select Role</option>
-                    <option value="Employee">Employee</option>
-                    <option value="HOD">HOD</option>
-                    <option value="Admin">Admin</option>
-                    <option value="SuperAdmin">SuperAdmin</option>
+                  <Form.Select name="role" required value={formData.role} onChange={handleInputChange}>
+                    {renderRoleOptions()}
                   </Form.Select>
                 </Col>
               </Row>
               <Row>
-                <Col md={6} className="mb-3">
-                  <Form.Label>Username</Form.Label>
-                  <Form.Control 
-                    name="username" required 
-                    value={formData.username} 
-                    onChange={handleInputChange} 
-                    className={isDark ? "bg-dark text-white border-secondary" : ""} 
-                  />
-                </Col>
-                <Col md={6} className="mb-3">
-                  <Form.Label>Password</Form.Label>
-                  <Form.Control 
-                    type="password" name="password" required 
-                    value={formData.password} 
-                    onChange={handleInputChange} 
-                    className={isDark ? "bg-dark text-white border-secondary" : ""} 
-                  />
-                </Col>
+                <Col md={6} className="mb-3"><Form.Label>Username</Form.Label><Form.Control name="username" required value={formData.username} onChange={handleInputChange}/></Col>
+                <Col md={6} className="mb-3"><Form.Label>Password</Form.Label><Form.Control type="password" name="password" required value={formData.password} onChange={handleInputChange}/></Col>
               </Row>
             </Modal.Body>
             <Modal.Footer>

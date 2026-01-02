@@ -176,16 +176,13 @@ function UploadFilePage({ user }) {
     return (
         <div className="file-explorer-app-single-pane">
             <main className="main-content">
-                <header className="main-header d-flex justify-content-between align-items-center">
-                    <h1>📁 File Manager</h1>
-                    {/* 3. Add the Ventures Button */}
-                    <button 
-                        className="btn btn-primary" 
-                        onClick={() => navigate("/ventures")}
-                        style={{ borderRadius: '20px', padding: '8px 20px', fontWeight: '600' }}
-                    >
-                        <i className="fas fa-rocket me-2"></i> Ventures
-                    </button>
+                <header className="main-header mb-4">
+                    <div className="d-flex align-items-center">
+                        <h1 className="mb-0">📁 File Manager</h1>
+                        <span className="badge bg-info ms-3 text-uppercase">
+                            {user?.department || ""}
+                        </span>
+                    </div>
                 </header>
                 
                 <div className="main-actions-toolbar">
@@ -243,7 +240,7 @@ function UploadFilePage({ user }) {
                 </div>
 
                 <div className="list-toolbar">
-                    <h2>{currentFolderId === null ? "Root Folders" : "Folder Contents"}</h2>
+                    
                     <button onClick={handleTransferFiles} disabled={!showTransferButton} className="transfer-btn">
                         <i className="fas fa-share-square"></i> 
                         {showTransferButton ? ` Transfer Selected (${Object.values(filesToTransfer).filter(Boolean).length})` : ' Transfer Selected'}

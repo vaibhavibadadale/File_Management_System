@@ -11,6 +11,9 @@ function LoginPage({ onLogin }) {
   const [activeRole, setActiveRole] = useState("");
   const [isLoading, setIsLoading] = useState(false); 
   const [deptList, setDeptList] = useState([]);
+  
+  // Flag Logic: 0 = visible, 1 = hide
+  const [deptVisibilityFlag, setDeptVisibilityFlag] = useState(0);
 
   const navigate = useNavigate();
 
@@ -18,7 +21,8 @@ function LoginPage({ onLogin }) {
     const fetchDepartments = async () => {
       try {
         const response = await axios.get("http://localhost:5000/api/departments");
-        setDeptList(response.data);
+        const data = Array.isArray(response.data) ? response.data : response.data.departments || [];
+        setDeptList(data);
       } catch (error) {
         console.error("Error fetching departments for login:", error);
       }
@@ -27,20 +31,31 @@ function LoginPage({ onLogin }) {
   }, []);
 
   const handleUsernameChange = (e) => {
-    const value = e.target.value;
+    const value = e.target.value.toLowerCase();
     setUsername(value);
 
-    if (value.startsWith("e-")) setActiveRole("employee");
-    else if (value.startsWith("h-")) setActiveRole("hod");
-    else if (value.startsWith("a-")) setActiveRole("admin");
-    else if (value.startsWith("s-")) setActiveRole("superadmin");
-    else setActiveRole("");
+    if (value.startsWith("e-")) {
+      setActiveRole("employee");
+      setDeptVisibilityFlag(0);
+    } else if (value.startsWith("h-")) {
+      setActiveRole("hod");
+      setDeptVisibilityFlag(0);
+    } else if (value.startsWith("a-") || value.startsWith("s-")) {
+      // Logic for Admin and SuperAdmin
+      setActiveRole(value.startsWith("a-") ? "admin" : "superadmin");
+      setDeptVisibilityFlag(1); // Hide Department
+      setDepartment("All");     // System assigned
+    } else {
+      setActiveRole("");
+      setDeptVisibilityFlag(0);
+    }
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (!username || !password || department === "n") {
+    // Check validation: If flag is 0, department must be selected.
+    if (!username || !password || (deptVisibilityFlag === 0 && department === "n")) {
         alert("⚠️ Please fill in all fields!");
         return;
     }
@@ -52,12 +67,10 @@ function LoginPage({ onLogin }) {
             password: password
         });
 
-        // FIX: Extract user data and save to localStorage
         const userData = response.data.user || response.data;
-        localStorage.setItem("user", JSON.stringify(userData)); 
+        sessionStorage.setItem("userSession", JSON.stringify(userData)); 
 
         alert(`Welcome ${userData.name || username}! Redirecting...`);
-        
         onLogin(userData); 
         navigate("/"); 
 
@@ -68,7 +81,8 @@ function LoginPage({ onLogin }) {
     } finally {
         setIsLoading(false);
     }
-};
+  };
+
   return (
     <div className="login-container">
       <div className="login-card">
@@ -111,24 +125,27 @@ function LoginPage({ onLogin }) {
             </div>
           </div>
 
-          <div className="form-group">
-            <div className="input-wrapper select-wrapper">
-              <select 
-                id="department" 
-                value={department} 
-                onChange={(e) => setDepartment(e.target.value)} 
-                required 
-              >
-                <option value="n">Select Your Department</option>
-                {deptList.map((dept) => (
-                  <option key={dept._id} value={dept.departmentName}>
-                    {dept.departmentName}
-                  </option>
-                ))}
-              </select>
-              <label htmlFor="department">Department</label>
+          {/* FLAG CHECK: Only render if flag is 0 */}
+          {deptVisibilityFlag === 0 && (
+            <div className="form-group animate-fade-in">
+              <div className="input-wrapper select-wrapper">
+                <select 
+                  id="department" 
+                  value={department} 
+                  onChange={(e) => setDepartment(e.target.value)} 
+                  required 
+                >
+                  <option value="n">Select Your Department</option>
+                  {deptList.map((dept) => (
+                    <option key={dept._id} value={dept.departmentName}>
+                      {dept.departmentName}
+                    </option>
+                  ))}
+                </select>
+                <label htmlFor="department">Department</label>
+              </div>
             </div>
-          </div>
+          )}
 
           <div className="form-options">
             <div className="remember-wrapper">
