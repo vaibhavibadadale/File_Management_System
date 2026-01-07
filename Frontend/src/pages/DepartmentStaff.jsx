@@ -1,20 +1,19 @@
 import React, { useEffect, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom"; // Added useNavigate
+import { useParams, useNavigate } from "react-router-dom";
 import axios from "axios";
-import { Badge, Table, Card, Spinner, Button } from "react-bootstrap"; // Added Button
+import { Badge, Table, Card, Spinner, Button, Container } from "react-bootstrap";
 
 const DepartmentStaff = ({ currentTheme }) => {
     const { deptId } = useParams();
-    const navigate = useNavigate(); // Initialize navigate hook
-    const [staff, setStaff] = useState([]);
+    const navigate = useNavigate();
+    const [data, setData] = useState({ hods: [], employees: [] });
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
         const fetchStaff = async () => {
             try {
-                // Fetching users filtered by Department ID
-                const res = await axios.get(`http://localhost:5000/api/users/department/${deptId}`);
-                setStaff(res.data);
+                const res = await axios.get(`http://localhost:5000/api/users/dept/${deptId}`);
+                setData(res.data);
             } catch (err) {
                 console.error("Error fetching staff:", err);
             } finally {
@@ -26,15 +25,6 @@ const DepartmentStaff = ({ currentTheme }) => {
 
     const isDark = currentTheme === "dark";
 
-    // Filter Logic
-    const hods = staff.filter(u => ["HOD", "ADMIN", "SUPERADMIN"].includes(u.role?.toUpperCase()));
-    const employees = staff.filter(u => ["EMPLOYEE"].includes(u.role?.toUpperCase()));
-
-    // Redirect Function
-    const handleViewProfile = (username) => {
-        navigate(`/user-files/${username}`);
-    };
-
     if (loading) return (
         <div className="d-flex justify-content-center align-items-center vh-100">
             <Spinner animation="border" variant="primary" />
@@ -42,82 +32,102 @@ const DepartmentStaff = ({ currentTheme }) => {
     );
 
     return (
-        <div className={`container-fluid py-4 ${isDark ? "text-white" : "text-dark"}`}>
-            <div className="mb-4">
-                <h2>Department Directory</h2>
-                <p className="text-muted">Viewing all members assigned to this venture.</p>
+        <Container fluid className={`py-4 ${isDark ? "bg-dark text-white" : "bg-light"}`}>
+            <div className="d-flex justify-content-between align-items-center mb-4 bg-white p-3 rounded shadow-sm">
+                <div>
+                    <h2 className="fw-bold mb-0" style={{ color: "#333" }}>Department Directory</h2>
+                    <p className="text-muted mb-0">Managing assigned staff and leadership</p>
+                </div>
+                <Button variant="outline-primary" className="fw-bold px-4" onClick={() => navigate("/ventures")}>
+                    <i className="fas fa-arrow-left me-2"></i> Back to Ventures
+                </Button>
             </div>
-            
+
             {/* HOD SECTION */}
-            <section className="mb-5">
-                <h4 className={`border-bottom pb-2 mb-4 ${isDark ? "border-secondary" : ""}`}>
-                    Heads of Department (HOD)
+            <div className="mb-5">
+                <h4 className="fw-bold mb-3 d-flex align-items-center">
+                    <span className="bg-danger rounded-circle me-2" style={{ width: '10px', height: '10px' }}></span>
+                    Assigned Head of Department (HOD)
                 </h4>
-                {hods.length > 0 ? (
-                    <div className="row">
-                        {hods.map(h => (
+                <div className="row">
+                    {data.hods.length > 0 ? (
+                        data.hods.map(h => (
                             <div key={h._id} className="col-md-4 mb-3">
-                                <Card className={`h-100 shadow-sm ${isDark ? "bg-dark text-white border-secondary" : "border-primary"}`}>
-                                    <Card.Body className="d-flex flex-column">
-                                        <h5 className="mb-1">{h.name}</h5>
-                                        <p className={`${isDark ? "text-info" : "text-muted"} small mb-2`}>{h.email}</p>
-                                        <div className="mt-auto d-flex justify-content-between align-items-center">
-                                            <Badge bg={isDark ? "info" : "primary"}>{h.role}</Badge>
-                                            <Button 
-                                                variant={isDark ? "outline-info" : "outline-primary"} 
-                                                size="sm"
-                                                onClick={() => handleViewProfile(h.username)}
-                                            >
-                                                View Profile
-                                            </Button>
+                                <Card className="border-0 shadow-sm h-100">
+                                    <Card.Body className="p-4">
+                                        <div className="d-flex justify-content-between align-items-start mb-3">
+                                            <div>
+                                                <h5 className="fw-bold mb-0 text-capitalize">{h.name}</h5>
+                                                <small className="text-muted">{h.username}</small>
+                                            </div>
+                                            <Badge bg="danger" className="px-3 py-2 text-uppercase">HOD</Badge>
                                         </div>
+                                        <div className="mb-3 text-muted small">
+                                            <i className="fas fa-envelope me-2"></i>{h.email}
+                                        </div>
+                                        <Button 
+                                            variant="outline-primary" 
+                                            size="sm" 
+                                            className="w-100 mt-2 fw-bold"
+                                            // LOGIC: Navigate using unique database _id
+                                            onClick={() => navigate(`/user-files/${h._id}`)}
+                                        >
+                                            <i className="fas fa-eye me-2"></i> View Profile
+                                        </Button>
                                     </Card.Body>
                                 </Card>
                             </div>
-                        ))}
-                    </div>
-                ) : <div className="alert alert-secondary">No HOD assigned to this department.</div>}
-            </section>
+                        ))
+                    ) : (
+                        <div className="col-12 alert alert-secondary text-center">No HOD assigned.</div>
+                    )}
+                </div>
+            </div>
 
             {/* EMPLOYEES SECTION */}
-            <section>
-                <h4 className={`border-bottom pb-2 mb-4 ${isDark ? "border-secondary" : ""}`}>
-                    Employees
+            <div>
+                <h4 className="fw-bold mb-3 d-flex align-items-center">
+                    <span className="bg-primary rounded-circle me-2" style={{ width: '10px', height: '10px' }}></span>
+                    Department Employees
                 </h4>
-                {employees.length > 0 ? (
-                    <div className={`card shadow-sm border-0 ${isDark ? "bg-dark" : ""}`}>
-                        <Table hover responsive className={`mb-0 ${isDark ? "table-dark" : ""}`}>
-                            <thead>
-                                <tr>
-                                    <th className="ps-4">Employee ID</th>
-                                    <th>Full Name</th>
-                                    <th>Email Address</th>
-                                    <th className="text-end pe-4">Actions</th>
+                <div className="bg-white rounded shadow-sm overflow-hidden">
+                    <Table hover responsive className="mb-0">
+                        <thead className="bg-light">
+                            <tr>
+                                <th className="ps-4">Employee ID</th>
+                                <th>Full Name</th>
+                                <th>Role</th>
+                                <th>Email</th>
+                                <th className="text-end pe-4">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {data.employees.map(e => (
+                                <tr key={e._id} className="align-middle">
+                                    <td className="ps-4">
+                                        <span className="badge bg-light text-danger border">{e.employeeId}</span>
+                                    </td>
+                                    <td className="fw-bold text-capitalize">{e.name}</td>
+                                    <td><Badge bg="primary">Employee</Badge></td>
+                                    <td className="text-muted">{e.email}</td>
+                                    <td className="pe-4 text-end">
+                                        <Button 
+                                            variant="outline-primary" 
+                                            size="sm" 
+                                            className="rounded-circle"
+                                            // LOGIC: Navigate using unique database _id
+                                            onClick={() => navigate(`/user-files/${e._id}`)}
+                                        >
+                                            <i className="fas fa-eye"></i>
+                                        </Button>
+                                    </td>
                                 </tr>
-                            </thead>
-                            <tbody>
-                                {employees.map(e => (
-                                    <tr key={e._id}>
-                                        <td className="ps-4"><code>{e.employeeId}</code></td>
-                                        <td className="fw-bold">{e.name}</td>
-                                        <td>{e.email}</td>
-                                        <td className="text-end pe-4">
-                                            <Button 
-                                                variant={isDark ? "outline-info" : "outline-primary"} 
-                                                size="sm"
-                                                onClick={() => handleViewProfile(e.username)}
-                                            >
-                                                View Profile
-                                            </Button>
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </Table>
-                    </div>
-                ) : <div className="alert alert-secondary">No employees found for this department.</div>}
-            </section>
-        </div>
+                            ))}
+                        </tbody>
+                    </Table>
+                </div>
+            </div>
+        </Container>
     );
 };
 
