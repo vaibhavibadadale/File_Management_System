@@ -16,7 +16,7 @@ const VenturesPage = ({ currentTheme, user }) => { // 1. Pass 'user' as prop
     });
 
     const isDark = currentTheme === 'dark';
-
+ 
     // --- Role-Based Flags ---
     const userRole = (user?.role || "").toLowerCase();
     const isSuperAdmin = userRole === "superadmin";

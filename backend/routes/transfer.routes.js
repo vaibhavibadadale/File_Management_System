@@ -2,14 +2,22 @@ const express = require('express');
 const router = express.Router();
 const transferController = require('../controllers/transfer.controller');
 
-// Routes for sending
-router.post('/secure-send', transferController.secureTransfer);
-router.post('/transfer', transferController.secureTransfer);
+// DEBUG: This will show you exactly what is missing in your terminal
+console.log("Loading Transfer Routes. Available methods:", Object.keys(transferController));
 
-// Route for authority to see requests
+const safeInvoke = (methodName) => (req, res, next) => {
+    if (transferController[methodName]) {
+        return transferController[methodName](req, res, next);
+    }
+    console.error(`ERROR: Method ${methodName} is missing in transfer.controller.js`);
+    res.status(500).json({ error: `Server configuration error: ${methodName} missing` });
+};
+
+// Routes using the safe wrapper
+router.post('/secure-send', transferController.createRequest);
 router.get('/pending', transferController.getPendingTransfers);
-
-// Route for authority to approve
+// IMPORTANT: Use :transferId to match req.params.transferId in the controller
 router.put('/approve/:transferId', transferController.approveTransfer);
+router.put('/deny/:transferId', transferController.denyTransfer);
 
 module.exports = router;

@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { Modal, Button, Form, Table, Badge, Row, Col } from "react-bootstrap";
-import { Visibility, ToggleOn, ToggleOff, PersonAdd, RestartAlt } from "@mui/icons-material";
+import { Visibility, PersonAdd, RestartAlt } from "@mui/icons-material";
 import axios from "axios";
+import "../styles/VenturesPage.css"; // Ensure this is imported for the toggle styles
 
 const UsersPage = ({ currentTheme, user }) => {
   const [users, setUsers] = useState([]);
@@ -15,6 +16,9 @@ const UsersPage = ({ currentTheme, user }) => {
 
   const isDark = currentTheme === "dark";
   const myRole = (user?.role || "").toLowerCase();
+
+  // Role Logic: Only Admins/SuperAdmins can toggle user status
+  const canManageStatus = myRole === "admin" || myRole === "superadmin";
 
   const [formData, setFormData] = useState({
     name: "",
@@ -33,8 +37,6 @@ const UsersPage = ({ currentTheme, user }) => {
         axios.get("http://localhost:5000/api/users"),
         axios.get("http://localhost:5000/api/departments"),
       ]);
-      
-      console.log("Users received from server:", userRes.data);
       setUsers(userRes.data);
       setDeptList(deptRes.data);
     } catch (err) {
@@ -89,11 +91,17 @@ const UsersPage = ({ currentTheme, user }) => {
   };
 
   const toggleStatus = async (userId) => {
+    if (!canManageStatus) {
+      alert("Access Denied: Only Admins can change user status.");
+      return;
+    }
     try {
-      await axios.patch(`http://localhost:5000/api/users/toggle-status/${userId}`);
+      // Logic from VenturesPage: hits the toggle-status endpoint
+      await axios.put(`http://localhost:5000/api/users/status/${userId}`);
       fetchData(); 
     } catch (err) {
       console.error("Error toggling status:", err);
+      alert("Error updating status");
     }
   };
 
@@ -143,25 +151,22 @@ const UsersPage = ({ currentTheme, user }) => {
 
   return (
     <div className="p-4">
-      {/* Header with Aligned Button Sizing */}
       <div className="d-flex justify-content-between align-items-center mb-4">
         <h3 className={isDark ? "text-white" : "text-dark"}>User Management</h3>
-        
         {myRole !== "employee" && (
-            <Col md={2} className="px-0 text-end">
-                <Button 
-                    variant="primary" 
-                    className="w-100 py-2 d-flex align-items-center justify-content-center" 
-                    onClick={() => setShowModal(true)}
-                    style={{ height: '45px' }} 
-                >
-                    <PersonAdd className="me-2" fontSize="small" /> Add New User
-                </Button>
-            </Col>
+          <Col md={2} className="px-0 text-end">
+            <Button 
+              variant="primary" 
+              className="w-100 py-2 d-flex align-items-center justify-content-center" 
+              onClick={() => setShowModal(true)}
+              style={{ height: '45px' }} 
+            >
+              <PersonAdd className="me-2" fontSize="small" /> Add New User
+            </Button>
+          </Col>
         )}
       </div>
 
-      {/* Filter Section */}
       <Row className="mb-4 g-2 align-items-center">
         <Col md={4}>
           <Form.Control
@@ -201,7 +206,6 @@ const UsersPage = ({ currentTheme, user }) => {
         </Col>
       </Row>
 
-      {/* User Table */}
       <div className={`card shadow-sm border-0 ${isDark ? "bg-dark" : ""}`}>
         <div className="table-responsive">
           <Table hover className={`mb-0 ${isDark ? "table-dark" : ""}`}>
@@ -226,30 +230,39 @@ const UsersPage = ({ currentTheme, user }) => {
                     <td>{getRoleBadge(u.role)}</td>
                     <td>{u.department || "All"}</td>
                     <td className="text-center">
-                      <Badge 
-                        bg={u.isActive !== false ? "success" : "danger"} 
-                        onClick={() => toggleStatus(u._id)}
-                        style={{ cursor: 'pointer', width: '85px', padding: '8px' }}
-                      >
-                        {u.isActive !== false ? "Active" : "Inactive"}
-                      </Badge>
+                      {/* UPDATED: Status Toggle Container from VenturesPage logic */}
+                      <div className="d-flex justify-content-center">
+                        <div 
+                          className={`status-toggle-container ${u.isActive !== false ? "active" : "inactive"}`}
+                          onClick={() => toggleStatus(u._id)}
+                          style={{ cursor: canManageStatus ? 'pointer' : 'default' }}
+                        >
+                          <Badge 
+                            bg={u.isActive !== false ? "success" : "danger"} 
+                            className="status-badge d-flex align-items-center gap-1"
+                            style={{ width: '85px', padding: '8px' }}
+                          >
+                            <div className="toggle-dot"></div>
+                            {u.isActive !== false ? "Active" : "Inactive"}
+                          </Badge>
+                        </div>
+                      </div>
                     </td>
                     <td className="text-center">
-                      <Button variant="outline-primary" size="sm" onClick={() => window.open(`/user-files/${u.username}`, "_blank")}>
+                      <Button variant="outline-primary" size="sm" onClick={() => window.open(`/user-files/${u._id}`, "_blank")}>
                         <Visibility fontSize="small" />
                       </Button>
                     </td>
                   </tr>
                 ))
               ) : (
-                <tr><td colSpan="6" className="text-center py-4 text-muted">No users found match your filters.</td></tr>
+                <tr><td colSpan="6" className="text-center py-4 text-muted">No users found.</td></tr>
               )}
             </tbody>
           </Table>
         </div>
       </div>
 
-      {/* Modal with "All" Department logic */}
       <Modal show={showModal} onHide={() => setShowModal(false)} centered size="lg">
         <div className={isDark ? "bg-dark text-white border border-secondary" : ""}>
           <Modal.Header closeButton closeVariant={isDark ? "white" : undefined}>
