@@ -85,7 +85,6 @@ exports.getUsersByDepartment = async (req, res) => {
             ? new mongoose.Types.ObjectId(deptId) 
             : null;
 
-        // Fetch all users linked to this department
         const allUsers = await User.find({
             deletedAt: null,
             $or: [
@@ -95,11 +94,7 @@ exports.getUsersByDepartment = async (req, res) => {
             ]
         }).lean();
 
-        // STRICT FILTERING: 
-        // 1. Only users with role exactly "HOD" (ignores Admin/SuperAdmin)
         const hodsOnly = allUsers.filter(u => u.role?.toUpperCase() === "HOD");
-        
-        // 2. Only users with role exactly "EMPLOYEE"
         const employeesOnly = allUsers.filter(u => u.role?.toUpperCase() === "EMPLOYEE");
 
         res.json({
@@ -115,6 +110,7 @@ exports.getUsersByDepartment = async (req, res) => {
 exports.getUserById = async (req, res) => {
     try {
         const user = await User.findById(req.params.id).populate("departmentId");
+        if (!user) return res.status(404).json({ message: "User not found" });
         res.json(user);
     } catch (error) { res.status(500).json({ error: error.message }); }
 };
@@ -128,16 +124,31 @@ exports.toggleUserStatus = async (req, res) => {
     } catch (error) { res.status(500).json({ error: error.message }); }
 };
 
-// 8. GET USER FILES
+// 8. GET USER FILES (CORRECTED METADATA VERSION)
 exports.getUserFiles = async (req, res) => {
     try {
-        const folderPath = path.join(__dirname, "..", "uploads", req.params.username);
-        if (!fs.existsSync(folderPath)) return res.status(404).json({ message: "Not found" });
-        const files = fs.readdirSync(folderPath).map(file => ({ name: file }));
-        res.json(files);
-    } catch (error) { res.status(500).json({ error: error.message }); }
-};
+        const { username } = req.params;
+        const folderPath = path.join(__dirname, "..", "uploads", username);
+        
+        if (!fs.existsSync(folderPath)) {
+            return res.status(200).json([]); 
+        }
 
+        const filenames = fs.readdirSync(folderPath);
+        const filesWithMetadata = filenames.map(file => {
+            const filePath = path.join(folderPath, file);
+            const stats = fs.statSync(filePath); 
+            return {
+                name: file,
+                size: (stats.size / 1024).toFixed(2) + " KB", 
+                createdAt: stats.birthtime 
+            };
+        });
+        res.json(filesWithMetadata);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
 // 9. SOFT DELETE USER
 exports.softDeleteUser = async (req, res) => {
     try {

@@ -4,13 +4,13 @@ const UserSchema = new mongoose.Schema(
   {
     employeeId: { type: String, unique: true, required: true },
     name: { type: String, required: true },
-    username: { type: String, unique: true, required: true,lowercase: true,trim: true }, // Added for folder naming
+    username: { type: String, unique: true, required: true, lowercase: true, trim: true },
     email: { type: String, unique: true, required: true },
     password: { type: String, required: true },
-    department: { type: String }, // Added to store the selection from your form
+    department: { type: String }, 
     role: {
       type: String,
-      enum: ["Employee", "HOD", "Admin", "SuperAdmin", "EMPLOYEE", "ADMIN", "SUPER_ADMIN"], // Combined old and new
+      enum: ["Employee", "HOD", "Admin", "SuperAdmin", "EMPLOYEE", "ADMIN", "SUPER_ADMIN"],
       required: true
     },
     departmentId: {

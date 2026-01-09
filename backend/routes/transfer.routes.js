@@ -19,5 +19,6 @@ router.get('/pending', transferController.getPendingTransfers);
 // IMPORTANT: Use :transferId to match req.params.transferId in the controller
 router.put('/approve/:transferId', transferController.approveTransfer);
 router.put('/deny/:transferId', transferController.denyTransfer);
+router.get('/received', transferController.getReceivedFiles);
 
 module.exports = router;
