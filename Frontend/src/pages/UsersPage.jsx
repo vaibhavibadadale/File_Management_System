@@ -247,8 +247,13 @@ const UsersPage = ({ currentTheme, user }) => {
                       </div>
                     </td>
                     <td className="text-center">
+<<<<<<< HEAD
                       {/* UPDATED: Navigates using _id instead of username */}
                       <Button variant="outline-primary" size="sm" onClick={() => navigate(`/user-files/${u._id}`)}>
+=======
+                      {/* Navigate using username to match the folder structure */}
+                      <Button variant="outline-primary" size="sm" onClick={() => window.open(`/user-files/${u.username}`, "_blank")}>
+>>>>>>> sakshi-features
                         <Visibility fontSize="small" />
                       </Button>
                     </td>

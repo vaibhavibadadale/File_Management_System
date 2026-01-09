@@ -6,23 +6,8 @@ import { FaFileAlt, FaTrash, FaExchangeAlt, FaSearch, FaCheck, FaTimes, FaCommen
 const PendingRequestsPage = ({ user, currentTheme }) => {
     const [data, setData] = useState({ mainRequests: [], logs: [], totalMain: 0, totalLogs: 0 });
     const [loading, setLoading] = useState(true);
+    const [searchTerm, setSearchTerm] = useState("");
 
-    // 1. Fetch Department Names to show "IT Hub" instead of "65432..."
-    const fetchDeptNames = useCallback(async () => {
-        try {
-            const res = await axios.get("http://localhost:5000/api/departments");
-            const map = {};
-            if (Array.isArray(res.data)) {
-                res.data.forEach(d => {
-                    map[d._id] = d.name;
-                    if (d.code) map[d.code] = d.name;
-                });
-            }
-            setDeptMap(map);
-        } catch (err) { console.error("Dept Fetch Error", err); }
-    }, []);
-
-    // 2. Fetch Dashboard Data
     const fetchDashboard = useCallback(async () => {
         if (user.role.toUpperCase() === "EMPLOYEE") {
             setLoading(false);
@@ -31,8 +16,13 @@ const PendingRequestsPage = ({ user, currentTheme }) => {
 
         setLoading(true);
         try {
-            const res = await axios.get(`http://localhost:5000/api/transfer/pending`, {
-                params: { role: user.role, username: user.username, departmentId: user.departmentId }
+            const res = await axios.get("http://localhost:5000/api/requests/pending", {
+                params: { 
+                    role: user.role, 
+                    username: user.username, 
+                    departmentId: user.departmentId,
+                    search: searchTerm 
+                }
             });
             setData(res.data);
         } catch (err) {
@@ -45,103 +35,97 @@ const PendingRequestsPage = ({ user, currentTheme }) => {
     useEffect(() => { fetchDashboard(); }, [fetchDashboard]);
 
     const handleAction = async (id, action) => {
-        let denialComment = "";
+        let payload = {};
         
-        if (action === 'deny') {
-            denialComment = window.prompt("REASON FOR DENIAL:");
-            if (denialComment === null) return; // Cancelled
-            if (!denialComment.trim()) return alert("You must provide a reason for denial.");
-        } else {
-            if (!window.confirm("Are you sure you want to approve this request?")) return;
+        if (action === "deny") {
+            const comment = window.prompt("Please enter a reason for denial:");
+            if (comment === null) return; 
+            payload = { denialComment: comment };
         }
 
         try {
-            await axios.put(`http://localhost:5000/api/transfer/${action}/${id}`, { 
-                denialComment: denialComment || "" 
-            });
-            fetchDashboard(); // Refresh UI
-        } catch (err) {
-            console.error(err);
-            alert("Action failed: " + (err.response?.data?.error || "Server Error"));
+            // Corrected URL matching backend routes
+            await axios.put(`http://localhost:5000/api/requests/${action}/${id}`, payload);
+            fetchDashboard();
+        } catch (err) { 
+            console.error("Action failed", err);
+            alert(`Action ${action} failed`); 
         }
     };
 
-    // 4. Reusable Table Component
-    const TableComponent = ({ title, items = [], showActions, icon: Icon }) => (
-        <Card className={`mb-5 border-0 shadow-sm ${currentTheme === 'dark' ? 'bg-dark text-white shadow-none' : ''}`}>
-            <Card.Header className={`fw-bold py-3 d-flex align-items-center ${currentTheme === 'dark' ? 'bg-secondary text-white' : 'bg-light'}`}>
-                <Icon className="me-2"/> {title}
+    const renderTable = (title, items, isMainTable = false) => (
+        <Card className={`mb-5 ${currentTheme === "dark" ? "bg-dark text-white border-secondary" : "shadow-sm border-0"}`}>
+            <Card.Header className="bg-primary text-white d-flex justify-content-between align-items-center py-3">
+                <h5 className="mb-0">{title}</h5>
+                <InputGroup size="sm" style={{ width: "250px" }}>
+                    <InputGroup.Text><FaSearch /></InputGroup.Text>
+                    <Form.Control 
+                        placeholder="Search..." 
+                        onChange={(e) => setSearchTerm(e.target.value)} 
+                        className={currentTheme === "dark" ? "bg-secondary text-white border-0" : ""}
+                    />
+                </InputGroup>
             </Card.Header>
-            <Table responsive hover variant={currentTheme === 'dark' ? 'dark' : 'light'} className="mb-0">
-                <thead className="small text-uppercase">
-                    <tr>
+            <Table responsive hover variant={currentTheme === "dark" ? "dark" : "light"} className="mb-0">
+                <thead>
+                    <tr className="small text-uppercase text-muted border-bottom">
+                        <th>Dir</th>
+                        <th>Type</th>
                         <th>Sender</th>
-                        <th>Receiver</th>
-                        <th>Department</th>
-                        <th>File Details</th>
-                        <th>Reason / Notes</th>
+                        <th>Dept</th>
+                        <th>Files</th>
+                        <th>Reason / Comments</th>
                         <th>Status</th>
-                        {showActions && <th className="text-center">Action</th>}
+                        {isMainTable && <th className="text-center">Actions</th>}
                     </tr>
                 </thead>
                 <tbody>
-                    {items.length > 0 ? items.map(req => {
-                        const safeReason = req.reason || "No reason";
-                        const reasonParts = safeReason.split('|');
-                        const userNote = reasonParts[0];
-                        const adminNote = reasonParts.find(p => p.includes('DENIAL REASON:'));
-
-                        return (
-                            <tr key={req._id} className="align-middle">
-                                <td><span className="fw-bold text-primary">@{req.senderUsername}</span></td>
-                                <td>
-                                    {req.requestType === 'delete' ? (
-                                        <Badge bg="danger"><FaTimes className="me-1"/> DELETE</Badge>
-                                    ) : (
-                                        <Badge bg="secondary">@{req.recipientId?.username || "System"}</Badge>
-                                    )}
-                                </td>
-                                <td>
-                                    <Badge bg="info" className="text-dark py-1 px-2">
-                                        {deptMap[req.departmentId] || req.senderDepartment || "General"}
-                                    </Badge>
-                                </td>
-                                <td>
-                                    {req.fileIds?.map((f, i) => (
-                                        <div key={i} className="small text-truncate" style={{maxWidth: '180px'}}>
-                                            <FaFileAlt className="me-1 text-muted"/> {f.originalName || f.filename}
-                                        </div>
-                                    ))}
-                                </td>
-                                <td className="small" style={{maxWidth: '220px'}}>
-                                    <div className="text-wrap">{userNote}</div>
-                                    {adminNote && (
-                                        <div className="mt-1 p-1 rounded bg-danger bg-opacity-10 text-danger fw-bold border-start border-danger border-3">
-                                            {adminNote.replace('DENIAL REASON:', 'Denied:')}
-                                        </div>
-                                    )}
-                                </td>
-                                <td>
-                                    <Badge bg={req.status === 'completed' ? 'success' : req.status === 'denied' ? 'danger' : 'warning'}>
-                                        {req.status?.toUpperCase()}
-                                    </Badge>
-                                </td>
-                                {showActions && req.status === 'pending' && (
-                                    <td>
-                                        <div className="d-flex justify-content-center gap-2">
-                                            <Button variant="success" size="sm" onClick={() => handleAction(req._id, 'approve')} title="Approve">
-                                                <FaCheck/>
-                                            </Button>
-                                            <Button variant="danger" size="sm" onClick={() => handleAction(req._id, 'deny')} title="Deny">
-                                                <FaTimes/>
-                                            </Button>
-                                        </div>
-                                    </td>
+                    {items.length > 0 ? items.map((req) => (
+                        <tr key={req._id} className="align-middle">
+                            <td>{req.senderUsername === user.username ? "⬇️" : "⬆️"}</td>
+                            <td>{req.requestType === "delete" ? <FaTrash className="text-danger"/> : <FaExchangeAlt className="text-warning"/>}</td>
+                            <td><b>@{req.senderUsername}</b></td>
+                            <td><Badge bg="info">{req.senderDepartment || "General"}</Badge></td>
+                            <td>
+                                {req.fileIds?.map((f, i) => (
+                                    <div key={i} className="small text-truncate" style={{maxWidth: "150px"}}>
+                                        <FaFileAlt className="me-1 text-primary"/>{f.originalName || f.folderName}
+                                    </div>
+                                ))}
+                            </td>
+                            <td className="small">
+                                {/* The main reason field */}
+                                <div className="text-muted">{req.reason || "No original reason"}</div>
+                                
+                                {/* Fix for Red Denial Text: Ensure we check both reason AND denialComment */}
+                                {req.status === "denied" && (
+                                    <div className="text-danger mt-1 fw-bold">
+                                        <FaCommentAlt size={10} className="me-1"/>
+                                        {/* This checks if the comment is stored in a separate field or inside the reason */}
+                                        Denied: {req.denialComment || (req.reason?.includes("DENIED:") ? req.reason.split("DENIED:")[1] : "Action Rejected")}
+                                    </div>
                                 )}
-                            </tr>
-                        );
-                    }) : (
-                        <tr><td colSpan="7" className="text-center py-5 text-muted">No records found in this category.</td></tr>
+                            </td>
+                            <td>
+                                <Badge bg={req.status === "completed" ? "success" : req.status === "denied" ? "danger" : "warning"}>
+                                    {req.status.toUpperCase()}
+                                </Badge>
+                            </td>
+                            {isMainTable && (
+                                <td className="text-center">
+                                    {req.status === "pending" && req.senderUsername !== user.username ? (
+                                        <div className="d-flex gap-2 justify-content-center">
+                                            <Button size="sm" variant="success" onClick={() => handleAction(req._id, "approve")}><FaCheck /></Button>
+                                            <Button size="sm" variant="danger" onClick={() => handleAction(req._id, "deny")}><FaTimes /></Button>
+                                        </div>
+                                    ) : (
+                                        <span className="text-muted small">No Action Required</span>
+                                    )}
+                                </td>
+                            )}
+                        </tr>
+                    )) : (
+                        <tr><td colSpan="8" className="text-center py-4 text-muted">No records found</td></tr>
                     )}
                 </tbody>
             </Table>
@@ -160,43 +144,14 @@ const PendingRequestsPage = ({ user, currentTheme }) => {
     }
 
     return (
-        <Container fluid className="py-4 px-lg-5">
-            <Row className="mb-4 align-items-center">
-                <Col>
-                    <h2 className="fw-bold mb-0">File Governance & Logs</h2>
-                    <p className="text-muted small">Manage file ownership transfers and deletion approvals.</p>
-                </Col>
-                <Col xs="auto">
-                    <Button variant="outline-primary" onClick={fetchDashboard} className="rounded-pill px-4">
-                        <FaSync className="me-2" /> Refresh Dashboard
-                    </Button>
-                </Col>
-            </Row>
-
-            {/* Section 1: Pending Approvals (Visible to HOD/Admin) */}
-            {user.role !== 'EMPLOYEE' && (
-                <TableComponent 
-                    title="Incoming Pending Requests" 
-                    items={data.requestsToApprove} 
-                    showActions={true} 
-                    icon={FaInbox}
-                />
-            )}
-
-            {/* Section 2: User's Own Sent Requests */}
-            <TableComponent 
-                title="My Sent History" 
-                items={data.mySentRequests} 
-                icon={FaPaperPlane}
-            />
-
-            {/* Section 3: Full Audit Logs (Visible to Admin Only) */}
-            {['ADMIN', 'SUPER_ADMIN'].includes(user.role?.toUpperCase()) && (
-                <TableComponent 
-                    title="Global Audit Logs (System History)" 
-                    items={data.logs} 
-                    icon={FaHistory}
-                />
+        <Container fluid className="mt-4 px-4">
+            {loading ? (
+                <div className="text-center py-5"><Spinner animation="border" variant="primary" /></div>
+            ) : (
+                <>
+                    {renderTable("Pending Approvals", data.mainRequests, true)}
+                    {renderTable("Global History & Audit Logs", data.logs, false)}
+                </>
             )}
         </Container>
     );

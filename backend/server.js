@@ -5,9 +5,11 @@ const cors = require("cors");
 const path = require("path");
 const fs = require("fs");
 
+// Models (Required for Migration)
+const Request = require("./models/Request");
+const User = require("./models/User");
+
 const app = express();
-// 1. Correct import
-const requestRoutes = require('./routes/request.routes'); 
 
 // ================= CONFIG =================
 const PORT = process.env.PORT || 5000;
@@ -34,22 +36,16 @@ app.use(
 // ================= STATIC FILES =================
 app.use("/uploads", express.static(UPLOADS_DIR));
 
-// ================= ROUTES =================
-app.use("/api/users", require("./routes/user.routes"));
-app.use("/api/departments", require("./routes/department.routes"));
-app.use("/api/folders", require("./routes/folder.routes"));
-app.use("/api/files", require("./routes/file.routes"));
-app.use("/api/logs", require("./routes/log.routes"));
-app.use("/api/transfer", require("./routes/transfer.routes"));
-
-// 2. ADD THIS LINE HERE:
-app.use("/api/requests", requestRoutes); 
-
-// ================= DATABASE =================
+// ================= DATABASE CONNECTION =================
 const connectWithRetry = () => {
   mongoose
     .connect(MONGO_URI)
-    .then(() => console.log("✅ MongoDB connected to Aaryans File Management System"))
+    .then(async () => {
+      console.log("✅ MongoDB connected to Aaryans File Management System");
+      
+      // RUN MIGRATION ONCE TO FIX INVISIBLE HISTORY
+      await runDataMigration();
+    })
     .catch((err) => {
       console.error("❌ MongoDB connection error:", err.message);
       console.log("🔁 Retrying MongoDB connection in 5 seconds...");
@@ -57,7 +53,36 @@ const connectWithRetry = () => {
     });
 };
 
+// ================= DATA MIGRATION LOGIC =================
+// This fixes older records that don't have the 'senderRole' field
+const runDataMigration = async () => {
+    try {
+        const requestsToFix = await Request.find({ senderRole: { $exists: false } });
+        if (requestsToFix.length > 0) {
+            console.log(`🔄 Migrating ${requestsToFix.length} old records...`);
+            for (let req of requestsToFix) {
+                const user = await User.findOne({ username: req.senderUsername });
+                if (user) {
+                    await Request.findByIdAndUpdate(req._id, { senderRole: user.role });
+                }
+            }
+            console.log("✅ Migration Complete: All history is now visible to SuperAdmin.");
+        }
+    } catch (err) {
+        console.error("❌ Migration failed:", err.message);
+    }
+};
+
 connectWithRetry();
+
+// ================= ROUTES =================
+app.use("/api/users", require("./routes/user.routes"));
+app.use("/api/departments", require("./routes/department.routes"));
+app.use("/api/folders", require("./routes/folder.routes"));
+app.use("/api/files", require("./routes/file.routes"));
+app.use("/api/logs", require("./routes/log.routes"));
+app.use("/api/transfer", require("./routes/transfer.routes"));
+app.use("/api/requests", require("./routes/request.routes"));
 
 // ================= DEFAULT ROUTE =================
 app.get("/", (req, res) => {
