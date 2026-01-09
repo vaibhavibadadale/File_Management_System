@@ -5,7 +5,8 @@ import { Visibility, Person, Business, Email, Badge as BadgeIcon, Search, ArrowB
 import axios from "axios";
 
 const UserFilesView = ({ currentTheme }) => {
-  const { username } = useParams();
+  // Receives the Database _id from the URL
+  const { userId } = useParams(); 
   const navigate = useNavigate();
   const [files, setFiles] = useState([]);
   const [userData, setUserData] = useState(null);
@@ -18,95 +19,114 @@ const UserFilesView = ({ currentTheme }) => {
     const fetchUserDataAndLogs = async () => {
       try {
         setLoading(true);
-        // 1. Fetch File Logs from physical directory
-        const fileRes = await axios.get(`http://localhost:5000/api/users/files/${username}`);
-        setFiles(fileRes.data);
+        
+        // 1. Fetch user by ID to get their profile (specifically the username)
+        const userRes = await axios.get(`http://localhost:5000/api/users/${userId}`);
+        const profile = userRes.data;
+        
+        if (profile) {
+          setUserData(profile);
 
-        // 2. Fetch User Profile Details
-        const userRes = await axios.get("http://localhost:5000/api/users");
-        const profile = userRes.data.find((u) => u.username === username);
-        setUserData(profile);
+          // 2. Fetch files using the username (the backend uses username for folder names)
+          const fileRes = await axios.get(`http://localhost:5000/api/users/files/${profile.username}`);
+          setFiles(Array.isArray(fileRes.data) ? fileRes.data : []);
+        }
       } catch (err) {
         console.error("Error fetching user audit data:", err);
       } finally {
         setLoading(false);
       }
     };
-    fetchUserDataAndLogs();
-  }, [username]);
 
-  // Handle viewing the file
+    if (userId) {
+      fetchUserDataAndLogs();
+    }
+  }, [userId]);
+
   const handleViewFile = (fileName) => {
-    const fileUrl = `http://localhost:5000/uploads/${username}/${fileName}`;
+    // Links to the physical storage folder based on the username
+    const fileUrl = `http://localhost:5000/uploads/${userData?.username}/${fileName}`;
     window.open(fileUrl, "_blank");
   };
 
-  // Filter files based on search input
   const filteredFiles = files.filter((file) =>
-    file.name.toLowerCase().includes(searchTerm.toLowerCase())
+    file.name?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   return (
     <Container fluid className={`py-4 ${isDark ? "bg-secondary" : "bg-light"}`} style={{ minHeight: "100vh" }}>
       <div className="container">
-        {/* Navigation & Back Button */}
         <Button 
           variant={isDark ? "outline-light" : "outline-primary"} 
           className="mb-4" 
-          onClick={() => window.close()}
+          onClick={() => navigate(-1)}
         >
-          <ArrowBack className="me-2" /> Back to User Management
+          <ArrowBack className="me-2" /> Back
         </Button>
 
-        {/* --- SECTION 1: USER INFORMATION PROFILE --- */}
+        {/* SECTION 1: DATABASE USER PROFILE INFORMATION */}
         <Card className={`mb-4 shadow-sm border-0 ${isDark ? "bg-dark text-white" : ""}`}>
           <Card.Body className="p-4">
-            <Row className="align-items-center">
-              <Col md={2} className="text-center border-end">
-                <div className="bg-primary bg-opacity-10 rounded-circle d-inline-flex p-4 mb-2">
-                  <Person style={{ fontSize: "60px", color: "#0d6efd" }} />
-                </div>
-                <h5 className="mb-0 fw-bold">{userData?.name || "System User"}</h5>
-                <small className="text-muted">@{username}</small>
-              </Col>
-              
-              <Col md={10} className="ps-md-5">
-                <h4 className="mb-4">User Profile Details</h4>
-                <Row>
-                  <Col md={4} className="mb-3">
-                    <div className="d-flex align-items-center">
-                      <Email className="text-primary me-2" />
-                      <div>
-                        <small className="text-muted d-block">Email Address</small>
-                        <strong>{userData?.email || "N/A"}</strong>
+            {userData ? (
+              <Row className="align-items-center">
+                <Col md={2} className="text-center border-end">
+                  <div className="bg-primary bg-opacity-10 rounded-circle d-inline-flex p-4 mb-2">
+                    <Person style={{ fontSize: "60px", color: "#0d6efd" }} />
+                  </div>
+                  <h5 className="mb-0 fw-bold">{userData.name}</h5>
+                  <small className="text-muted">@{userData.username}</small>
+                </Col>
+                
+                <Col md={10} className="ps-md-5">
+                  <h4 className="mb-4">Database Profile Details</h4>
+                  <Row>
+                    <Col md={4} className="mb-3">
+                      <div className="d-flex align-items-center">
+                        <Email className="text-primary me-2" />
+                        <div>
+                          <small className="text-muted d-block">Office Email</small>
+                          <strong>{userData.email || "No Email Found"}</strong>
+                        </div>
                       </div>
-                    </div>
-                  </Col>
-                  <Col md={4} className="mb-3">
-                    <div className="d-flex align-items-center">
-                      <BadgeIcon className="text-primary me-2" />
-                      <div>
-                        <small className="text-muted d-block">Designated Role</small>
-                        <Badge bg="info" className="text-dark">{userData?.role || "Employee"}</Badge>
+                    </Col>
+                    <Col md={4} className="mb-3">
+                      <div className="d-flex align-items-center">
+                        <BadgeIcon className="text-primary me-2" />
+                        <div>
+                          <small className="text-muted d-block">System Role</small>
+                          <Badge bg="info" className="text-dark">{userData.role || "Employee"}</Badge>
+                        </div>
                       </div>
-                    </div>
-                  </Col>
-                  <Col md={4} className="mb-3">
-                    <div className="d-flex align-items-center">
-                      <Business className="text-primary me-2" />
-                      <div>
-                        <small className="text-muted d-block">Department</small>
-                        <strong>{userData?.department || "General"}</strong>
+                    </Col>
+                    <Col md={4} className="mb-3">
+                      <div className="d-flex align-items-center">
+                        <Business className="text-primary me-2" />
+                        <div>
+                          <small className="text-muted d-block">Department</small>
+                          <strong>{userData.department || userData.departmentId?.departmentName || "General"}</strong>
+                        </div>
                       </div>
-                    </div>
-                  </Col>
-                </Row>
-              </Col>
-            </Row>
+                    </Col>
+                  </Row>
+                  <Row>
+                    <Col md={4}>
+                        <small className="text-muted d-block">Employee ID</small>
+                        <span className="fw-bold">{userData.employeeId || "N/A"}</span>
+                    </Col>
+                    <Col md={4}>
+                        <small className="text-muted d-block">Account Status</small>
+                        <Badge bg={userData.isActive !== false ? "success" : "danger"}>
+                            {userData.isActive !== false ? "Active" : "Inactive"}
+                        </Badge>
+                    </Col>
+                  </Row>
+                </Col>
+              </Row>
+            ) : !loading && <p className="text-center">User profile not found.</p>}
           </Card.Body>
         </Card>
 
-        {/* --- SECTION 2: FILE LOGS WITH SEARCH --- */}
+        {/* SECTION 2: SERVER STORAGE FILE LOGS */}
         <Card className={`shadow-sm border-0 ${isDark ? "bg-dark text-white" : ""}`}>
           <Card.Header className={`py-3 bg-white ${isDark ? "bg-dark border-secondary" : ""}`}>
             <Row className="align-items-center">
@@ -137,7 +157,7 @@ const UserFilesView = ({ currentTheme }) => {
             {loading ? (
               <div className="text-center py-5">
                 <Spinner animation="border" variant="primary" />
-                <p className="mt-3">Scanning storage directory...</p>
+                <p className="mt-3">Fetching database records and scanning storage...</p>
               </div>
             ) : (
               <div className="table-responsive">
@@ -157,15 +177,22 @@ const UserFilesView = ({ currentTheme }) => {
                         <tr key={idx} className="align-middle">
                           <td className="ps-4 text-muted">{idx + 1}</td>
                           <td className="fw-bold">{file.name}</td>
-                          <td><Badge bg="secondary" text="white">{file.size}</Badge></td>
-                          <td>{new Date(file.createdAt).toLocaleString()}</td>
+                          <td>
+                            <Badge bg="secondary" text="white">
+                              {file.size || "Unknown"}
+                            </Badge>
+                          </td>
+                          <td>
+                             {file.createdAt ? new Date(file.createdAt).toLocaleString() : "N/A"}
+                          </td>
                           <td className="text-center">
                             <Button 
                               variant="outline-primary" 
                               size="sm" 
                               onClick={() => handleViewFile(file.name)}
+                              title="View File"
                             >
-                              <Visibility size={16} className="me-1" /> View
+                              <Visibility fontSize="small" />
                             </Button>
                           </td>
                         </tr>
@@ -173,7 +200,7 @@ const UserFilesView = ({ currentTheme }) => {
                     ) : (
                       <tr>
                         <td colSpan="5" className="text-center py-5 text-muted">
-                          No matching files found in the directory.
+                          No files found in this user's directory.
                         </td>
                       </tr>
                     )}

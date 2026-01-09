@@ -3,33 +3,14 @@ const mongoose = require("mongoose");
 const FolderSchema = new mongoose.Schema(
   {
     folderName: { type: String, required: true },
-
-    predictedId: {
-      type: String,
-      required: true,
-      unique: true
-    },
-
-    departmentId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Department",
-      required: true
-    },
-
-    createdBy: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-      required: true
-    },
-
-    parentFolderId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Folder",
-      default: null
-    },
-
-   path: { type: String },
-
+    predictedId: { type: String, required: true, unique: true },
+    departmentId: { type: mongoose.Schema.Types.ObjectId, ref: "Department", required: true },
+    createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+    parentFolderId: { type: mongoose.Schema.Types.ObjectId, ref: "Folder", default: null },
+    path: { type: String },
+    // Array of User IDs who have been granted access via transfer
+    sharedWith: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }], 
+    isStarred: { type: Boolean, default: false },
     deletedAt: { type: Date, default: null }
   },
   { timestamps: true }
@@ -40,6 +21,4 @@ FolderSchema.pre(/^find/, function () {
   this.where({ deletedAt: null });
 });
 
-
-module.exports =
-  mongoose.models.Folder || mongoose.model("Folder", FolderSchema);
+module.exports = mongoose.models.Folder || mongoose.model("Folder", FolderSchema);

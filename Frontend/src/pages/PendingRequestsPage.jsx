@@ -8,7 +8,6 @@ const PendingRequestsPage = ({ user, currentTheme }) => {
     const [deptMap, setDeptMap] = useState({});
     const [loading, setLoading] = useState(true);
 
-    // 1. Fetch Department Names to show "IT Hub" instead of "65432..."
     const fetchDeptNames = useCallback(async () => {
         try {
             const res = await axios.get("http://localhost:5000/api/departments");
@@ -23,12 +22,15 @@ const PendingRequestsPage = ({ user, currentTheme }) => {
         } catch (err) { console.error("Dept Fetch Error", err); }
     }, []);
 
-    // 2. Fetch Dashboard Data
     const fetchDashboard = useCallback(async () => {
         setLoading(true);
         try {
             const res = await axios.get(`http://localhost:5000/api/transfer/pending`, {
-                params: { role: user.role, username: user.username, departmentId: user.departmentId }
+                params: { 
+                    role: user.role, 
+                    username: user.username, 
+                    departmentId: user.departmentId 
+                }
             });
             setData(res.data || { mySentRequests: [], requestsToApprove: [], logs: [] });
         } catch (err) { console.error("Dashboard Fetch Error", err); }
@@ -42,13 +44,11 @@ const PendingRequestsPage = ({ user, currentTheme }) => {
         }
     }, [user, fetchDashboard, fetchDeptNames]);
 
-    // 3. Handle Approve/Deny
     const handleAction = async (id, action) => {
         let denialComment = "";
-        
         if (action === 'deny') {
             denialComment = window.prompt("REASON FOR DENIAL:");
-            if (denialComment === null) return; // Cancelled
+            if (denialComment === null) return;
             if (!denialComment.trim()) return alert("You must provide a reason for denial.");
         } else {
             if (!window.confirm("Are you sure you want to approve this request?")) return;
@@ -58,94 +58,132 @@ const PendingRequestsPage = ({ user, currentTheme }) => {
             await axios.put(`http://localhost:5000/api/transfer/${action}/${id}`, { 
                 denialComment: denialComment || "" 
             });
-            fetchDashboard(); // Refresh UI
+            fetchDashboard();
         } catch (err) {
             console.error(err);
             alert("Action failed: " + (err.response?.data?.error || "Server Error"));
         }
     };
 
-    // 4. Reusable Table Component
-    const TableComponent = ({ title, items = [], showActions, icon: Icon }) => (
-        <Card className={`mb-5 border-0 shadow-sm ${currentTheme === 'dark' ? 'bg-dark text-white shadow-none' : ''}`}>
-            <Card.Header className={`fw-bold py-3 d-flex align-items-center ${currentTheme === 'dark' ? 'bg-secondary text-white' : 'bg-light'}`}>
-                <Icon className="me-2"/> {title}
-            </Card.Header>
-            <Table responsive hover variant={currentTheme === 'dark' ? 'dark' : 'light'} className="mb-0">
-                <thead className="small text-uppercase">
-                    <tr>
-                        <th>Sender</th>
-                        <th>Receiver</th>
-                        <th>Department</th>
-                        <th>File Details</th>
-                        <th>Reason / Notes</th>
-                        <th>Status</th>
-                        {showActions && <th className="text-center">Action</th>}
-                    </tr>
-                </thead>
-                <tbody>
-                    {items.length > 0 ? items.map(req => {
-                        const safeReason = req.reason || "No reason";
-                        const reasonParts = safeReason.split('|');
-                        const userNote = reasonParts[0];
-                        const adminNote = reasonParts.find(p => p.includes('DENIAL REASON:'));
+    /**
+     * HIERARCHICAL FILTERING LOGIC
+     * Determines if the current user has the authority to approve a request
+     */
+    const canIApproveThis = (request) => {
+        const myRole = user.role?.toUpperCase();
+        const senderRole = request.senderRole?.toUpperCase() || 'EMPLOYEE';
 
-                        return (
-                            <tr key={req._id} className="align-middle">
-                                <td><span className="fw-bold text-primary">@{req.senderUsername}</span></td>
-                                <td>
-                                    {req.requestType === 'delete' ? (
-                                        <Badge bg="danger"><FaTimes className="me-1"/> DELETE</Badge>
-                                    ) : (
-                                        <Badge bg="secondary">@{req.recipientId?.username || "System"}</Badge>
-                                    )}
-                                </td>
-                                <td>
-                                    <Badge bg="info" className="text-dark py-1 px-2">
-                                        {deptMap[req.departmentId] || req.senderDepartment || "General"}
-                                    </Badge>
-                                </td>
-                                <td>
-                                    {req.fileIds?.map((f, i) => (
-                                        <div key={i} className="small text-truncate" style={{maxWidth: '180px'}}>
-                                            <FaFileAlt className="me-1 text-muted"/> {f.originalName || f.filename}
-                                        </div>
-                                    ))}
-                                </td>
-                                <td className="small" style={{maxWidth: '220px'}}>
-                                    <div className="text-wrap">{userNote}</div>
-                                    {adminNote && (
-                                        <div className="mt-1 p-1 rounded bg-danger bg-opacity-10 text-danger fw-bold border-start border-danger border-3">
-                                            {adminNote.replace('DENIAL REASON:', 'Denied:')}
-                                        </div>
-                                    )}
-                                </td>
-                                <td>
-                                    <Badge bg={req.status === 'completed' ? 'success' : req.status === 'denied' ? 'danger' : 'warning'}>
-                                        {req.status?.toUpperCase()}
-                                    </Badge>
-                                </td>
-                                {showActions && req.status === 'pending' && (
+        // 1. Super Admin is the ultimate boss
+        if (myRole === 'SUPER_ADMIN') return true;
+
+        // 2. Admin can approve HOD and Employee
+        if (myRole === 'ADMIN') {
+            return senderRole === 'HOD' || senderRole === 'EMPLOYEE';
+        }
+
+        // 3. HOD can only approve Employee
+        if (myRole === 'HOD') {
+            return senderRole === 'EMPLOYEE';
+        }
+
+        // 4. Employees cannot approve anything
+        return false;
+    };
+
+    const TableComponent = ({ title, items = [], showActions, icon: Icon, isApprovalTable }) => {
+        
+        // Filter items if this is the Approval Table based on Hierarchy
+        const filteredItems = isApprovalTable 
+            ? items.filter(req => canIApproveThis(req)) 
+            : items;
+
+        return (
+            <Card className={`mb-5 border-0 shadow-sm ${currentTheme === 'dark' ? 'bg-dark text-white shadow-none' : ''}`}>
+                <Card.Header className={`fw-bold py-3 d-flex align-items-center ${currentTheme === 'dark' ? 'bg-secondary text-white' : 'bg-light'}`}>
+                    <Icon className="me-2"/> {title} 
+                    {isApprovalTable && <Badge bg="primary" className="ms-2">{filteredItems.length}</Badge>}
+                </Card.Header>
+                <Table responsive hover variant={currentTheme === 'dark' ? 'dark' : 'light'} className="mb-0">
+                    <thead className="small text-uppercase">
+                        <tr>
+                            <th>Sender</th>
+                            <th>Receiver</th>
+                            <th>Department</th>
+                            <th>File Details</th>
+                            <th>Reason / Notes</th>
+                            <th>Status</th>
+                            {showActions && <th className="text-center">Action</th>}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {filteredItems.length > 0 ? filteredItems.map(req => {
+                            const safeReason = req.reason || "No reason";
+                            const reasonParts = safeReason.split('|');
+                            const userNote = reasonParts[0];
+                            const adminNote = reasonParts.find(p => p.includes('DENIAL REASON:'));
+
+                            return (
+                                <tr key={req._id} className="align-middle">
                                     <td>
-                                        <div className="d-flex justify-content-center gap-2">
-                                            <Button variant="success" size="sm" onClick={() => handleAction(req._id, 'approve')} title="Approve">
-                                                <FaCheck/>
-                                            </Button>
-                                            <Button variant="danger" size="sm" onClick={() => handleAction(req._id, 'deny')} title="Deny">
-                                                <FaTimes/>
-                                            </Button>
+                                        <div className="d-flex flex-column">
+                                            <span className="fw-bold text-primary">@{req.senderUsername}</span>
+                                            <small className="text-muted" style={{fontSize: '10px'}}>{req.senderRole}</small>
                                         </div>
                                     </td>
-                                )}
-                            </tr>
-                        );
-                    }) : (
-                        <tr><td colSpan="7" className="text-center py-5 text-muted">No records found in this category.</td></tr>
-                    )}
-                </tbody>
-            </Table>
-        </Card>
-    );
+                                    <td>
+                                        {req.requestType === 'delete' ? (
+                                            <Badge bg="danger"><FaTimes className="me-1"/> DELETE</Badge>
+                                        ) : (
+                                            <Badge bg="secondary">@{req.recipientId?.username || "System"}</Badge>
+                                        )}
+                                    </td>
+                                    <td>
+                                        <Badge bg="info" className="text-dark py-1 px-2">
+                                            {deptMap[req.departmentId] || req.senderDepartment || "General"}
+                                        </Badge>
+                                    </td>
+                                    <td>
+                                        {req.fileIds?.map((f, i) => (
+                                            <div key={i} className="small text-truncate" style={{maxWidth: '180px'}}>
+                                                <FaFileAlt className="me-1 text-muted"/> {f.originalName || f.filename}
+                                            </div>
+                                        ))}
+                                    </td>
+                                    <td className="small" style={{maxWidth: '220px'}}>
+                                        <div className="text-wrap">{userNote}</div>
+                                        {adminNote && (
+                                            <div className="mt-1 p-1 rounded bg-danger bg-opacity-10 text-danger fw-bold border-start border-danger border-3">
+                                                {adminNote.replace('DENIAL REASON:', 'Denied:')}
+                                            </div>
+                                        )}
+                                    </td>
+                                    <td>
+                                        <Badge bg={req.status === 'completed' ? 'success' : req.status === 'denied' ? 'danger' : 'warning'}>
+                                            {req.status?.toUpperCase()}
+                                        </Badge>
+                                    </td>
+                                    {showActions && req.status === 'pending' && (
+                                        <td>
+                                            <div className="d-flex justify-content-center gap-2">
+                                                <Button variant="success" size="sm" onClick={() => handleAction(req._id, 'approve')} title="Approve">
+                                                    <FaCheck/>
+                                                </Button>
+                                                <Button variant="danger" size="sm" onClick={() => handleAction(req._id, 'deny')} title="Deny">
+                                                    <FaTimes/>
+                                                </Button>
+                                            </div>
+                                        </td>
+                                    )}
+                                </tr>
+                            );
+                        }) : (
+                            <tr><td colSpan="7" className="text-center py-5 text-muted">No pending approvals for your level.</td></tr>
+                        )}
+                    </tbody>
+                </Table>
+            </Card>
+        );
+    };
 
     if (loading) return (
         <div className="d-flex flex-column align-items-center justify-content-center" style={{height: '60vh'}}>
@@ -159,7 +197,10 @@ const PendingRequestsPage = ({ user, currentTheme }) => {
             <Row className="mb-4 align-items-center">
                 <Col>
                     <h2 className="fw-bold mb-0">File Governance & Logs</h2>
-                    <p className="text-muted small">Manage file ownership transfers and deletion approvals.</p>
+                    <p className="text-muted small">
+                        Logged in as: <strong className="text-primary">{user.username}</strong> 
+                        <Badge bg="dark" className="ms-2">{user.role}</Badge>
+                    </p>
                 </Col>
                 <Col xs="auto">
                     <Button variant="outline-primary" onClick={fetchDashboard} className="rounded-pill px-4">
@@ -168,13 +209,14 @@ const PendingRequestsPage = ({ user, currentTheme }) => {
                 </Col>
             </Row>
 
-            {/* Section 1: Pending Approvals (Visible to HOD/Admin) */}
+            {/* Section 1: Hierarchical Pending Approvals */}
             {user.role !== 'EMPLOYEE' && (
                 <TableComponent 
-                    title="Incoming Pending Requests" 
+                    title="Requests Awaiting My Approval" 
                     items={data.requestsToApprove} 
                     showActions={true} 
                     icon={FaInbox}
+                    isApprovalTable={true}
                 />
             )}
 
@@ -183,14 +225,16 @@ const PendingRequestsPage = ({ user, currentTheme }) => {
                 title="My Sent History" 
                 items={data.mySentRequests} 
                 icon={FaPaperPlane}
+                isApprovalTable={false}
             />
 
-            {/* Section 3: Full Audit Logs (Visible to Admin Only) */}
+            {/* Section 3: Full Audit Logs (Visible to Admin/Super Admin Only) */}
             {['ADMIN', 'SUPER_ADMIN'].includes(user.role?.toUpperCase()) && (
                 <TableComponent 
                     title="Global Audit Logs (System History)" 
                     items={data.logs} 
                     icon={FaHistory}
+                    isApprovalTable={false}
                 />
             )}
         </Container>

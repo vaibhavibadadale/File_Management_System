@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { Modal, Button, Form, Table, Badge, Row, Col } from "react-bootstrap";
 import { Visibility, PersonAdd, RestartAlt } from "@mui/icons-material";
 import axios from "axios";
-import "../styles/VenturesPage.css"; // Ensure this is imported for the toggle styles
+import "../styles/VenturesPage.css"; 
 
 const UsersPage = ({ currentTheme, user }) => {
   const [users, setUsers] = useState([]);
@@ -16,8 +16,6 @@ const UsersPage = ({ currentTheme, user }) => {
 
   const isDark = currentTheme === "dark";
   const myRole = (user?.role || "").toLowerCase();
-
-  // Role Logic: Only Admins/SuperAdmins can toggle user status
   const canManageStatus = myRole === "admin" || myRole === "superadmin";
 
   const [formData, setFormData] = useState({
@@ -96,7 +94,6 @@ const UsersPage = ({ currentTheme, user }) => {
       return;
     }
     try {
-      // Logic from VenturesPage: hits the toggle-status endpoint
       await axios.put(`http://localhost:5000/api/users/status/${userId}`);
       fetchData(); 
     } catch (err) {
@@ -230,7 +227,6 @@ const UsersPage = ({ currentTheme, user }) => {
                     <td>{getRoleBadge(u.role)}</td>
                     <td>{u.department || "All"}</td>
                     <td className="text-center">
-                      {/* UPDATED: Status Toggle Container from VenturesPage logic */}
                       <div className="d-flex justify-content-center">
                         <div 
                           className={`status-toggle-container ${u.isActive !== false ? "active" : "inactive"}`}
@@ -249,7 +245,8 @@ const UsersPage = ({ currentTheme, user }) => {
                       </div>
                     </td>
                     <td className="text-center">
-                      <Button variant="outline-primary" size="sm" onClick={() => window.open(`/user-files/${u._id}`, "_blank")}>
+                      {/* Navigate using username to match the folder structure */}
+                      <Button variant="outline-primary" size="sm" onClick={() => window.open(`/user-files/${u.username}`, "_blank")}>
                         <Visibility fontSize="small" />
                       </Button>
                     </td>
