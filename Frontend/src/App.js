@@ -14,7 +14,6 @@ import VenturesPage from "./pages/VenturesPage";
 import DepartmentStaff from "./pages/DepartmentStaff"; 
 import UsersPage from "./pages/UsersPage"; 
 import UserFilesView from "./pages/UserFilesView"; 
-// Import your new Pending Requests Page here
 import PendingRequestsPage from "./pages/PendingRequestsPage"; 
 
 function App() {
@@ -74,11 +73,8 @@ function App() {
     return (
         <div className={`min-vh-100 ${themeMode === "dark" ? "bg-dark text-light" : "bg-light text-dark"}`}> 
             <div className="d-flex align-items-stretch">
-                
-                {/* Sidebar */}
                 <Sidebar themeMode={themeMode} user={user} />
                 
-                {/* Main Content Area */}
                 <div className="flex-grow-1 d-flex flex-column" style={{ minHeight: "100vh", minWidth: 0 }}>
                     <Header 
                         user={user} 
@@ -89,28 +85,28 @@ function App() {
 
                     <main className="flex-grow-1 p-3 p-md-4">
                         <Routes>
-                            {/* Dashboard & Core Features */}
-                            <Route path="/" element={<FileDashboard user={user} />} />
+                            <Route path="/" element={<FileDashboard user={user} currentTheme={themeMode} />} />
                             <Route path="/file-manager" element={<UploadFilePage user={user} />} />
                             <Route path="/ventures" element={<VenturesPage user={user} currentTheme={themeMode} />} />
                             
-                            {/* User & Staff Management */}
                             <Route path="/users" element={<UsersPage currentTheme={themeMode} user={user} />} />
                             <Route path="/department-staff/:deptId" element={<DepartmentStaff currentTheme={themeMode} user={user} />} />
-                            <Route path="/user-files/:username" element={<UserFilesView currentTheme={themeMode} user={user} />} />
+                            
+                            {/* UPDATED: Changed :username to :userId to match database ID navigation */}
+                            <Route path="/user-files/:userId" element={<UserFilesView currentTheme={themeMode} user={user} />} />
 
-                            {/* Request Management */}
-                            {/* UPDATED: Replacing the placeholder div with your component */}
                             <Route 
                                 path="/pending" 
                                 element={<PendingRequestsPage user={user} currentTheme={themeMode} />} 
                             />
 
-                            {/* Placeholders for remaining features */}
-                            <Route path="/important" element={<div className="p-4"><h3>Important Files</h3></div>} />
+                            <Route 
+                                path="/important" 
+                                element={<UploadFilePage user={user} viewMode="important" />} 
+                            />
+                            
                             <Route path="/trash" element={<div className="p-4"><h3>Trash Bin</h3></div>} />
 
-                            {/* Redirection Logic */}
                             <Route path="/login" element={<Navigate to="/" />} />
                             <Route path="*" element={<Navigate to="/" />} />
                         </Routes>

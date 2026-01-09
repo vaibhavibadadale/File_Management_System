@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from "react";
 import { Modal, Button, Form, Table, Badge, Row, Col } from "react-bootstrap";
 import { Visibility, PersonAdd, RestartAlt } from "@mui/icons-material";
+import { useNavigate } from "react-router-dom"; // Added for internal navigation
 import axios from "axios";
-import "../styles/VenturesPage.css"; // Ensure this is imported for the toggle styles
+import "../styles/VenturesPage.css"; 
 
 const UsersPage = ({ currentTheme, user }) => {
+  const navigate = useNavigate(); // Hook for navigation
   const [users, setUsers] = useState([]);
   const [deptList, setDeptList] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -16,8 +18,6 @@ const UsersPage = ({ currentTheme, user }) => {
 
   const isDark = currentTheme === "dark";
   const myRole = (user?.role || "").toLowerCase();
-
-  // Role Logic: Only Admins/SuperAdmins can toggle user status
   const canManageStatus = myRole === "admin" || myRole === "superadmin";
 
   const [formData, setFormData] = useState({
@@ -96,7 +96,6 @@ const UsersPage = ({ currentTheme, user }) => {
       return;
     }
     try {
-      // Logic from VenturesPage: hits the toggle-status endpoint
       await axios.put(`http://localhost:5000/api/users/status/${userId}`);
       fetchData(); 
     } catch (err) {
@@ -230,7 +229,6 @@ const UsersPage = ({ currentTheme, user }) => {
                     <td>{getRoleBadge(u.role)}</td>
                     <td>{u.department || "All"}</td>
                     <td className="text-center">
-                      {/* UPDATED: Status Toggle Container from VenturesPage logic */}
                       <div className="d-flex justify-content-center">
                         <div 
                           className={`status-toggle-container ${u.isActive !== false ? "active" : "inactive"}`}
@@ -249,7 +247,8 @@ const UsersPage = ({ currentTheme, user }) => {
                       </div>
                     </td>
                     <td className="text-center">
-                      <Button variant="outline-primary" size="sm" onClick={() => window.open(`/user-files/${u._id}`, "_blank")}>
+                      {/* UPDATED: Navigates using _id instead of username */}
+                      <Button variant="outline-primary" size="sm" onClick={() => navigate(`/user-files/${u._id}`)}>
                         <Visibility fontSize="small" />
                       </Button>
                     </td>
@@ -263,6 +262,7 @@ const UsersPage = ({ currentTheme, user }) => {
         </div>
       </div>
 
+      {/* Modal remains same */}
       <Modal show={showModal} onHide={() => setShowModal(false)} centered size="lg">
         <div className={isDark ? "bg-dark text-white border border-secondary" : ""}>
           <Modal.Header closeButton closeVariant={isDark ? "white" : undefined}>

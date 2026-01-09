@@ -58,12 +58,10 @@ function Sidebar({ themeMode, user }) {
   const location = useLocation();
   const isDark = themeMode === "dark";
   
-  // Normalize role: Removes spaces and converts to Uppercase (e.g., "Super Admin" -> "SUPERADMIN")
   const userRole = user?.role 
     ? user.role.toUpperCase().replace(/\s+/g, '').trim() 
     : "EMPLOYEE";
 
-  // Filter: Employees see 4 items, Others see 7 items
   const filteredItems = sidebarItems.filter(item => item.roles.includes(userRole));
 
   return (

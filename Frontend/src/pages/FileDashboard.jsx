@@ -9,8 +9,13 @@ import {
     ArrowClockwise,
     Filter,
     Search,
-    X
+    X,
+    Star,    
+    StarFill 
 } from 'react-bootstrap-icons'; 
+
+// Import your api service functions
+import { toggleStarApi } from '../services/apiService'; 
 
 const BACKEND_URL = "http://localhost:5000"; 
 
@@ -28,18 +33,40 @@ const FileDashboard = ({ user, currentTheme }) => {
     const fetchFiles = useCallback(async () => {
         try {
             setLoading(true);
+            // Calling the direct API endpoint for files
             const response = await axios.get(`${BACKEND_URL}/api/files`); 
             if (response.data.success && Array.isArray(response.data.files)) {
                 setUploadedFiles(response.data.files);
             }
         } catch (err) {
-            console.error(`Failed to load activity logs.`);
+            console.error(`Failed to load activity logs.`, err);
         } finally {
             setLoading(false);
         }
     }, []);
 
     useEffect(() => { fetchFiles(); }, [fetchFiles]);
+
+    /**
+     * Handle Star Click with Optimistic UI Update
+     */
+    const handleStarClick = async (file) => {
+        const newStarredStatus = !file.isStarred;
+
+        // 1. Optimistic Update: Update UI immediately
+        setUploadedFiles(prev => prev.map(f => 
+            f._id === file._id ? { ...f, isStarred: newStarredStatus } : f
+        ));
+
+        try {
+            // 2. Send request to backend via the Service
+            await toggleStarApi(file._id, 'files', newStarredStatus);
+        } catch (err) {
+            console.error("Failed to update star status", err);
+            // 3. Revert if server fails
+            fetchFiles(); 
+        }
+    };
 
     const uniqueUsers = useMemo(() => {
         const users = uploadedFiles.map(f => f.username || 'admin');
@@ -83,7 +110,7 @@ const FileDashboard = ({ user, currentTheme }) => {
                     <h4 className={`fw-bold mb-0 ${textColor}`}>Activity Monitor</h4>
                 </div>
 
-                {/* --- CONTROLS SECTION: Search logs placed at bottom right of header --- */}
+                {/* --- CONTROLS SECTION --- */}
                 <div className="d-flex justify-content-between align-items-end mb-4">
                     <div>
                         <h5 className={`${textColor} fw-bold mb-0`}>Recent Activity Logs</h5>
@@ -91,7 +118,6 @@ const FileDashboard = ({ user, currentTheme }) => {
                     </div>
                     
                     <div className="d-flex align-items-center gap-2">
-                        {/* Search Bar moved here (Right side of Recent Activity Logs) */}
                         <div className="position-relative" style={{ width: '240px' }}>
                             <Search 
                                 className="position-absolute top-50 translate-middle-y ms-3 text-muted" 
@@ -107,7 +133,8 @@ const FileDashboard = ({ user, currentTheme }) => {
                                 style={{ 
                                     fontSize: '0.8rem', 
                                     height: '35px', 
-                                    backgroundColor: isDarkMode ? '#2c2c2c' : '#fff'
+                                    backgroundColor: isDarkMode ? '#2c2c2c' : '#fff',
+                                    color: isDarkMode ? '#fff' : '#000'
                                 }} 
                             />
                             {searchTerm && (
@@ -120,7 +147,6 @@ const FileDashboard = ({ user, currentTheme }) => {
                             )}
                         </div>
 
-                        {/* Filter Dropdown */}
                         <div className="d-flex align-items-center bg-light p-1 px-3 rounded-pill border shadow-sm" style={{ height: '35px' }}>
                            <Filter size={14} className="text-muted me-2" />
                            <Form.Select 
@@ -134,7 +160,6 @@ const FileDashboard = ({ user, currentTheme }) => {
                             </Form.Select>
                         </div>
 
-                        {/* Refresh Button */}
                         <Button variant="outline-primary" size="sm" onClick={fetchFiles} className="rounded-pill px-3 shadow-sm border-0 bg-white text-primary fw-bold" style={{ height: '35px', fontSize: '0.8rem' }}>
                             <ArrowClockwise className="me-1" /> Refresh
                         </Button>
@@ -158,7 +183,7 @@ const FileDashboard = ({ user, currentTheme }) => {
                         filteredFiles.map((file, index) => (
                             <Row 
                                 key={file._id} 
-                                className="align-items-center px-3 py-3 mx-0 border-bottom mb-1 rounded bg-white" 
+                                className="align-items-center px-3 py-3 mx-0 border-bottom mb-1 rounded" 
                                 style={{ 
                                     backgroundColor: itemBg, 
                                     fontSize: '0.85rem',
@@ -166,10 +191,24 @@ const FileDashboard = ({ user, currentTheme }) => {
                                 }}
                             >
                                 <Col xs={1} className="text-muted small">{index + 1}</Col>
+                                
                                 <Col xs={4} className="d-flex align-items-center overflow-hidden">
-                                    <FileEarmarkText className="me-3 text-primary" size={18} />
+                                    <div 
+                                        className="me-2" 
+                                        onClick={() => handleStarClick(file)} 
+                                        style={{ cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+                                    >
+                                        {file.isStarred ? (
+                                            <StarFill size={14} color="#FFD700" />
+                                        ) : (
+                                            <Star size={14} className="text-muted" />
+                                        )}
+                                    </div>
+
+                                    <FileEarmarkText className="me-2 text-primary" size={18} />
                                     <span className={`text-truncate fw-semibold ${textColor}`}>{file.originalName}</span>
                                 </Col>
+
                                 <Col xs={2} className="text-muted text-truncate small">{file.path || '/uploads/root'}</Col>
                                 <Col xs={1} className="text-muted small">{(file.size / 1024).toFixed(1)} KB</Col>
                                 <Col xs={2} className="text-muted" style={{ fontSize: '0.75rem' }}>

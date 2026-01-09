@@ -52,16 +52,28 @@ exports.uploadFile = async (req, res) => {
  * Fetches ALL files for the Dashboard Activity Log.
  * If no folderId is provided, it returns everything (useful for the Log view).
  */
+// backend/controllers/file.controller
 exports.getFilesByFolder = async (req, res) => {
     try {
-        const { folderId } = req.query;
-        
+        const { folderId, userId, departmentId } = req.query; 
         let query = { deletedAt: null };
         
-        // If folderId is explicitly passed, filter by it. 
-        // Otherwise, return all files for the general dashboard.
-        if (folderId !== undefined) {
-            query.folder = (!folderId || folderId === "null" || folderId === "undefined") ? null : folderId;
+        // 1. Filter by User OR Shared Access
+        if (userId) {
+            query.$or = [
+                { uploadedBy: userId },
+                { sharedWith: userId } // Now checks if the user has received this file
+            ];
+        }
+
+        if (departmentId) {
+            query.departmentId = departmentId;
+        }
+        
+        if (folderId === undefined || folderId === "null" || folderId === null || folderId === "undefined") {
+            query.folder = null; 
+        } else {
+            query.folder = folderId;
         }
 
         const files = await File.find(query)
@@ -73,6 +85,7 @@ exports.getFilesByFolder = async (req, res) => {
         res.status(500).json({ error: error.message, success: false });
     }
 };
+    
 
 /**
  * Marks a file as deleted without removing it from the disk (Soft Delete).
@@ -96,5 +109,26 @@ exports.softDeleteFile = async (req, res) => {
         res.json({ message: "File deleted successfully", success: true });
     } catch (error) {
         res.status(500).json({ error: error.message, success: false });
+    }
+};
+
+exports.toggleFileStar = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { isStarred } = req.body;
+
+        const updatedFile = await File.findByIdAndUpdate(
+            id,
+            { isStarred },
+            { new: true }
+        );
+
+        if (!updatedFile) {
+            return res.status(404).json({ success: false, message: "File not found" });
+        }
+
+        res.json({ success: true, file: updatedFile });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
     }
 };

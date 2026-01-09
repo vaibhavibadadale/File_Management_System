@@ -3,17 +3,18 @@ import axios from 'axios';
 import { Modal, Button, ListGroup, Form, InputGroup, Spinner } from 'react-bootstrap';
 import { Search, ShieldLock, ChatLeftText } from 'react-bootstrap-icons';
 
-const TransferModal = ({ selectedIds, senderUsername, onClose, onSuccess }) => {
+// Receive 'user' prop to access role-based logic
+const TransferModal = ({ selectedIds, senderUsername, user, onClose, onSuccess }) => {
     const [users, setUsers] = useState([]);
     const [searchTerm, setSearchTerm] = useState("");
     const [selectedUser, setSelectedUser] = useState(null);
     const [step, setStep] = useState(1); 
     const [password, setPassword] = useState("");
-    const [reason, setReason] = useState(""); // Added reason for governance
+    const [reason, setReason] = useState(""); 
     const [isSubmitting, setIsSubmitting] = useState(false);
 
     useEffect(() => {
-        // Ensure this matches your actual user fetch endpoint
+        // Fetch users for recipient list
         axios.get("http://localhost:5000/api/users")
             .then(res => {
                 const data = Array.isArray(res.data) ? res.data : (res.data.users || []);
@@ -23,30 +24,35 @@ const TransferModal = ({ selectedIds, senderUsername, onClose, onSuccess }) => {
     }, []);
 
     const handleTransfer = async () => {
+        // Security checks
         if (!password) return alert("Password is required for security.");
         if (!reason.trim()) return alert("Please provide a reason for this transfer.");
         
         setIsSubmitting(true);
 
         try {
-            // ✅ CORRECTED URL: Matches the backend route we created
-            const response = await axios.post("http://localhost:5000/api/requests/create", {
+            /** * Updated Payload:
+             * We send 'user.role' to the backend so the Governance system 
+             * knows if this requires HOD or Admin approval.
+             */
+            const response = await axios.post("http://localhost:5000/api/transfer/secure-send", {
                 senderUsername: senderUsername, 
-                password: password, // Note: Backend must verify this or remove if handled via Auth
+                senderRole: user?.role, // CRITICAL: Used for hierarchical filtering
+                password: password, 
                 recipientId: selectedUser?._id, 
                 fileIds: selectedIds,
                 reason: reason,
-                requestType: 'transfer' // Explicitly set request type
+                requestType: 'transfer'
             });
             
-            alert(response.data.message || "Request processed successfully!"); 
+            alert(response.data.message || "Transfer request processed."); 
             
             if (onSuccess) onSuccess();
             onClose();
         } catch (err) {
-            // Captures the 500 error message from backend
             console.error("Transfer Error:", err.response?.data);
-            alert(err.response?.data?.message || "Internal Server Error (500). Check backend console.");
+            // Handle password verification or server errors
+            alert(err.response?.data?.error || err.response?.data?.message || "Error creating transfer request.");
         } finally {
             setIsSubmitting(false);
         }
@@ -55,7 +61,9 @@ const TransferModal = ({ selectedIds, senderUsername, onClose, onSuccess }) => {
     return (
         <Modal show={true} onHide={onClose} centered backdrop="static">
             <Modal.Header closeButton>
-                <Modal.Title>{step === 1 ? `Transfer Files (${selectedIds.length})` : "Security & Governance"}</Modal.Title>
+                <Modal.Title>
+                    {step === 1 ? `Transfer Files (${selectedIds.length})` : "Security & Governance"}
+                </Modal.Title>
             </Modal.Header>
             <Modal.Body>
                 {step === 1 ? (
@@ -94,6 +102,7 @@ const TransferModal = ({ selectedIds, senderUsername, onClose, onSuccess }) => {
                         <div className="text-center mb-4">
                             <ShieldLock size={40} className="mb-2 text-primary" />
                             <h6>Finalize Transfer to {selectedUser?.username}</h6>
+                            <p className="text-muted small">Your request will be sent to your supervisor for approval.</p>
                         </div>
 
                         <Form.Group className="mb-3">
@@ -101,14 +110,14 @@ const TransferModal = ({ selectedIds, senderUsername, onClose, onSuccess }) => {
                             <Form.Control
                                 as="textarea"
                                 rows={2}
-                                placeholder="e.g., Departmental hand-over"
+                                placeholder="e.g., Project handover for Q1"
                                 value={reason}
                                 onChange={(e) => setReason(e.target.value)}
                             />
                         </Form.Group>
 
                         <Form.Group>
-                            <Form.Label>Verify Your Password</Form.Label>
+                            <Form.Label>Verify Your Identity</Form.Label>
                             <Form.Control
                                 type="password" 
                                 placeholder="Enter your login password" 
@@ -122,13 +131,21 @@ const TransferModal = ({ selectedIds, senderUsername, onClose, onSuccess }) => {
             </Modal.Body>
             <Modal.Footer>
                 {step === 1 ? (
-                    <Button onClick={() => setStep(2)} disabled={!selectedUser} className="w-100">Next Step</Button>
+                    <Button onClick={() => setStep(2)} disabled={!selectedUser} className="w-100">
+                        Next Step
+                    </Button>
                 ) : (
                     <div className="d-flex w-100 gap-2">
-                        <span className="w-50"><Button variant="secondary" className="w-100" onClick={() => setStep(1)} disabled={isSubmitting}>Back</Button></span>
-                        <span className="w-50"><Button variant="success" className="w-100" onClick={handleTransfer} disabled={isSubmitting}>
-                            {isSubmitting ? <Spinner size="sm" animation="border" /> : "Confirm & Send"}
-                        </Button></span>
+                        <div className="w-50">
+                            <Button variant="secondary" className="w-100" onClick={() => setStep(1)} disabled={isSubmitting}>
+                                Back
+                            </Button>
+                        </div>
+                        <div className="w-50">
+                            <Button variant="success" className="w-100" onClick={handleTransfer} disabled={isSubmitting}>
+                                {isSubmitting ? <Spinner size="sm" animation="border" /> : "Confirm & Send"}
+                            </Button>
+                        </div>
                     </div>
                 )}
             </Modal.Footer>
