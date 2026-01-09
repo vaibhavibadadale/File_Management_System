@@ -32,13 +32,13 @@ const DepartmentStaff = ({ currentTheme }) => {
     );
 
     return (
-        <Container fluid className={`py-4 ${isDark ? "bg-dark text-white" : "bg-light"}`}>
-            <div className="d-flex justify-content-between align-items-center mb-4 bg-white p-3 rounded shadow-sm">
+        <Container fluid className={`py-4 ${isDark ? "bg-dark text-white" : "bg-light"}`} style={{ minHeight: "100vh" }}>
+            <div className={`d-flex justify-content-between align-items-center mb-4 p-3 rounded shadow-sm ${isDark ? "bg-secondary" : "bg-white"}`}>
                 <div>
-                    <h2 className="fw-bold mb-0" style={{ color: "#333" }}>Department Directory</h2>
-                    <p className="text-muted mb-0">Managing assigned staff and leadership</p>
+                    <h2 className="fw-bold mb-0" style={{ color: isDark ? "#fff" : "#333" }}>Department Directory</h2>
+                    <p className={isDark ? "text-light opacity-75 mb-0" : "text-muted mb-0"}>Managing assigned staff and leadership</p>
                 </div>
-                <Button variant="outline-primary" className="fw-bold px-4" onClick={() => navigate("/ventures")}>
+                <Button variant={isDark ? "outline-light" : "outline-primary"} className="fw-bold px-4" onClick={() => navigate("/ventures")}>
                     <i className="fas fa-arrow-left me-2"></i> Back to Ventures
                 </Button>
             </div>
@@ -53,33 +53,35 @@ const DepartmentStaff = ({ currentTheme }) => {
                     {data.hods.length > 0 ? (
                         data.hods.map(h => (
                             <div key={h._id} className="col-md-4 mb-3">
-                                <Card className="border-0 shadow-sm h-100">
+                                <Card className={`border-0 shadow-sm h-100 ${isDark ? "bg-dark text-white border border-secondary" : ""}`}>
                                     <Card.Body className="p-4">
                                         <div className="d-flex justify-content-between align-items-start mb-3">
                                             <div>
                                                 <h5 className="fw-bold mb-0 text-capitalize">{h.name}</h5>
-                                                <small className="text-muted">{h.username}</small>
+                                                <small className={isDark ? "text-info" : "text-muted"}>{h.username}</small>
                                             </div>
                                             <Badge bg="danger" className="px-3 py-2 text-uppercase">HOD</Badge>
                                         </div>
-                                        <div className="mb-3 text-muted small">
+                                        <div className={`mb-3 small ${isDark ? "text-light opacity-75" : "text-muted"}`}>
                                             <i className="fas fa-envelope me-2"></i>{h.email}
                                         </div>
                                         <Button 
-                                            variant="outline-primary" 
+                                            variant={isDark ? "info" : "outline-primary"} 
                                             size="sm" 
                                             className="w-100 mt-2 fw-bold"
-                                            // LOGIC: Navigate using unique database _id
+                                            // Redirects to UserFilesView using the Database _id
                                             onClick={() => navigate(`/user-files/${h._id}`)}
                                         >
-                                            <i className="fas fa-eye me-2"></i> View Profile
+                                            <i className="fas fa-eye me-2"></i> View Profile & Files
                                         </Button>
                                     </Card.Body>
                                 </Card>
                             </div>
                         ))
                     ) : (
-                        <div className="col-12 alert alert-secondary text-center">No HOD assigned.</div>
+                        <div className={`col-12 alert ${isDark ? "alert-dark border-secondary" : "alert-secondary"} text-center`}>
+                            No HOD assigned.
+                        </div>
                     )}
                 </div>
             </div>
@@ -90,9 +92,9 @@ const DepartmentStaff = ({ currentTheme }) => {
                     <span className="bg-primary rounded-circle me-2" style={{ width: '10px', height: '10px' }}></span>
                     Department Employees
                 </h4>
-                <div className="bg-white rounded shadow-sm overflow-hidden">
-                    <Table hover responsive className="mb-0">
-                        <thead className="bg-light">
+                <div className={`rounded shadow-sm overflow-hidden ${isDark ? "bg-dark border border-secondary" : "bg-white"}`}>
+                    <Table hover responsive className={`mb-0 ${isDark ? "table-dark" : ""}`}>
+                        <thead className={isDark ? "table-dark" : "bg-light"}>
                             <tr>
                                 <th className="ps-4">Employee ID</th>
                                 <th>Full Name</th>
@@ -102,27 +104,36 @@ const DepartmentStaff = ({ currentTheme }) => {
                             </tr>
                         </thead>
                         <tbody>
-                            {data.employees.map(e => (
-                                <tr key={e._id} className="align-middle">
-                                    <td className="ps-4">
-                                        <span className="badge bg-light text-danger border">{e.employeeId}</span>
-                                    </td>
-                                    <td className="fw-bold text-capitalize">{e.name}</td>
-                                    <td><Badge bg="primary">Employee</Badge></td>
-                                    <td className="text-muted">{e.email}</td>
-                                    <td className="pe-4 text-end">
-                                        <Button 
-                                            variant="outline-primary" 
-                                            size="sm" 
-                                            className="rounded-circle"
-                                            // LOGIC: Navigate using unique database _id
-                                            onClick={() => navigate(`/user-files/${e._id}`)}
-                                        >
-                                            <i className="fas fa-eye"></i>
-                                        </Button>
-                                    </td>
+                            {data.employees.length > 0 ? (
+                                data.employees.map(e => (
+                                    <tr key={e._id} className="align-middle">
+                                        <td className="ps-4">
+                                            <span className={`badge border ${isDark ? "bg-black text-info border-secondary" : "bg-light text-danger"}`}>
+                                                {e.employeeId}
+                                            </span>
+                                        </td>
+                                        <td className="fw-bold text-capitalize">{e.name}</td>
+                                        <td><Badge bg="primary">Employee</Badge></td>
+                                        <td className={isDark ? "text-light opacity-75" : "text-muted"}>{e.email}</td>
+                                        <td className="pe-4 text-end">
+                                            <Button 
+                                                variant={isDark ? "outline-info" : "outline-primary"} 
+                                                size="sm" 
+                                                className="rounded-circle"
+                                                // Redirects to UserFilesView using the Database _id
+                                                onClick={() => navigate(`/user-files/${e._id}`)}
+                                                title="View Staff Files"
+                                            >
+                                                <i className="fas fa-eye"></i>
+                                            </Button>
+                                        </td>
+                                    </tr>
+                                ))
+                            ) : (
+                                <tr>
+                                    <td colSpan="5" className="text-center py-4">No employees found in this department.</td>
                                 </tr>
-                            ))}
+                            )}
                         </tbody>
                     </Table>
                 </div>

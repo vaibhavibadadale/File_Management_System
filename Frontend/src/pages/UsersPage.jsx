@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from "react";
 import { Modal, Button, Form, Table, Badge, Row, Col } from "react-bootstrap";
 import { Visibility, PersonAdd, RestartAlt } from "@mui/icons-material";
+import { useNavigate } from "react-router-dom"; // Added for internal navigation
 import axios from "axios";
 import "../styles/VenturesPage.css"; 
 
 const UsersPage = ({ currentTheme, user }) => {
+  const navigate = useNavigate(); // Hook for navigation
   const [users, setUsers] = useState([]);
   const [deptList, setDeptList] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -245,8 +247,8 @@ const UsersPage = ({ currentTheme, user }) => {
                       </div>
                     </td>
                     <td className="text-center">
-                      {/* Navigate using username to match the folder structure */}
-                      <Button variant="outline-primary" size="sm" onClick={() => window.open(`/user-files/${u.username}`, "_blank")}>
+                      {/* UPDATED: Navigates using _id instead of username */}
+                      <Button variant="outline-primary" size="sm" onClick={() => navigate(`/user-files/${u._id}`)}>
                         <Visibility fontSize="small" />
                       </Button>
                     </td>
@@ -260,6 +262,7 @@ const UsersPage = ({ currentTheme, user }) => {
         </div>
       </div>
 
+      {/* Modal remains same */}
       <Modal show={showModal} onHide={() => setShowModal(false)} centered size="lg">
         <div className={isDark ? "bg-dark text-white border border-secondary" : ""}>
           <Modal.Header closeButton closeVariant={isDark ? "white" : undefined}>
