@@ -14,8 +14,8 @@ import {
     StarFill 
 } from 'react-bootstrap-icons'; 
 
-// Import your api service functions
-import { toggleStarApi } from '../services/apiService'; 
+// MODIFIED: Importing standardized functions from your new service location inside src
+import { toggleStarApi, fetchFilesApi } from '../services/apiService'; 
 
 const BACKEND_URL = "http://localhost:5000"; 
 
@@ -30,14 +30,16 @@ const FileDashboard = ({ user, currentTheme }) => {
     const itemBg = isDarkMode ? '#2c2c2c' : '#ffffff';
     const headerBg = isDarkMode ? '#333' : '#f1f3f4';
 
+    /**
+     * MODIFIED: fetchFiles now uses fetchFilesApi from service
+     * This ensures Authorization headers are sent correctly.
+     */
     const fetchFiles = useCallback(async () => {
         try {
             setLoading(true);
-            // Calling the direct API endpoint for files
-            const response = await axios.get(`${BACKEND_URL}/api/files`); 
-            if (response.data.success && Array.isArray(response.data.files)) {
-                setUploadedFiles(response.data.files);
-            }
+            // Using service instead of direct axios call to avoid 401/404 issues
+            const files = await fetchFilesApi(); 
+            setUploadedFiles(files || []);
         } catch (err) {
             console.error(`Failed to load activity logs.`, err);
         } finally {
@@ -81,6 +83,7 @@ const FileDashboard = ({ user, currentTheme }) => {
 
     const handleViewFile = (file) => {
         if (!file.path) return;
+        // Ensure path formatting is consistent with backend static uploads
         const finalPath = file.path.startsWith('/uploads') ? file.path : `/uploads/${file.path}`;
         window.open(`${BACKEND_URL}${finalPath.replace(/\\/g, '/')}`, '_blank'); 
     };
@@ -88,7 +91,11 @@ const FileDashboard = ({ user, currentTheme }) => {
     const handleDelete = async (fileId, fileName) => {
         if (window.confirm(`Delete ${fileName}?`)) {
             try {
-                await axios.delete(`${BACKEND_URL}/api/files/${fileId}`, { data: { userId: user?._id } });
+                const token = localStorage.getItem('authToken');
+                await axios.delete(`${BACKEND_URL}/api/files/${fileId}`, { 
+                    headers: { 'Authorization': `Bearer ${token}` },
+                    data: { userId: user?._id } 
+                });
                 fetchFiles();
             } catch (err) { alert("Delete failed."); }
         }

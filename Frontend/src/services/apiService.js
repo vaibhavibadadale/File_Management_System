@@ -15,8 +15,11 @@ const getAuthHeaders = () => {
     };
 };
 
-// ================= EXISTING FUNCTIONS =================
+// ================= TRANSFER & REQUEST FUNCTIONS =================
 
+/**
+ * FETCH RECIPIENTS: Gets users available to receive transfers
+ */
 export async function fetchUsersForTransfer() {
     try {
         const response = await axios.get(`${BACKEND_URL}/users/recipients`, getAuthHeaders());
@@ -26,20 +29,42 @@ export async function fetchUsersForTransfer() {
     }
 }
 
-export async function transferFilesApi(recipientId, fileIds, password) {
-    const payload = {
-        recipient_id: recipientId,
-        file_ids: fileIds,
-        user_password: password
-    };
+/**
+ * CREATE TRANSFER: Fixed 404 by using /transfer/create 
+ * This matches our merged Request/Transfer controller.
+ */
+export async function transferFilesApi(transferData) {
     try {
-        const response = await axios.post(`${BACKEND_URL}/files/transfer`, payload, getAuthHeaders());
+        // transferData should contain: 
+        // { senderUsername, recipientId, fileIds, reason, requestType, departmentId }
+        const response = await axios.post(
+            `${BACKEND_URL}/transfer/create`, 
+            transferData, 
+            getAuthHeaders()
+        );
         return response.data; 
     } catch (error) {
         const errMsg = error.response?.data?.error || error.response?.data?.message || 'Transfer failed.';
         throw new Error(errMsg);
     }
 }
+
+/**
+ * FETCH DASHBOARD: Gets pending and history requests
+ */
+export async function fetchTransferDashboardApi(params = {}) {
+    try {
+        const response = await axios.get(`${BACKEND_URL}/transfer/pending`, {
+            ...getAuthHeaders(),
+            params: params // includes role, username, departmentId, etc.
+        });
+        return response.data;
+    } catch (error) {
+        throw new Error(error.response?.data?.message || 'Failed to fetch dashboard data.');
+    }
+}
+
+// ================= FILE & FOLDER FUNCTIONS =================
 
 export async function fetchFilesApi(params = {}) {
     try {
@@ -53,10 +78,23 @@ export async function fetchFilesApi(params = {}) {
     }
 }
 
-// ================= NEW STAR & FOLDER FUNCTIONS =================
+export async function fetchFoldersApi(params = {}) {
+    try {
+        const response = await axios.get(`${BACKEND_URL}/folders`, {
+            ...getAuthHeaders(),
+            params: params
+        });
+        return response.data;
+    } catch (error) {
+        throw new Error(error.response?.data?.message || 'Failed to fetch folders.');
+    }
+}
+
+// ================= STAR FUNCTIONS =================
 
 export async function toggleStarApi(id, type, isStarred) {
     try {
+        // type should be 'files' or 'folders'
         const response = await axios.patch(
             `${BACKEND_URL}/${type}/star/${id}`, 
             { isStarred }, 
@@ -80,17 +118,5 @@ export async function fetchStarredItemsApi() {
         };
     } catch (error) {
         throw new Error(error.response?.data?.message || 'Failed to fetch starred items.');
-    }
-}
-
-export async function fetchFoldersApi(params = {}) {
-    try {
-        const response = await axios.get(`${BACKEND_URL}/folders`, {
-            ...getAuthHeaders(),
-            params: params
-        });
-        return response.data;
-    } catch (error) {
-        throw new Error(error.response?.data?.message || 'Failed to fetch folders.');
     }
 }

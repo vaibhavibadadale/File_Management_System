@@ -1,20 +1,23 @@
 const mongoose = require("mongoose");
 
-const TransferSchema = new mongoose.Schema({
-    fileIds: [{ type: mongoose.Schema.Types.ObjectId, ref: "File", required: true }],
+const transferSchema = new mongoose.Schema(
+  {
     senderUsername: { type: String, required: true },
-    senderRole: { type: String }, // Added to track hierarchy
-    senderDepartment: { type: String }, 
-    recipientId: { type: mongoose.Schema.Types.ObjectId, ref: "User" }, // Optional for 'delete' type
-    requestType: { type: String, enum: ['transfer', 'delete'], default: 'transfer' },
+    senderRole: { type: String, required: true },
+    recipientId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    fileIds: [{ type: mongoose.Schema.Types.ObjectId, ref: "File" }],
     reason: { type: String },
-    status: { 
-        type: String, 
-        enum: ['pending', 'completed', 'denied'], 
-        default: 'pending' 
+    requestType: { type: String, default: "transfer" }, 
+    departmentId: { type: String }, // Stored as string to match frontend query
+    status: {
+      type: String,
+      enum: ["pending", "completed", "denied"],
+      default: "pending",
     },
-    departmentId: { type: String },
-    transferDate: { type: Date, default: Date.now }
-}, { timestamps: true });
+    denialComment: { type: String, default: "" },
+  },
+  { timestamps: true }
+);
 
-module.exports = mongoose.model("Transfer", TransferSchema);
+// Forces connection to 'transferrequests'
+module.exports = mongoose.model("Transfer", transferSchema, "transferrequests");
