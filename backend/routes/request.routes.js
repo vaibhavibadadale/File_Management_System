@@ -1,20 +1,15 @@
 const express = require("express");
 const router = express.Router();
-const requestCtrl = require("../controllers/request.controller");
+const requestController = require("../controllers/request.controller");
 
-// Creation
-router.post("/create", requestCtrl.createRequest);
+router.post("/create", requestController.createRequest);
+router.post("/direct-delete", requestController.directAdminDelete); // Admin Bypass
+router.get("/pending-dashboard", requestController.getPendingDashboard);
+router.put("/approve/:id", requestController.approveRequest);
+router.put("/deny/:id", requestController.denyRequest);
 
-// Dashboard (Matches axios.get(.../pending-dashboard))
-router.get("/pending-dashboard", requestCtrl.getPendingDashboard);
-
-// Actions
-router.put("/approve/:id", requestCtrl.approveRequest);
-router.put("/deny/:id", requestCtrl.denyRequest);
-
-// Trash Management
-router.get("/trash", requestCtrl.getTrashItems);
-router.post("/trash/restore/:id", requestCtrl.restoreFromTrash);
-router.delete("/trash/permanent/:id", requestCtrl.permanentDelete);
+router.get("/trash", requestController.getTrashItems);
+router.post("/trash/restore/:id", requestController.restoreFromTrash);
+router.delete("/trash/permanent/:id", requestController.permanentDelete);
 
 module.exports = router;

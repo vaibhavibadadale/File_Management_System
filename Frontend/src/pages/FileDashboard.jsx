@@ -14,7 +14,7 @@ import {
     StarFill 
 } from 'react-bootstrap-icons'; 
 
-// MODIFIED: Importing standardized functions from your new service location inside src
+// Standardized functions from your service
 import { toggleStarApi, fetchFilesApi } from '../services/apiService'; 
 
 const BACKEND_URL = "http://localhost:5000"; 
@@ -30,14 +30,9 @@ const FileDashboard = ({ user, currentTheme }) => {
     const itemBg = isDarkMode ? '#2c2c2c' : '#ffffff';
     const headerBg = isDarkMode ? '#333' : '#f1f3f4';
 
-    /**
-     * MODIFIED: fetchFiles now uses fetchFilesApi from service
-     * This ensures Authorization headers are sent correctly.
-     */
     const fetchFiles = useCallback(async () => {
         try {
             setLoading(true);
-            // Using service instead of direct axios call to avoid 401/404 issues
             const files = await fetchFilesApi(); 
             setUploadedFiles(files || []);
         } catch (err) {
@@ -49,24 +44,69 @@ const FileDashboard = ({ user, currentTheme }) => {
 
     useEffect(() => { fetchFiles(); }, [fetchFiles]);
 
-    /**
-     * Handle Star Click with Optimistic UI Update
-     */
     const handleStarClick = async (file) => {
         const newStarredStatus = !file.isStarred;
-
-        // 1. Optimistic Update: Update UI immediately
         setUploadedFiles(prev => prev.map(f => 
             f._id === file._id ? { ...f, isStarred: newStarredStatus } : f
         ));
 
         try {
-            // 2. Send request to backend via the Service
             await toggleStarApi(file._id, 'files', newStarredStatus);
         } catch (err) {
             console.error("Failed to update star status", err);
-            // 3. Revert if server fails
             fetchFiles(); 
+        }
+    };
+
+    /**
+     * UPDATED: handleDelete 
+     * Maintains your style but adds the Permission/Reason logic.
+     */
+    const handleDelete = async (fileId, fileName) => {
+        // 1. Mandatory Reason
+        const reason = window.prompt(`Enter reason for deleting "${fileName}":`);
+        if (reason === null) return; 
+        if (!reason.trim()) {
+            alert("A reason is required to proceed with deletion.");
+            return;
+        }
+
+        const role = user.role?.toUpperCase();
+        const isAdmin = ["ADMIN", "SUPERADMIN"].includes(role);
+        const deptId = user.departmentId?._id || user.departmentId;
+        const token = localStorage.getItem('authToken');
+
+        try {
+            if (isAdmin) {
+                // ADMIN LOGIC: Direct move to Trash
+                await axios.post(`${BACKEND_URL}/api/requests/direct-delete`, {
+                    fileIds: [fileId],
+                    senderUsername: user.username,
+                    reason: reason,
+                    departmentId: deptId
+                }, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                alert(`${fileName} moved to Trash.`);
+            } else {
+                // EMPLOYEE/HOD LOGIC: Create Approval Request
+                await axios.post(`${BACKEND_URL}/api/requests/create`, {
+                    senderUsername: user.username,
+                    fileIds: [fileId],
+                    reason: reason,
+                    requestType: "delete"
+                }, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                alert(`Delete request for "${fileName}" sent for approval.`);
+            }
+            
+            // Refresh the UI
+            fetchFiles(); 
+
+        } catch (err) {
+            console.error("Deletion Error:", err);
+            alert(err.response?.data?.message || "Failed to process deletion.");
         }
     };
 
@@ -83,22 +123,8 @@ const FileDashboard = ({ user, currentTheme }) => {
 
     const handleViewFile = (file) => {
         if (!file.path) return;
-        // Ensure path formatting is consistent with backend static uploads
         const finalPath = file.path.startsWith('/uploads') ? file.path : `/uploads/${file.path}`;
         window.open(`${BACKEND_URL}${finalPath.replace(/\\/g, '/')}`, '_blank'); 
-    };
-
-    const handleDelete = async (fileId, fileName) => {
-        if (window.confirm(`Delete ${fileName}?`)) {
-            try {
-                const token = localStorage.getItem('authToken');
-                await axios.delete(`${BACKEND_URL}/api/files/${fileId}`, { 
-                    headers: { 'Authorization': `Bearer ${token}` },
-                    data: { userId: user?._id } 
-                });
-                fetchFiles();
-            } catch (err) { alert("Delete failed."); }
-        }
     };
 
     if (loading) return <div className="p-5 text-center"><Spinner animation="grow" variant="primary" /></div>;
@@ -109,15 +135,11 @@ const FileDashboard = ({ user, currentTheme }) => {
             backgroundColor: isDarkMode ? '#1a1a1a' : '#ffffff',
             fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif'
         }}> 
-            
             <div className="container-fluid pt-4 px-4">
-                
-                {/* --- TOP TITLE --- */}
                 <div className="mb-4">
                     <h4 className={`fw-bold mb-0 ${textColor}`}>Activity Monitor</h4>
                 </div>
 
-                {/* --- CONTROLS SECTION --- */}
                 <div className="d-flex justify-content-between align-items-end mb-4">
                     <div>
                         <h5 className={`${textColor} fw-bold mb-0`}>Recent Activity Logs</h5>
@@ -173,7 +195,6 @@ const FileDashboard = ({ user, currentTheme }) => {
                     </div>
                 </div>
 
-                {/* --- TABLE HEADER --- */}
                 <Row className="px-3 py-2 text-uppercase fw-bold text-muted border-bottom mx-0 mb-2 rounded" style={{ fontSize: '0.65rem', backgroundColor: headerBg, letterSpacing: '0.5px' }}>
                     <Col xs={1}>#</Col>
                     <Col xs={4}>Files Uploaded By</Col>
@@ -184,7 +205,6 @@ const FileDashboard = ({ user, currentTheme }) => {
                     <Col xs={1} className="text-center">Action</Col>
                 </Row>
 
-                {/* --- DATA ROWS --- */}
                 <div className="activity-list">
                     {filteredFiles.length > 0 ? (
                         filteredFiles.map((file, index) => (
@@ -198,20 +218,10 @@ const FileDashboard = ({ user, currentTheme }) => {
                                 }}
                             >
                                 <Col xs={1} className="text-muted small">{index + 1}</Col>
-                                
                                 <Col xs={4} className="d-flex align-items-center overflow-hidden">
-                                    <div 
-                                        className="me-2" 
-                                        onClick={() => handleStarClick(file)} 
-                                        style={{ cursor: 'pointer', display: 'flex', alignItems: 'center' }}
-                                    >
-                                        {file.isStarred ? (
-                                            <StarFill size={14} color="#FFD700" />
-                                        ) : (
-                                            <Star size={14} className="text-muted" />
-                                        )}
+                                    <div className="me-2" onClick={() => handleStarClick(file)} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+                                        {file.isStarred ? <StarFill size={14} color="#FFD700" /> : <Star size={14} className="text-muted" />}
                                     </div>
-
                                     <FileEarmarkText className="me-2 text-primary" size={18} />
                                     <span className={`text-truncate fw-semibold ${textColor}`}>{file.originalName}</span>
                                 </Col>

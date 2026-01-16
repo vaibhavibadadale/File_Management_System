@@ -89,7 +89,6 @@ const PendingRequestsPage = ({ user, currentTheme }) => {
     }
   };
 
-  // PAGINATION: Only Prev/Next positioned at Bottom Right
   const renderPaginationControls = (current, total, setPage) => (
     <div className="d-flex justify-content-end align-items-center py-2 gap-2">
       <Button 
@@ -167,11 +166,20 @@ const PendingRequestsPage = ({ user, currentTheme }) => {
                     {req.requestType === "delete" ? <span className="text-muted small italic">SYSTEM (TRASH)</span> : 
                     <><div className="fw-bold">{req.recipientId?.username || "N/A"}</div>{renderDeptInfo(req.receiverDeptName, req.recipientId?.role)}</>}
                   </td>
+                  {/* NUMBERED FILES COLUMN */}
                   <td className="text-start">
-                    {req.fileIds?.slice(0, 2).map((f, i) => (
-                      <div key={i} className="text-truncate small" style={{ maxWidth: "120px" }}>{f.originalName || "Folder"}</div>
-                    ))}
-                    {req.fileIds?.length > 2 && <small className="text-muted">+{req.fileIds.length - 2} more</small>}
+  {req.fileIds?.slice(0, 3).map((f, i) => (
+    <div key={i} className="text-truncate small" style={{ maxWidth: "150px" }}>
+      {i + 1}. {f.originalName || "Folder"}
+    </div>
+  ))}
+  {req.fileIds?.length > 3 && (
+    <div className="ps-3">
+      <small className="text-muted" style={{ fontSize: '0.65rem' }}>
+        ...and {req.fileIds.length - 3} more
+      </small>
+    </div>
+  )}
                   </td>
                   <td className="text-start">
                     <div className="small mb-1"><strong>Reason:</strong> {req.reason}</div>
@@ -193,7 +201,7 @@ const PendingRequestsPage = ({ user, currentTheme }) => {
                           <Button variant="success" size="sm" onClick={() => handleApprove(req._id)}><FaCheck /></Button>
                           <Button variant="danger" size="sm" onClick={() => { setActiveRequestId(req._id); setShowDenyModal(true); }}><FaTimes /></Button>
                         </div>
-                      ) : <Badge bg="info">PENDING</Badge>
+                      ) : <Badge bg="info" className="px-2 py-1">AWAITING</Badge>
                     ) : <Badge bg={req.status === "completed" ? "success" : "danger"}>{req.status?.toUpperCase()}</Badge>}
                   </td>
                 </tr>
@@ -202,7 +210,6 @@ const PendingRequestsPage = ({ user, currentTheme }) => {
           </tbody>
         </Table>
         
-        {/* Footer with Right-Aligned Pagination */}
         <Card.Footer className="bg-transparent border-0 px-3">
            {renderPaginationControls(currentPage, totalPages, setPage)}
         </Card.Footer>

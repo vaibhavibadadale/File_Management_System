@@ -8,7 +8,13 @@ const transferSchema = new mongoose.Schema(
     fileIds: [{ type: mongoose.Schema.Types.ObjectId, ref: "File" }],
     reason: { type: String },
     requestType: { type: String, default: "transfer" }, 
-    departmentId: { type: String }, // Stored as string to match frontend query
+    departmentId: { type: String }, 
+    
+    // --- ADD THESE TWO FIELDS ---
+    senderDeptName: { type: String, default: "N/A" },   // Stores the name for the UI
+    receiverDeptName: { type: String, default: "N/A" }, // Stores the name for the UI
+    // ----------------------------
+
     status: {
       type: String,
       enum: ["pending", "completed", "denied"],

@@ -1,8 +1,10 @@
 const Transfer = require("../models/Transfer");
 const File = require("../models/File");
 const Folder = require("../models/Folder");
+const User = require("../models/User");
+const Department = require("../models/Department");
 
-// CREATE TRANSFER REQUEST
+// 1. CREATE TRANSFER REQUEST
 exports.createRequest = async (req, res) => {
   try {
     const { 
@@ -16,8 +18,14 @@ exports.createRequest = async (req, res) => {
     } = req.body;
 
     const roleUpper = senderRole?.toUpperCase() || "";
-    // Auto-approve if the sender is an Admin or SuperAdmin
     const isAutoApprove = roleUpper === "ADMIN" || roleUpper === "SUPERADMIN";
+
+    // FETCH NAMES TO STORE DURING CREATION
+    const senderUser = await User.findOne({ username: senderUsername });
+    const recipientUser = recipientId ? await User.findById(recipientId) : null;
+    
+    const sDept = senderUser ? await Department.findOne({ departmentId: String(senderUser.departmentId) }) : null;
+    const rDept = recipientUser ? await Department.findOne({ departmentId: String(recipientUser.departmentId) }) : null;
 
     const newTransfer = new Transfer({
       senderUsername,
@@ -27,29 +35,22 @@ exports.createRequest = async (req, res) => {
       reason,
       requestType,
       departmentId,
+      senderDeptName: sDept?.name || sDept?.departmentName || "N/A",
+      receiverDeptName: rDept?.name || rDept?.departmentName || "N/A",
       status: isAutoApprove ? "completed" : "pending"
     });
 
-    // If Admin/SuperAdmin, execute the logic immediately
     if (isAutoApprove) {
       if (requestType === "delete") {
         await File.deleteMany({ _id: { $in: fileIds } });
         await Folder.deleteMany({ _id: { $in: fileIds } });
       } else {
-        // Transfer/Share logic: add recipient to sharedWith array
-        await File.updateMany(
-          { _id: { $in: fileIds } }, 
-          { $addToSet: { sharedWith: recipientId } }
-        );
-        await Folder.updateMany(
-          { _id: { $in: fileIds } }, 
-          { $addToSet: { sharedWith: recipientId } }
-        );
+        await File.updateMany({ _id: { $in: fileIds } }, { $addToSet: { sharedWith: recipientId } });
+        await Folder.updateMany({ _id: { $in: fileIds } }, { $addToSet: { sharedWith: recipientId } });
       }
     }
 
     await newTransfer.save();
-    
     res.status(201).json({ 
       message: isAutoApprove ? "Action completed and logged in history" : "Request sent for approval", 
       transfer: newTransfer 
@@ -58,7 +59,8 @@ exports.createRequest = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
-// GET DASHBOARD
+
+// 2. GET DASHBOARD (WITH REAL-TIME DEPT LOOKUP)
 exports.getPendingDashboard = async (req, res) => {
   try {
     const { role, username, departmentId, search = "", pPage = 1, hPage = 1, limit = 10 } = req.query;
@@ -72,63 +74,80 @@ exports.getPendingDashboard = async (req, res) => {
       ],
     };
 
-    // 1. Start with base queries that look at status only
     let pendingQuery = { status: "pending", ...searchFilter };
     let historyQuery = { status: { $ne: "pending" }, ...searchFilter };
 
-    // 2. Apply "Strict" filtering ONLY for HOD and EMPLOYEE
+    // HOD LOGIC: See employee requests AND own requests
     if (roleUpper === "HOD") {
-      // HOD sees their department's employees OR their own requests
-      pendingQuery.departmentId = departmentId;
-      pendingQuery.$or = [{ senderRole: "EMPLOYEE" }, { senderUsername: username }];
+      pendingQuery = {
+        ...pendingQuery,
+        $or: [
+          { departmentId: departmentId, senderRole: "EMPLOYEE" },
+          { senderUsername: username }
+        ]
+      };
       historyQuery.departmentId = departmentId;
-    } 
-    else if (roleUpper === "EMPLOYEE") {
-      // Employee only sees their own requests
+    } else if (roleUpper === "EMPLOYEE") {
       pendingQuery.senderUsername = username;
       historyQuery.senderUsername = username;
     }
-    // Note: If role is ADMIN or SUPERADMIN, we DO NOT add departmentId to the query.
-    // This allows them to see all records across all departments.
 
     const pendingSkip = (parseInt(pPage) - 1) * parseInt(limit);
     const historySkip = (parseInt(hPage) - 1) * parseInt(limit);
 
-    const [mainRequests, totalPending, logs, totalHistory] = await Promise.all([
-      Transfer.find(pendingQuery)
-        .sort({ createdAt: -1 })
-        .skip(pendingSkip)
-        .limit(parseInt(limit))
-        .populate("fileIds")
-        .populate("recipientId", "username"),
-
+    const [rawMain, totalPending, rawLogs, totalHistory] = await Promise.all([
+      Transfer.find(pendingQuery).sort({ createdAt: -1 }).skip(pendingSkip).limit(parseInt(limit)).populate("fileIds").populate("recipientId", "username departmentId").lean(),
       Transfer.countDocuments(pendingQuery),
-
-      Transfer.find(historyQuery)
-        .sort({ updatedAt: -1 })
-        .skip(historySkip)
-        .limit(parseInt(limit))
-        .populate("fileIds")
-        .populate("recipientId", "username"),
-
+      Transfer.find(historyQuery).sort({ updatedAt: -1 }).skip(historySkip).limit(parseInt(limit)).populate("fileIds").populate("recipientId", "username departmentId").lean(),
       Transfer.countDocuments(historyQuery),
     ]);
 
+    // THE FIX: FETCH DEPARTMENT NAMES FROM USER COLLECTION REAL-TIME
+    const processData = async (list) => {
+      return Promise.all(list.map(async (item) => {
+        // 1. Get Sender Dept Name
+        const sUser = await User.findOne({ username: item.senderUsername });
+        let sDeptFinal = "N/A";
+        if (sUser) {
+          const d = await Department.findOne({ departmentId: String(sUser.departmentId) });
+          sDeptFinal = d?.name || d?.departmentName || "N/A";
+        }
+
+        // 2. Get Receiver Dept Name
+        let rDeptFinal = "N/A";
+        if (item.recipientId && item.recipientId.departmentId) {
+          const d = await Department.findOne({ departmentId: String(item.recipientId.departmentId) });
+          rDeptFinal = d?.name || d?.departmentName || "N/A";
+        }
+
+        // 3. ACTION LOGIC: If HOD sent it, they can't approve it (Show "Pending")
+        const isOwnRequest = item.senderUsername === username;
+
+        return { 
+          ...item, 
+          senderDeptName: sDeptFinal, 
+          receiverDeptName: rDeptFinal,
+          isActionable: !isOwnRequest 
+        };
+      }));
+    };
+
     res.json({
-      mainRequests,
+      mainRequests: await processData(rawMain),
+      logs: await processData(rawLogs),
       totalPending,
       totalHistory,
       pendingTotalPages: Math.ceil(totalPending / limit),
       historyTotalPages: Math.ceil(totalHistory / limit),
       currentPendingPage: parseInt(pPage),
       currentHistoryPage: parseInt(hPage),
-      logs,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 };
-// APPROVE TRANSFER
+
+// 3. APPROVE & DENY HANDLERS
 exports.approveTransfer = async (req, res) => {
   try {
     const { transferId } = req.params;
@@ -145,29 +164,16 @@ exports.approveTransfer = async (req, res) => {
 
     transfer.status = "completed";
     await transfer.save();
-
     res.status(200).json({ message: "Request approved successfully" });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: err.message }); }
 };
 
-// DENY TRANSFER
 exports.denyTransfer = async (req, res) => {
   try {
     const { transferId } = req.params;
     const { denialComment } = req.body;
-
-    const transfer = await Transfer.findByIdAndUpdate(
-      transferId,
-      { status: "denied", denialComment: denialComment || "No specific reason provided" },
-      { new: true }
-    );
-
+    const transfer = await Transfer.findByIdAndUpdate(transferId, { status: "denied", denialComment: denialComment || "No specific reason" }, { new: true });
     if (!transfer) return res.status(404).json({ message: "Request not found" });
-
-    res.status(200).json({ message: "Request denied successfully", deniedReason: transfer.denialComment });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+    res.status(200).json({ message: "Request denied successfully" });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 };

@@ -5,7 +5,7 @@ const DeleteRequestSchema = new mongoose.Schema({
   fileIds: [{ type: mongoose.Schema.Types.ObjectId, ref: "File" }],
   senderUsername: { type: String, required: true },
   senderRole: { type: String, required: true },
-  departmentId: { type: mongoose.Schema.Types.ObjectId, ref: "Department", required: true },
+  departmentId: { type: String, required: true },
   reason: { type: String, required: true },
   status: { type: String, enum: ["pending", "completed", "denied"], default: "pending" },
   denialComment: { type: String, default: "" }
