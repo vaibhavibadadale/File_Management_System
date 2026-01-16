@@ -1,20 +1,29 @@
 const mongoose = require("mongoose");
 
-const TransferSchema = new mongoose.Schema({
-    fileIds: [{ type: mongoose.Schema.Types.ObjectId, ref: "File", required: true }],
+const transferSchema = new mongoose.Schema(
+  {
     senderUsername: { type: String, required: true },
-    senderRole: { type: String }, // Added to track hierarchy
-    senderDepartment: { type: String }, 
-    recipientId: { type: mongoose.Schema.Types.ObjectId, ref: "User" }, // Optional for 'delete' type
-    requestType: { type: String, enum: ['transfer', 'delete'], default: 'transfer' },
+    senderRole: { type: String, required: true },
+    recipientId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    fileIds: [{ type: mongoose.Schema.Types.ObjectId, ref: "File" }],
     reason: { type: String },
-    status: { 
-        type: String, 
-        enum: ['pending', 'completed', 'denied'], 
-        default: 'pending' 
-    },
-    departmentId: { type: String },
-    transferDate: { type: Date, default: Date.now }
-}, { timestamps: true });
+    requestType: { type: String, default: "transfer" }, 
+    departmentId: { type: String }, 
+    
+    // --- ADD THESE TWO FIELDS ---
+    senderDeptName: { type: String, default: "N/A" },   // Stores the name for the UI
+    receiverDeptName: { type: String, default: "N/A" }, // Stores the name for the UI
+    // ----------------------------
 
-module.exports = mongoose.model("Transfer", TransferSchema);
+    status: {
+      type: String,
+      enum: ["pending", "completed", "denied"],
+      default: "pending",
+    },
+    denialComment: { type: String, default: "" },
+  },
+  { timestamps: true }
+);
+
+// Forces connection to 'transferrequests'
+module.exports = mongoose.model("Transfer", transferSchema, "transferrequests");
