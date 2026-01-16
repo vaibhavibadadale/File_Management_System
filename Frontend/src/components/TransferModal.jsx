@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Modal, Button, ListGroup, Form, InputGroup, Spinner, Alert, Badge } from 'react-bootstrap';
-import { Search, ShieldLock, ChatLeftText, Person, ArrowRightCircle } from 'react-bootstrap-icons';
+import { Search, ShieldLock, Person, ArrowRightCircle } from 'react-bootstrap-icons';
 import { transferFilesApi } from '../services/apiService';
 
 const TransferModal = ({ selectedIds, senderUsername, user, onClose, onSuccess }) => {
@@ -39,23 +39,25 @@ const TransferModal = ({ selectedIds, senderUsername, user, onClose, onSuccess }
 
         try {
             const transferData = {
-            senderUsername: senderUsername, 
-            senderRole: user?.role?.toUpperCase(), // Force Uppercase here to be safe
-            password: password, 
-            recipientId: selectedUser?._id, 
-            fileIds: selectedIds,
-            reason: reason,
-            requestType: 'transfer',
-            departmentId: user?.departmentId?._id || user?.departmentId 
-};
+                senderUsername: senderUsername, 
+                senderRole: user?.role?.toUpperCase() || "EMPLOYEE", 
+                recipientId: selectedUser?._id, 
+                fileIds: selectedIds,
+                reason: reason,
+                requestType: 'transfer',
+                departmentId: user?.departmentId?._id || user?.departmentId,
+                password: password // Sent for backend verification
+            };
 
             const response = await transferFilesApi(transferData);
-            alert(response.message); 
+            alert(response.message || "Request processed"); 
             
             if (onSuccess) onSuccess();
             onClose();
         } catch (err) {
-            setError(err.response?.data?.message || "Error processing transfer.");
+            // Log the actual error from backend to help debugging
+            console.error("Transfer Error Response:", err.response?.data);
+            setError(err.response?.data?.error || err.response?.data?.message || "Error processing transfer.");
         } finally {
             setIsSubmitting(false);
         }
@@ -100,11 +102,8 @@ const TransferModal = ({ selectedIds, senderUsername, user, onClose, onSuccess }
                                         </div>
                                         <div>
                                             <div className="fw-bold">{u.username}</div>
-                                            {/* FIX: Accessing property .departmentName instead of the whole object */}
                                             <small className={selectedUser?._id === u._id ? "text-white" : "text-muted"}>
-                                                {typeof u.departmentId === 'object' 
-                                                    ? u.departmentId?.departmentName 
-                                                    : 'General Department'}
+                                                {typeof u.departmentId === 'object' ? u.departmentId?.departmentName : 'General Department'}
                                             </small>
                                         </div>
                                     </div>
