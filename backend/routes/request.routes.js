@@ -1,16 +1,16 @@
-const express = require('express');
+const express = require("express");
 const router = express.Router();
-// Import the whole controller object
-const requestController = require('../controllers/request.controller');
+const requestController = require("../controllers/request.controller");
 
-// Path: /api/transfer/create
-router.post('/create', requestController.createRequest);
+// Line 6 starts here
+router.post("/create", requestController.createRequest); 
+router.get("/pending-dashboard", requestController.getPendingDashboard);
+router.put("/approve/:id", requestController.approveRequest);
+router.put("/deny/:id", requestController.denyRequest);
 
-// Path: /api/transfer/pending
-// CHECK THIS LINE: ensure 'getPendingDashboard' exists in your controller
-router.get('/pending', requestController.getPendingDashboard); 
-
-// Path: /api/transfer/approve/:id or /deny/:id
-router.put('/:action/:id', requestController.handleRequestAction);
+// Trash Management
+router.get("/trash", requestController.getTrashItems);
+router.post("/trash/restore/:id", requestController.restoreFromTrash);
+router.delete("/trash/permanent/:id", requestController.permanentDelete);
 
 module.exports = router;

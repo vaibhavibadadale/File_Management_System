@@ -1,104 +1,181 @@
-const Request = require("../models/Request");
-const File = require("../models/File");
+const Transfer = require("../models/Transfer");
 const User = require("../models/User");
 const Department = require("../models/Department");
+const File = require("../models/File");
+const Trash = require("../models/Trash");
 
-// @desc Create Request (Admin direct action)
+// Helper to move files to the trash collection
+async function handleMoveToTrash(files, sender, approver, deptId) {
+    for (const file of files) {
+        const fileData = typeof file === 'string' ? await File.findById(file) : file;
+        if (!fileData) continue;
+
+        await Trash.create({
+            originalName: fileData.originalName,
+            path: fileData.path,
+            size: fileData.size,
+            mimetype: fileData.mimetype,
+            originalFileId: fileData._id,
+            deletedBy: sender,
+            approvedBy: approver,
+            departmentId: deptId,
+            deletedAt: new Date()
+        });
+        await File.findByIdAndDelete(fileData._id);
+    }
+}
+
+// 1. CREATE REQUEST
 exports.createRequest = async (req, res) => {
     try {
-        const { senderUsername, recipientId, fileIds, reason, requestType } = req.body;
-        const user = await User.findOne({ username: senderUsername });
-        if (!user) return res.status(404).json({ error: "User not found" });
+        const { senderUsername, senderRole, recipientId, fileIds, reason, requestType, departmentId } = req.body;
+        const isAutoApprove = ["ADMIN", "SUPERADMIN"].includes(senderRole?.toUpperCase());
 
-        const dept = await Department.findOne({ 
-            $or: [{ _id: user.departmentId }, { code: user.departmentId }] 
-        });
-
-        const isAdmin = ['ADMIN', 'SUPER_ADMIN'].includes(user.role.toUpperCase());
-
-        const newReq = new Request({
-            requestType: requestType || 'transfer',
+        const newRequest = new Transfer({
+            senderUsername,
+            senderRole,
+            recipientId: recipientId || null,
             fileIds,
-            senderUsername: user.username,
-            senderDepartment: dept ? dept.name : "General Office", 
-            departmentId: user.departmentId, 
-            recipientId: requestType === 'delete' ? null : recipientId,
-            reason: reason || (isAdmin ? "Direct Admin Action" : "No reason provided"),
-            status: isAdmin ? 'completed' : 'pending' 
+            reason,
+            requestType,
+            departmentId,
+            status: isAutoApprove ? "completed" : "pending"
         });
 
-        if (isAdmin) {
-            if (requestType === 'delete') {
-                await File.deleteMany({ _id: { $in: fileIds } });
-            } else {
-                await File.updateMany({ _id: { $in: fileIds } }, { $set: { uploadedBy: recipientId } });
+        if (isAutoApprove) {
+            if (requestType === "delete") {
+                await handleMoveToTrash(fileIds, senderUsername, "AUTO-ADMIN", departmentId);
+            } else if (recipientId) {
+                await File.updateMany({ _id: { $in: fileIds } }, { $addToSet: { sharedWith: recipientId } });
             }
         }
-
-        await newReq.save();
-        res.status(201).json(newReq);
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
+        await newRequest.save();
+        res.status(201).json({ message: "Request processed" });
+    } catch (err) { res.status(500).json({ error: err.message }); }
 };
 
-// @desc Process Approval or Denial
-exports.handleRequestAction = async (req, res) => {
-    try {
-        const { action, id } = req.params;
-        const { denialComment } = req.body; 
-
-        const transferRequest = await Request.findById(id);
-        if (!transferRequest) return res.status(404).json({ error: "Request not found" });
-
-        if (action === 'approve') {
-            if (transferRequest.requestType === 'delete') {
-                await File.deleteMany({ _id: { $in: transferRequest.fileIds } });
-            } else {
-                await File.updateMany(
-                    { _id: { $in: transferRequest.fileIds } },
-                    { $set: { uploadedBy: transferRequest.recipientId } }
-                );
-            }
-            transferRequest.status = 'completed';
-        } 
-        else if (action === 'deny') {
-            transferRequest.status = 'denied';
-            // Append denial comment to reason for logging
-            const currentReason = transferRequest.reason || "No original reason";
-            transferRequest.reason = `${currentReason} | DENIAL REASON: ${denialComment || "No comment provided"}`;
-        } 
-        else {
-            // This prevents the 400 error by catching invalid action strings
-            return res.status(400).json({ error: "Invalid action type. Must be 'approve' or 'deny'." });
-        }
-
-        await transferRequest.save();
-        return res.status(200).json({ message: `Successfully ${action}d` });
-    } catch (error) {
-        console.error("Action Error:", error);
-        res.status(500).json({ error: error.message });
-    }
-};
-
-// @desc Dashboard Fetch
+// 2. GET DASHBOARD (Fixes the "N/A" Receiver Info)
 exports.getPendingDashboard = async (req, res) => {
     try {
-        const { role, username, departmentId } = req.query;
-        const pop = [{ path: 'recipientId', select: 'username' }, { path: 'fileIds', select: 'originalName filename' }];
-        
-        const mySentRequests = await Request.find({ senderUsername: username }).populate(pop).sort({ createdAt: -1 });
-        let requestsToApprove = [];
-        let logs = [];
+        const { role, username, departmentId, pPage = 1, hPage = 1, limit = 5 } = req.query;
+        const roleUpper = role?.toUpperCase();
 
-        if (['ADMIN', 'SUPER_ADMIN'].includes(role?.toUpperCase())) {
-            requestsToApprove = await Request.find({ status: 'pending' }).populate(pop);
-            logs = await Request.find({ status: { $ne: 'pending' } }).populate(pop).limit(50);
-        } else if (role?.toUpperCase() === 'HOD') {
-            requestsToApprove = await Request.find({ departmentId, senderUsername: { $ne: username }, status: 'pending' }).populate(pop);
+        let filter = {};
+        if (roleUpper === "HOD") {
+            filter = { $or: [{ departmentId: departmentId, senderRole: "EMPLOYEE" }, { senderUsername: username }] };
+        } else if (!["ADMIN", "SUPERADMIN"].includes(roleUpper)) {
+            filter = { senderUsername: username };
         }
-        res.json({ mySentRequests, requestsToApprove, logs });
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
+
+        const pSkip = (parseInt(pPage) - 1) * parseInt(limit);
+        const hSkip = (parseInt(hPage) - 1) * parseInt(limit);
+
+        const [pReqs, hReqs, totalP, totalH] = await Promise.all([
+            Transfer.find({ ...filter, status: "pending" }).sort({ createdAt: -1 }).skip(pSkip).limit(parseInt(limit)).populate("fileIds").populate("recipientId").lean(),
+            Transfer.find({ ...filter, status: { $ne: "pending" } }).sort({ updatedAt: -1 }).skip(hSkip).limit(parseInt(limit)).populate("fileIds").populate("recipientId").lean(),
+            Transfer.countDocuments({ ...filter, status: "pending" }),
+            Transfer.countDocuments({ ...filter, status: { $ne: "pending" } })
+        ]);
+
+        const processData = async (list) => {
+            return Promise.all(list.map(async (item) => {
+                // Sender Details
+                const sUser = await User.findOne({ username: item.senderUsername });
+                let sDeptName = "N/A";
+                if (sUser) {
+                    const sd = await Department.findOne({ departmentId: String(sUser.departmentId) });
+                    sDeptName = sd?.departmentName || sd?.name || "N/A";
+                }
+
+                // Receiver Details (The "N/A" Fix)
+                let rUsername = "N/A";
+                let rDeptName = "No Dept";
+                let rRole = "USER";
+
+                if (item.recipientId) {
+                    rUsername = item.recipientId.username || "User";
+                    rRole = item.recipientId.role || "USER";
+                    const rd = await Department.findOne({ departmentId: String(item.recipientId.departmentId) });
+                    rDeptName = rd?.departmentName || rd?.name || "N/A";
+                } else if (item.requestType === "delete") {
+                    rUsername = "SYSTEM";
+                    rDeptName = "TRASH";
+                }
+
+                return { 
+                    ...item, 
+                    senderDeptName: sDeptName, 
+                    receiverName: rUsername, 
+                    receiverDeptName: rDeptName,
+                    receiverRole: rRole 
+                };
+            }));
+        };
+
+        res.json({
+            mainRequests: await processData(pReqs),
+            logs: await processData(hReqs),
+            totalPending: totalP,
+            totalHistory: totalH,
+            pendingTotalPages: Math.ceil(totalP / limit),
+            historyTotalPages: Math.ceil(totalH / limit)
+        });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+};
+
+// 3. APPROVE / DENY
+exports.approveRequest = async (req, res) => {
+    try {
+        const request = await Transfer.findById(req.params.id);
+        if (!request) return res.status(404).json({ message: "Not found" });
+
+        if (request.requestType === "delete") {
+            await handleMoveToTrash(request.fileIds, request.senderUsername, "Authorized", request.departmentId);
+        } else {
+            await File.updateMany({ _id: { $in: request.fileIds } }, { $addToSet: { sharedWith: request.recipientId } });
+        }
+        request.status = "completed";
+        await request.save();
+        res.json({ message: "Approved" });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+};
+
+exports.denyRequest = async (req, res) => {
+    try {
+        await Transfer.findByIdAndUpdate(req.params.id, { 
+            status: "denied", 
+            denialComment: req.body.denialComment || "Rejected" 
+        });
+        res.json({ message: "Denied" });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+};
+
+// 4. TRASH HANDLERS
+exports.getTrashItems = async (req, res) => {
+    try {
+        const { role, departmentId } = req.query;
+        let query = (role?.toUpperCase() === "HOD") ? { departmentId } : {};
+        const items = await Trash.find(query).sort({ deletedAt: -1 });
+        res.json(items);
+    } catch (err) { res.status(500).json({ error: err.message }); }
+};
+
+exports.restoreFromTrash = async (req, res) => {
+    try {
+        const item = await Trash.findById(req.params.id);
+        if (!item) return res.status(404).json({ message: "Not found" });
+        const data = item.toObject();
+        const originalId = data.originalFileId;
+        delete data._id; delete data.deletedAt; delete data.originalFileId;
+        await File.create({ ...data, _id: originalId });
+        await Trash.findByIdAndDelete(req.params.id);
+        res.json({ message: "Restored" });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+};
+
+exports.permanentDelete = async (req, res) => {
+    try {
+        await Trash.findByIdAndDelete(req.params.id);
+        res.json({ message: "Deleted Permanently" });
+    } catch (err) { res.status(500).json({ error: err.message }); }
 };
