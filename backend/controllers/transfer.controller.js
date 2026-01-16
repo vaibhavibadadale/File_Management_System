@@ -20,7 +20,6 @@ exports.createRequest = async (req, res) => {
     const roleUpper = senderRole?.toUpperCase() || "";
     const isAutoApprove = roleUpper === "ADMIN" || roleUpper === "SUPERADMIN";
 
-    // FETCH NAMES TO STORE DURING CREATION
     const senderUser = await User.findOne({ username: senderUsername });
     const recipientUser = recipientId ? await User.findById(recipientId) : null;
     
@@ -40,10 +39,10 @@ exports.createRequest = async (req, res) => {
       status: isAutoApprove ? "completed" : "pending"
     });
 
+    // If Admin/Superadmin, perform action immediately
     if (isAutoApprove) {
       if (requestType === "delete") {
-        await File.deleteMany({ _id: { $in: fileIds } });
-        await Folder.deleteMany({ _id: { $in: fileIds } });
+        await handleMoveToTrash(fileIds, senderUsername, "AUTO-ADMIN", sDept);
       } else {
         await File.updateMany({ _id: { $in: fileIds } }, { $addToSet: { sharedWith: recipientId } });
         await Folder.updateMany({ _id: { $in: fileIds } }, { $addToSet: { sharedWith: recipientId } });
@@ -52,14 +51,13 @@ exports.createRequest = async (req, res) => {
 
     await newTransfer.save();
     res.status(201).json({ 
-      message: isAutoApprove ? "Action completed and logged in history" : "Request sent for approval", 
+      message: isAutoApprove ? "Action completed immediately" : "Request sent for approval", 
       transfer: newTransfer 
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 };
-
 // 2. GET DASHBOARD (WITH REAL-TIME DEPT LOOKUP)
 exports.getPendingDashboard = async (req, res) => {
   try {
@@ -151,12 +149,14 @@ exports.getPendingDashboard = async (req, res) => {
 exports.approveTransfer = async (req, res) => {
   try {
     const { transferId } = req.params;
-    const transfer = await Transfer.findById(transferId);
+    const { approverUsername } = req.body; // Pass this from Frontend
+    
+    const transfer = await Transfer.findById(transferId).populate('fileIds');
     if (!transfer) return res.status(404).json({ message: "Request not found" });
 
     if (transfer.requestType === "delete") {
-      await File.deleteMany({ _id: { $in: transfer.fileIds } });
-      await Folder.deleteMany({ _id: { $in: transfer.fileIds } });
+      // Instead of deleteMany, we move to Trash
+      await handleMoveToTrash(transfer.fileIds, transfer.senderUsername, approverUsername || "Authorized User", transfer.departmentId);
     } else {
       await File.updateMany({ _id: { $in: transfer.fileIds } }, { $addToSet: { sharedWith: transfer.recipientId } });
       await Folder.updateMany({ _id: { $in: transfer.fileIds } }, { $addToSet: { sharedWith: transfer.recipientId } });
@@ -164,9 +164,32 @@ exports.approveTransfer = async (req, res) => {
 
     transfer.status = "completed";
     await transfer.save();
-    res.status(200).json({ message: "Request approved successfully" });
+    res.status(200).json({ message: "Request approved and processed" });
   } catch (err) { res.status(500).json({ error: err.message }); }
 };
+
+// HELPER FUNCTION: To avoid repeating code
+async function handleMoveToTrash(files, sender, approver, deptId) {
+    for (const file of files) {
+        const fileData = typeof file === 'string' ? await File.findById(file) : file;
+        if (!fileData) continue;
+
+        await Trash.create({
+            originalName: fileData.originalName,
+            path: fileData.path,
+            size: fileData.size,
+            mimetype: fileData.mimetype,
+            originalFileId: fileData._id,
+            deletedBy: sender,
+            approvedBy: approver,
+            departmentId: deptId,
+            reason: "Approved Request"
+        });
+
+        // Remove from main collection
+        await File.findByIdAndDelete(fileData._id);
+    }
+}
 
 exports.denyTransfer = async (req, res) => {
   try {

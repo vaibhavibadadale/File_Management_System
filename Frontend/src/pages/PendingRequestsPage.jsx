@@ -162,10 +162,17 @@ const PendingRequestsPage = ({ user, currentTheme }) => {
                     <div className="fw-bold">{req.senderUsername}</div>
                     {renderDeptInfo(req.senderDeptName, req.senderRole)}
                   </td>
-                  <td>
-                    {req.requestType === "delete" ? <span className="text-muted small italic">SYSTEM (TRASH)</span> : 
-                    <><div className="fw-bold">{req.recipientId?.username || "N/A"}</div>{renderDeptInfo(req.receiverDeptName, req.recipientId?.role)}</>}
-                  </td>
+                 <td>
+              {req.requestType === "delete" ? (
+              <span className="text-muted small italic">SYSTEM (TRASH)</span>
+               ) : (
+               <>
+               {/* Use the flattened receiverName and receiverDeptName keys */}
+               <div className="fw-bold">{req.receiverName || "N/A"}</div>
+               {renderDeptInfo(req.receiverDeptName, req.receiverRole)}
+               </>
+              )}
+            </td>
                   {/* NUMBERED FILES COLUMN */}
                   <td className="text-start">
   {req.fileIds?.slice(0, 3).map((f, i) => (
