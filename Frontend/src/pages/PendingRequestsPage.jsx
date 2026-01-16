@@ -240,5 +240,5 @@ const PendingRequestsPage = ({ user, currentTheme }) => {
         </Container>
     );
 };
-
+ 
 export default PendingRequestsPage;
