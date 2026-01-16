@@ -71,7 +71,8 @@ function App() {
     }
 
     return (
-        <div className={`min-vh-100 ${themeMode === "dark" ? "bg-dark text-light" : "bg-light text-dark"}`}> 
+        /* Added 'theme-container' and conditional 'dark' class to trigger your CSS variables */
+        <div className={`theme-container ${themeMode} min-vh-100 ${themeMode === "dark" ? "bg-dark text-light" : "bg-light text-dark"}`}> 
             <div className="d-flex align-items-stretch">
                 <Sidebar themeMode={themeMode} user={user} />
                 
@@ -86,13 +87,18 @@ function App() {
                     <main className="flex-grow-1 p-3 p-md-4">
                         <Routes>
                             <Route path="/" element={<FileDashboard user={user} currentTheme={themeMode} />} />
-                            <Route path="/file-manager" element={<UploadFilePage user={user} />} />
+                            
+                            <Route 
+                                path="/file-manager" 
+                                element={<UploadFilePage user={user} currentTheme={themeMode} />} 
+                            />
+                            
                             <Route path="/ventures" element={<VenturesPage user={user} currentTheme={themeMode} />} />
                             
                             <Route path="/users" element={<UsersPage currentTheme={themeMode} user={user} />} />
+                            
                             <Route path="/department-staff/:deptId" element={<DepartmentStaff currentTheme={themeMode} user={user} />} />
                             
-                            {/* UPDATED: Changed :username to :userId to match database ID navigation */}
                             <Route path="/user-files/:userId" element={<UserFilesView currentTheme={themeMode} user={user} />} />
 
                             <Route 
@@ -102,7 +108,7 @@ function App() {
 
                             <Route 
                                 path="/important" 
-                                element={<UploadFilePage user={user} viewMode="important" />} 
+                                element={<UploadFilePage user={user} viewMode="important" currentTheme={themeMode} />} 
                             />
                             
                             <Route path="/trash" element={<div className="p-4"><h3>Trash Bin</h3></div>} />

@@ -8,7 +8,7 @@ router.get("/", userController.getAllUsers);
 router.get("/dept/:deptId", userController.getUsersByDepartment);
 router.get("/:id", userController.getUserById);
 router.put("/status/:id", userController.toggleUserStatus);
-router.post("/verify-password", userController.verifyPassword); // Matches the new function
+router.post("/verify-password", userController.verifyPassword); 
 router.get("/files/:username", userController.getUserFiles);
 router.delete("/soft-delete/:id", userController.softDeleteUser);
 

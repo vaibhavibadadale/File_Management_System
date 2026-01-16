@@ -16,10 +16,10 @@ const Header = ({ user, currentTheme, onThemeToggle, onLogout }) => {
     }, []);
 
     return (
-        /* Added 'sticky-top' and 'z-3' (Bootstrap z-index 1000+) to keep it at the top */
+        /* Added 'sticky-top' and 'z-3' to keep it at the top */
         <header 
             className={`p-3 border-bottom d-flex justify-content-between align-items-center sticky-top z-3 ${
-                currentTheme === "dark" ? "bg-dark border-secondary text-light" : "bg-white text-dark shadow-sm"
+                currentTheme === "dark" ? "bg-dark border-secondary text-light" : "bg-white text-dark shadow-sm "
             }`}
             style={{ top: 0 }} 
         >
@@ -70,7 +70,16 @@ const Header = ({ user, currentTheme, onThemeToggle, onLogout }) => {
                                 <span className="small text-muted d-block">Signed in as</span>
                                 <strong className="small">{user?.username}</strong>
                             </div>
-                            <Link to="/profile" className="dropdown-item px-3 py-2 small d-block text-decoration-none text-reset">👤 My Profile</Link>
+                            
+                            {/* UPDATED: Path now includes the actual user ID from database */}
+                            <Link 
+                                to={`/user-files/${user?._id || user?.id}`} 
+                                className="dropdown-item px-3 py-2 small d-block text-decoration-none text-reset"
+                                onClick={() => setIsDropdownOpen(false)}
+                            >
+                                👤 My Profile
+                            </Link>
+
                             <hr className="my-1 border-secondary" />
                             <button 
                                 onClick={onLogout} 

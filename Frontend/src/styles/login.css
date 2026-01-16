@@ -112,7 +112,6 @@ body {
   padding: 0 5px;
 }
 
-/* Logic to move label up on focus or when input has value */
 .input-wrapper input:focus + label,
 .input-wrapper input:not(:placeholder-shown) + label,
 .input-wrapper input:valid + label,
@@ -123,6 +122,99 @@ body {
   font-size: 12px;
   color: #3b82f6;
   font-weight: 600;
+}
+
+/* --- ANIMATION FOR DEPARTMENT DROPDOWN --- */
+.animate-fade-in {
+  animation: fadeIn 0.4s ease-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* --- FANCY POPUP MODAL STYLES --- */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(5px); /* Fancy blur effect */
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 10000;
+  animation: overlayFadeIn 0.3s ease;
+}
+
+.fancy-popup {
+  background: #ffffff;
+  padding: 40px 30px;
+  border-radius: 20px;
+  width: 90%;
+  max-width: 380px;
+  text-align: center;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  animation: popupPop 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.popup-icon {
+  width: 70px;
+  height: 70px;
+  background: #fff5f5;
+  color: #ff4757;
+  font-size: 2.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  margin: 0 auto 20px;
+  border: 2px solid #ffebeb;
+}
+
+.fancy-popup h3 {
+  font-size: 1.5rem;
+  color: #1e293b;
+  margin-bottom: 12px;
+  font-weight: 700;
+}
+
+.fancy-popup p {
+  font-size: 1rem;
+  color: #64748b;
+  line-height: 1.5;
+  margin-bottom: 25px;
+}
+
+.close-popup-btn {
+  width: 100%;
+  padding: 12px;
+  background: #3b82f6;
+  color: white;
+  border: none;
+  border-radius: 10px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.2s, background 0.2s;
+}
+
+.close-popup-btn:hover {
+  background: #2563eb;
+  transform: translateY(-2px);
+}
+
+@keyframes overlayFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes popupPop {
+  0% { opacity: 0; transform: scale(0.7) translateY(20px); }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
 }
 
 /* --- ADDITIONAL OPTIONS --- */
@@ -161,7 +253,7 @@ body {
   font-size: 1rem;
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.3s ease;
+  transition: background 0.3s ease, transform 0.1s ease;
 }
 
 .login-btn:hover {
@@ -170,6 +262,11 @@ body {
 
 .login-btn:active {
   transform: scale(0.98);
+}
+
+.login-btn:disabled {
+  background: #94a3b8;
+  cursor: not-allowed;
 }
 
 /* --- RESPONSIVE ADJUSTMENTS --- */

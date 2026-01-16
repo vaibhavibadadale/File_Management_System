@@ -3,7 +3,7 @@ const fs = require("fs");
 const path = require("path");
 const mongoose = require("mongoose");
 
-// 1. CREATE USER
+// 1. CREATE USER (Logic preserved)
 exports.createUser = async (req, res) => {
     const { role, username } = req.body;
     const creatorRoleRaw = req.headers['creator-role'] || "";
@@ -58,14 +58,33 @@ exports.verifyPassword = async (req, res) => {
     }
 };
 
-// 3. LOGIN
+// 3. LOGIN (UPDATED WITH DEPARTMENT CHECK)
 exports.login = async (req, res) => {
     try {
-        const { username, password } = req.body;
+        const { username, password, department } = req.body;
+        
         const user = await User.findOne({ username, deletedAt: null });
-        if (!user || user.password !== password) return res.status(401).json({ message: "Invalid credentials" });
+        
+        if (!user || user.password !== password) {
+            return res.status(401).json({ message: "Invalid username or password" });
+        }
+
+        // --- NEW VALIDATION: Validate department for Employee/HOD ---
+        const role = (user.role || "").toLowerCase();
+        if (role === "employee" || role === "hod") {
+            // Check if user's registered department matches the one chosen at login
+            if (user.department !== department) {
+                return res.status(401).json({ 
+                    message: `Access Denied: You are registered under '${user.department}', not '${department}'.` 
+                });
+            }
+        }
+        // ------------------------------------------------------------
+
         res.json({ _id: user._id, username: user.username, role: user.role, name: user.name });
-    } catch (error) { res.status(500).json({ error: error.message }); }
+    } catch (error) { 
+        res.status(500).json({ error: error.message }); 
+    }
 };
 
 // 4. GET ALL USERS
@@ -76,11 +95,10 @@ exports.getAllUsers = async (req, res) => {
     } catch (error) { res.status(500).json({ error: error.message }); }
 };
 
-// 5. GET USERS BY DEPARTMENT (STRICT ROLE SEPARATION)
+// 5. GET USERS BY DEPARTMENT
 exports.getUsersByDepartment = async (req, res) => {
     try {
         const { deptId } = req.params;
-        
         const mongoId = mongoose.Types.ObjectId.isValid(deptId) 
             ? new mongoose.Types.ObjectId(deptId) 
             : null;
@@ -97,10 +115,7 @@ exports.getUsersByDepartment = async (req, res) => {
         const hodsOnly = allUsers.filter(u => u.role?.toUpperCase() === "HOD");
         const employeesOnly = allUsers.filter(u => u.role?.toUpperCase() === "EMPLOYEE");
 
-        res.json({
-            hods: hodsOnly,
-            employees: employeesOnly
-        });
+        res.json({ hods: hodsOnly, employees: employeesOnly });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -124,7 +139,7 @@ exports.toggleUserStatus = async (req, res) => {
     } catch (error) { res.status(500).json({ error: error.message }); }
 };
 
-// 8. GET USER FILES (CORRECTED METADATA VERSION)
+// 8. GET USER FILES
 exports.getUserFiles = async (req, res) => {
     try {
         const { username } = req.params;
@@ -149,6 +164,7 @@ exports.getUserFiles = async (req, res) => {
         res.status(500).json({ error: error.message });
     }
 };
+
 // 9. SOFT DELETE USER
 exports.softDeleteUser = async (req, res) => {
     try {
