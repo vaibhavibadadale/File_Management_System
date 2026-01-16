@@ -35,7 +35,7 @@ const formatBytes = (bytes, decimals = 2) => {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
 };
 
-function UploadFilePage({ user, viewMode }) {
+function UploadFilePage({ user, viewMode, currentTheme }) {
     const [foldersInCurrentView, setFoldersInCurrentView] = useState([]);
     const [filesInCurrentView, setFilesInCurrentView] = useState([]);
     const [receivedItems, setReceivedItems] = useState([]);
@@ -48,6 +48,8 @@ function UploadFilePage({ user, viewMode }) {
     const [searchQuery, setSearchQuery] = useState(""); 
     const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
     const [starredItems, setStarredItems] = useState({});
+
+    const isDark = currentTheme === "dark";
 
     useEffect(() => {
         loadContent(currentFolderId);
@@ -80,32 +82,27 @@ function UploadFilePage({ user, viewMode }) {
                 if (item.isStarred) stars[item._id] = true;
             });
             setStarredItems(stars);
-
         } catch (err) { console.error("Error loading content:", err); }
     };
 
     const handleToggleStar = async (e, item) => {
         e.stopPropagation(); 
         const isFolder = item.type === 'Folder' || item.isFolder;
+        if (isFolder) return; 
+
         const newStarredState = !starredItems[item._id];
 
         try {
-            const endpoint = isFolder 
-                ? `${BACKEND_URL}/api/folders/star/${item._id}` 
-                : `${BACKEND_URL}/api/files/star/${item._id}`;
-
+            const endpoint = `${BACKEND_URL}/api/files/star/${item._id}`;
             await axios.patch(endpoint, { 
                 userId: user?._id || USER_ID,
                 isStarred: newStarredState 
             });
-
             setStarredItems(prev => ({ ...prev, [item._id]: newStarredState }));
-            
             if (viewMode === "important") {
                 loadContent(currentFolderId);
             }
         } catch (err) {
-            console.error("Star toggle failed:", err);
             alert("Could not update star status.");
         }
     };
@@ -114,9 +111,7 @@ function UploadFilePage({ user, viewMode }) {
         const isChecked = e.target.checked;
         if (isChecked) {
             const allIds = {};
-            combinedItems.forEach(item => {
-                allIds[item._id] = true;
-            });
+            combinedItems.forEach(item => { allIds[item._id] = true; });
             setItemsToTransfer(allIds);
         } else {
             setItemsToTransfer({});
@@ -133,7 +128,6 @@ function UploadFilePage({ user, viewMode }) {
                 : `${BACKEND_URL}/api/files/${item._id}`;
 
             await axios.delete(endpoint, { data: { userId: user?._id || USER_ID } });
-            
             await loadContent(currentFolderId);
             if (isReceivedModalOpen) fetchReceivedFiles();
         } catch (err) { alert("Delete failed."); }
@@ -142,7 +136,7 @@ function UploadFilePage({ user, viewMode }) {
     const handleBulkDelete = async () => {
         const selectedIds = Object.keys(itemsToTransfer).filter(id => itemsToTransfer[id]);
         if (selectedIds.length === 0) return;
-        if (!window.confirm(`Are you sure you want to delete ${selectedIds.length} selected item(s)?`)) return;
+        if (!window.confirm(`Delete ${selectedIds.length} selected item(s)?`)) return;
 
         try {
             for (const id of selectedIds) {
@@ -248,10 +242,20 @@ function UploadFilePage({ user, viewMode }) {
         setItemsToTransfer(prev => ({ ...prev, [id]: !prev[id] }));
     };
 
-    let combinedItems = [
-        ...foldersInCurrentView.map(f => ({ ...f, type: 'Folder', displayName: f.folderName || f.name })),
-        ...filesInCurrentView.map(f => ({ ...f, type: f.mimeType || 'File', displayName: f.originalName || "Unnamed File" }))
-    ];
+    let combinedItems = [];
+    
+    const foldersMapped = foldersInCurrentView.map(f => ({ ...f, type: 'Folder', displayName: f.folderName || f.name }));
+    const filesMapped = filesInCurrentView.map(f => ({ ...f, type: f.mimeType || 'File', displayName: f.originalName || "Unnamed File" }));
+
+    if (viewMode === "important") {
+        combinedItems = [...foldersMapped, ...filesMapped];
+    } else {
+        if (currentFolderId === null) {
+            combinedItems = [...foldersMapped];
+        } else {
+            combinedItems = [...foldersMapped, ...filesMapped];
+        }
+    }
 
     if (searchQuery) {
         combinedItems = combinedItems.filter(item => item.displayName.toLowerCase().includes(searchQuery.toLowerCase()));
@@ -261,7 +265,7 @@ function UploadFilePage({ user, viewMode }) {
     const isAllSelected = combinedItems.length > 0 && selectedCount === combinedItems.length;
 
     return (
-        <div className="file-explorer-app-single-pane">
+        <div className={`file-explorer-app-single-pane ${isDark ? "dark-theme" : "light-theme"}`}>
             <main className="main-content">
                 <header className="main-header mb-4">
                     <div className="d-flex align-items-center justify-content-between w-100">
@@ -269,145 +273,219 @@ function UploadFilePage({ user, viewMode }) {
                             <h1 className="mb-0">
                                 {viewMode === "important" ? "⭐ Important Files" : "📁 File Manager"}
                             </h1>
-                            <span className="badge bg-info ms-3 text-uppercase">{user?.departmentName || "General"}</span>
                         </div>
-                        {/* Received button hidden in important mode */}
                         {viewMode !== "important" && (
-                            <button className="btn btn-outline-primary" onClick={fetchReceivedFiles}>
-                                <i className="fas fa-inbox me-2"></i> Received Files
+                            <button className={`btn ${isDark ? 'btn-outline-light' : 'btn-outline-primary'} border-2 fw-bold px-4 rounded-pill`} onClick={fetchReceivedFiles}>
+                                <i className="fas fa-inbox me-2"></i> Received
                             </button>
                         )}
                     </div>
                 </header>
                 
-                <div className="main-actions-toolbar">
+                <div className={`main-actions-toolbar ${isDark ? 'dark-toolbar' : ''}`}>
                     {viewMode !== "important" ? (
                         <>
-                            <div className="action-group create-group d-flex align-items-center">
-                                <button className="btn btn-outline-secondary me-2" onClick={handleGoBack} disabled={currentFolderId === null}><i className="fas fa-arrow-left"></i></button>
-                                <input type="text" placeholder="New folder..." value={folderName} onChange={(e) => setFolderName(e.target.value)} className="create-input" />
-                                <button onClick={handleCreateFolder} className="create-btn">New Folder</button>
+                            <div className="action-group create-group d-flex align-items-center has-right-border">
+                                <button 
+                                    className={`btn btn-sm ${isDark ? 'btn-secondary text-white' : 'btn-outline-secondary'} me-2`} 
+                                    onClick={handleGoBack} 
+                                    disabled={currentFolderId === null}
+                                >
+                                    <i className="fas fa-arrow-left"></i>
+                                </button>
+                                <input 
+                                    type="text" 
+                                    placeholder="New folder..." 
+                                    value={folderName} 
+                                    onChange={(e) => setFolderName(e.target.value)} 
+                                    className="create-input" 
+                                />
+                                <button onClick={handleCreateFolder} className="create-btn">Create</button>
                             </div>
 
-                            <div className="action-group upload-group">
-                                <label className="upload-label-main" htmlFor="file-input"><i className="fas fa-upload"></i> Upload</label>
-                                <input id="file-input" type="file" onChange={(e) => setSelectedFile(e.target.files[0])} hidden />
-                                <button onClick={handleFileUpload} disabled={!selectedFile} className="upload-btn-main">Go</button>
-                            </div>
+                            {/* SMALLER ADD FILE BUTTON LOGIC */}
+                            {currentFolderId !== null && (
+                                <div className="action-group upload-group d-flex align-items-center ms-2">
+                                    <label className="upload-label-main btn btn-sm btn-outline-primary mb-0 d-flex align-items-center py-1 px-2" htmlFor="file-input" style={{ fontSize: '0.85rem', cursor: 'pointer' }}>
+                                        <i className="fas fa-plus-circle me-1"></i> {selectedFile ? "Ready" : "Add File"}
+                                    </label>
+                                    <input id="file-input" type="file" onChange={(e) => setSelectedFile(e.target.files[0])} hidden />
+                                    <button 
+                                        onClick={handleFileUpload} 
+                                        disabled={!selectedFile} 
+                                        className="btn btn-sm btn-primary ms-1 py-1 px-2"
+                                        style={{ fontSize: '0.85rem' }}
+                                    >
+                                        Upload
+                                    </button>
+                                </div>
+                            )}
                         </>
                     ) : (
                         <div className="action-group d-flex align-items-center">
-                            <i className="fas fa-info-circle text-muted me-2"></i>
-                            <span className="text-muted small">Viewing all starred items across your workspace.</span>
+                            <i className="fas fa-star text-warning me-2"></i>
+                            {/* UPDATED: Dark mode aware visibility for the message */}
+                            <span className={isDark ? "text-light-50 small" : "text-muted small"} style={{ opacity: isDark ? 0.7 : 1 }}>
+                                Starred items from all folders.
+                            </span>
                         </div>
                     )}
 
-                    <div className="action-group search-group">
-                        <input type="text" placeholder="Search..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="search-input" />
+                    <div className="action-group search-group ms-auto">
+                        <i className="fas fa-search search-icon ms-2"></i>
+                        <input 
+                            type="text" 
+                            placeholder="Search..." 
+                            value={searchQuery} 
+                            onChange={(e) => setSearchQuery(e.target.value)} 
+                            className="search-input" 
+                        />
                     </div>
                 </div>
 
                 {viewMode !== "important" && (
-                    <div className="breadcrumb mb-3">
-                        {currentPath.map((item, index) => (
-                            <span key={item._id || index} className="path-item" onClick={() => handlePathClick(item)} style={{cursor: 'pointer'}}>
-                                {item.name} {index < currentPath.length - 1 && ' / '}
-                            </span>
-                        ))}
+                    <div className="breadcrumb-container mt-3 px-1">
+                        <nav aria-label="breadcrumb">
+                            <ol className="breadcrumb mb-0">
+                                {currentPath.map((item, index) => (
+                                    <li key={item._id || index} 
+                                        className={`breadcrumb-item ${index === currentPath.length-1 ? 'active' : ''}`}
+                                        onClick={() => handlePathClick(item)}
+                                        style={{ cursor: 'pointer' }}
+                                    >
+                                        {item.name}
+                                    </li>
+                                ))}
+                            </ol>
+                        </nav>
                     </div>
                 )}
 
-                {/* Transfer and Bulk Delete logic hidden in important mode */}
-                {viewMode !== "important" && (
-                    <div className="list-toolbar mb-3 d-flex gap-2">
-                        <button onClick={() => setIsTransferModalOpen(true)} disabled={selectedCount === 0} className="btn btn-primary btn-sm">
-                            <i className="fas fa-share-square me-2"></i> Transfer ({selectedCount})
-                        </button>
-                        <button onClick={handleBulkDelete} disabled={selectedCount === 0} className="btn btn-danger btn-sm">
-                            <i className="fas fa-trash-alt me-2"></i> Delete Selected ({selectedCount})
-                        </button>
-                    </div>
-                )}
+                <div className="list-toolbar mt-4 d-flex justify-content-between align-items-center">
+                    <h5 className="mb-0 fw-bold">
+                        {viewMode === "important" ? "Starred Content" : currentFolderId === null ? "Folders" : "Files & Folders"}
+                    </h5>
+                    
+                    {viewMode !== "important" && selectedCount > 0 && (
+                        <div className="selection-action-bar animate__animated animate__fadeInDown d-flex align-items-center gap-2 p-2 px-3 rounded-pill shadow-sm" 
+                             style={{ background: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)', border: '1px solid #ddd' }}>
+                            <span className="me-3 small fw-bold text-primary">{selectedCount} Selected</span>
+                            <button 
+                                onClick={() => setIsTransferModalOpen(true)} 
+                                className="btn btn-success btn-sm rounded-pill px-3 d-flex align-items-center"
+                            >
+                                <i className="fas fa-paper-plane me-2"></i> Transfer
+                            </button>
+                            <button 
+                                onClick={handleBulkDelete} 
+                                className="btn btn-danger btn-sm rounded-pill px-3 d-flex align-items-center"
+                            >
+                                <i className="fas fa-trash me-2"></i> Delete
+                            </button>
+                            <div className="vr mx-2"></div>
+                            <button className="btn btn-link btn-sm text-muted p-0" onClick={() => setItemsToTransfer({})}>
+                                <i className="fas fa-times-circle"></i>
+                            </button>
+                        </div>
+                    )}
+                </div>
 
-                <div className="file-table-container">
+                <div className="file-table-container mt-3">
                     <table className="file-table">
                         <thead>
                             <tr>
-                                <th>
+                                <th style={{width: '40px'}}>
                                     {viewMode !== "important" && (
-                                        <input type="checkbox" onChange={handleSelectAll} checked={isAllSelected} title="Select All" />
+                                        <input type="checkbox" onChange={handleSelectAll} checked={isAllSelected} className="form-check-input" />
                                     )}
                                 </th>
                                 <th>Name</th>
                                 <th>Type</th>
-                                <th>Date</th>
+                                <th>Modified</th>
                                 <th>Size</th>
-                                <th>Action</th>
+                                <th style={{textAlign: 'right'}}>Action</th>
                             </tr>
                         </thead>
                         <tbody>
                             {combinedItems.length > 0 ? combinedItems.map((item) => (
-                                <tr key={item._id} onDoubleClick={item.type === 'Folder' ? () => handleFolderClick(item) : null}>
+                                <tr key={item._id} 
+                                    onDoubleClick={item.type === 'Folder' ? () => handleFolderClick(item) : null}
+                                    className={itemsToTransfer[item._id] ? 'table-active' : ''}>
                                     <td>
                                         {viewMode !== "important" && (
-                                            <input type="checkbox" checked={!!itemsToTransfer[item._id]} onChange={() => handleSelectItem(item._id)} />
+                                            <input 
+                                                type="checkbox" 
+                                                checked={!!itemsToTransfer[item._id]} 
+                                                onChange={() => handleSelectItem(item._id)} 
+                                                className="form-check-input"
+                                            />
                                         )}
                                     </td>
-                                    <td style={{ cursor: item.type === 'Folder' ? 'pointer' : 'default' }}>
+                                    <td className={item.type === 'Folder' ? 'folder-row' : ''}>
                                         <div className="d-flex align-items-center">
-                                            <i className={`${item.type === 'Folder' ? 'fas fa-folder text-warning' : getFileIcon(item.type)} file-icon me-2`}></i>
-                                            <span className="me-2 text-truncate" style={{maxWidth: '250px'}}>{item.displayName}</span>
-                                            <i 
-                                                className={`${starredItems[item._id] ? 'fas fa-star text-warning' : 'far fa-star text-muted'} star-icon`}
-                                                style={{ cursor: 'pointer', opacity: 0.9, fontSize: '0.9rem' }}
-                                                onClick={(e) => handleToggleStar(e, item)}
-                                                title={starredItems[item._id] ? "Remove from Important" : "Mark as Important"}
-                                            ></i>
+                                            <i className={`${item.type === 'Folder' ? 'fas fa-folder text-warning' : getFileIcon(item.type)} file-icon me-3 fs-5`}></i>
+                                            <span className="text-truncate" style={{maxWidth: '250px'}}>{item.displayName}</span>
+                                            
+                                            {item.type !== 'Folder' && (
+                                                <i 
+                                                    className={`${starredItems[item._id] ? 'fas fa-star text-warning' : 'far fa-star text-muted'} ms-3`}
+                                                    style={{ cursor: 'pointer', fontSize: '0.9rem' }}
+                                                    onClick={(e) => handleToggleStar(e, item)}
+                                                ></i>
+                                            )}
                                         </div>
                                     </td>
-                                    <td>{formatMimeType(item.type)}</td>
-                                    <td>{new Date(item.updatedAt || item.createdAt).toLocaleDateString()}</td>
-                                    <td>{item.type === 'Folder' ? '—' : formatBytes(item.size)}</td>
+                                    <td><span className="badge bg-light text-dark border">{formatMimeType(item.type)}</span></td>
+                                    <td className="text-muted small">{new Date(item.updatedAt || item.createdAt).toLocaleDateString()}</td>
+                                    <td className="text-muted small">{item.type === 'Folder' ? '—' : formatBytes(item.size)}</td>
                                     <td>
-                                        <div className="d-flex gap-3 align-items-center">
+                                        <div className="d-flex gap-3 justify-content-end align-items-center">
                                             {item.type !== 'Folder' && (
-                                                <i className="fas fa-eye text-primary" style={{cursor: 'pointer'}} title="View" onClick={() => handleViewFile(item)}></i>
+                                                <button className="btn btn-link btn-sm p-0" title="View" onClick={() => handleViewFile(item)}>
+                                                    <i className="fas fa-eye text-primary"></i>
+                                                </button>
                                             )}
-                                            {/* Only allow delete in File Manager mode */}
                                             {viewMode !== "important" && (
-                                                <i className="fas fa-trash-alt text-danger" style={{cursor: 'pointer'}} title="Delete" onClick={() => handleDeleteItem(item)}></i>
+                                                <button className="btn btn-link btn-sm p-0" title="Delete" onClick={() => handleDeleteItem(item)}>
+                                                    <i className="fas fa-trash-alt text-danger"></i>
+                                                </button>
                                             )}
                                         </div>
                                     </td>
                                 </tr>
                             )) : (
-                                <tr><td colSpan="6" className="text-center py-5 text-muted">
-                                    <i className="fas fa-folder-open d-block mb-2 fs-2"></i>
-                                    {viewMode === "important" ? "No starred items yet." : "This folder is empty."}
-                                </td></tr>
+                                <tr>
+                                    <td colSpan="6" className="empty-message py-5 text-center">
+                                        <i className="fas fa-folder-open d-block mb-3 text-muted" style={{fontSize: '3rem'}}></i>
+                                        <p className="mb-0 text-muted">
+                                            {viewMode === "important" ? "No starred items found." : 
+                                             currentFolderId === null ? "No folders created yet. Create one to start uploading files." : 
+                                             "This folder is empty. Upload files to see them here."}
+                                        </p>
+                                    </td>
+                                </tr>
                             )}
                         </tbody>
                     </table>
                 </div>
             </main>
 
-            {/* MODALS remain at bottom to avoid breaking logic */}
+            {/* Modal Components */}
             {isReceivedModalOpen && (
                 <div className="modal-overlay">
-                    <div className="modal-content received-files-modal" style={{ maxWidth: '850px', width: '90%' }}>
-                        <div className="modal-header d-flex justify-content-between align-items-center">
-                            <h3 className="mb-0"><i className="fas fa-file-import me-2"></i> Received Files</h3>
-                            <button className="btn-close" onClick={() => setIsReceivedModalOpen(false)}></button>
+                    <div className="received-files-modal shadow-lg" style={{ maxWidth: '850px', width: '90%', borderRadius: '12px' }}>
+                        <div className="modal-header d-flex justify-content-between align-items-center p-3 border-bottom">
+                            <h4 className="mb-0 fw-bold"><i className="fas fa-inbox me-2 text-primary"></i>Received Files</h4>
+                            <button className={`btn-close ${isDark ? 'btn-close-white' : ''}`} onClick={() => setIsReceivedModalOpen(false)}></button>
                         </div>
-                        <div className="modal-body py-3">
+                        <div className="modal-body p-0">
                             <div className="file-table-container">
-                                <table className="file-table">
-                                    <thead>
+                                <table className="file-table mb-0">
+                                    <thead className="bg-light">
                                         <tr>
                                             <th>Name</th>
-                                            <th>Type</th>
                                             <th>Size</th>
-                                            <th>Actions</th>
+                                            <th className="text-end">Actions</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -415,31 +493,30 @@ function UploadFilePage({ user, viewMode }) {
                                             <tr key={item._id}>
                                                 <td>
                                                     <i className={`${item.isFolder ? 'fas fa-folder text-warning' : getFileIcon(item.mimeType)} me-2`}></i>
-                                                    {item.originalName || item.folderName || item.name}
+                                                    {item.originalName || item.folderName}
                                                 </td>
-                                                <td>{item.isFolder ? 'Folder' : formatMimeType(item.mimeType)}</td>
                                                 <td>{item.isFolder ? '—' : formatBytes(item.size)}</td>
                                                 <td>
-                                                    <div className="d-flex gap-3 align-items-center">
+                                                    <div className="d-flex gap-3 justify-content-end">
                                                         {!item.isFolder && (
                                                             <>
-                                                                <i className="fas fa-eye text-primary" style={{cursor: 'pointer'}} title="View" onClick={() => handleViewFile(item)}></i>
-                                                                <i className="fas fa-download text-success" style={{cursor: 'pointer'}} title="Download" onClick={() => handleDownload(item)}></i>
+                                                                <i className="fas fa-eye text-primary action-icon" onClick={() => handleViewFile(item)}></i>
+                                                                <i className="fas fa-download text-success action-icon" onClick={() => handleDownload(item)}></i>
                                                             </>
                                                         )}
-                                                        <i className="fas fa-trash-alt text-danger" style={{cursor: 'pointer'}} title="Delete" onClick={() => handleDeleteItem({...item, type: item.isFolder ? 'Folder' : 'File'})}></i>
+                                                        <i className="fas fa-trash-alt text-danger action-icon" onClick={() => handleDeleteItem({...item, type: item.isFolder ? 'Folder' : 'File'})}></i>
                                                     </div>
                                                 </td>
                                             </tr>
                                         )) : (
-                                            <tr><td colSpan="4" className="text-center py-4">No received files yet.</td></tr>
+                                            <tr><td colSpan="3" className="text-center py-5 text-muted">No files received yet.</td></tr>
                                         )}
                                     </tbody>
                                 </table>
                             </div>
                         </div>
-                        <div className="modal-footer">
-                            <button className="btn btn-secondary" onClick={() => setIsReceivedModalOpen(false)}>Close</button>
+                        <div className="modal-footer border-top p-3">
+                            <button className="btn btn-secondary px-4" onClick={() => setIsReceivedModalOpen(false)}>Close</button>
                         </div>
                     </div>
                 </div>
@@ -451,6 +528,7 @@ function UploadFilePage({ user, viewMode }) {
                     senderUsername={user?.username || "Admin"} 
                     user={user} 
                     onClose={() => setIsTransferModalOpen(false)}
+                    currentTheme={currentTheme}
                     onSuccess={async () => { 
                         setItemsToTransfer({}); 
                         setIsTransferModalOpen(false); 

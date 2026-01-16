@@ -12,7 +12,10 @@ function LoginPage({ onLogin }) {
   const [isLoading, setIsLoading] = useState(false); 
   const [deptList, setDeptList] = useState([]);
   
-  // Flag Logic: 0 = visible, 1 = hide
+  // --- Fancy Popup State ---
+  const [errorPopup, setErrorPopup] = useState({ show: false, message: "" });
+
+  // Flag Logic: 0 = visible (Employee/HOD), 1 = hide (Admin/SuperAdmin)
   const [deptVisibilityFlag, setDeptVisibilityFlag] = useState(0);
 
   const navigate = useNavigate();
@@ -40,44 +43,63 @@ function LoginPage({ onLogin }) {
     } else if (value.startsWith("h-")) {
       setActiveRole("hod");
       setDeptVisibilityFlag(0);
-    } else if (value.startsWith("a-") || value.startsWith("s-")) {
-      // Logic for Admin and SuperAdmin
-      setActiveRole(value.startsWith("a-") ? "admin" : "superadmin");
-      setDeptVisibilityFlag(1); // Hide Department
-      setDepartment("All");     // System assigned
+    } else if (value.startsWith("a-")) {
+      setActiveRole("admin");
+      setDeptVisibilityFlag(1);
+      setDepartment("All");
+    } else if (value.startsWith("s-")) {
+      setActiveRole("superadmin");
+      setDeptVisibilityFlag(1);
+      setDepartment("All");
     } else {
       setActiveRole("");
       setDeptVisibilityFlag(0);
+      if (department === "All") setDepartment("n");
     }
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    // Check validation: If flag is 0, department must be selected.
-    if (!username || !password || (deptVisibilityFlag === 0 && department === "n")) {
-        alert("⚠️ Please fill in all fields!");
+    // Front-end Validation for Department
+    if (deptVisibilityFlag === 0 && department === "n") {
+        setErrorPopup({ 
+            show: true, 
+            message: "⚠️ Invalid Department Name! Please choose your assigned department." 
+        });
         return;
     }
 
     setIsLoading(true);
     try {
         const response = await axios.post("http://localhost:5000/api/users/login", {
-            username: username,
-            password: password
+            username: username.trim(),
+            password: password,
+            department: department 
         });
 
         const userData = response.data.user || response.data;
         sessionStorage.setItem("userSession", JSON.stringify(userData)); 
 
-        alert(`Welcome ${userData.name || username}! Redirecting...`);
         onLogin(userData); 
         navigate("/"); 
 
     } catch (error) {
         console.error("Login Error:", error);
-        const message = error.response?.data?.message || "❌ Login failed.";
-        alert(message);
+        const serverMsg = error.response?.data?.error || error.response?.data?.message || "";
+        
+        // Specific Fancy Popup for Department Mismatch
+        if (serverMsg.toLowerCase().includes("department")) {
+            setErrorPopup({ 
+                show: true, 
+                message: "⚠️ Invalid Department Name! Please choose your assigned department." 
+            });
+        } else {
+            setErrorPopup({ 
+                show: true, 
+                message: "❌ Invalid Credentials! Please check your username and password." 
+            });
+        }
     } finally {
         setIsLoading(false);
     }
@@ -85,6 +107,23 @@ function LoginPage({ onLogin }) {
 
   return (
     <div className="login-container">
+      
+      {/* --- FANCY POPUP MODAL --- */}
+      {errorPopup.show && (
+        <div className="modal-overlay" onClick={() => setErrorPopup({ show: false, message: "" })}>
+          <div className="fancy-popup" onClick={(e) => e.stopPropagation()}>
+            <div className="popup-icon">
+              <i className="fa-solid fa-circle-exclamation"></i>
+            </div>
+            <h3>Authentication Error</h3>
+            <p>{errorPopup.message}</p>
+            <button className="close-popup-btn" onClick={() => setErrorPopup({ show: false, message: "" })}>
+              Try Again
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="login-card">
         <div className="login-header">
           <div className="role-logo-wrapper">
@@ -106,6 +145,7 @@ function LoginPage({ onLogin }) {
                 id="username" 
                 value={username} 
                 onChange={handleUsernameChange} 
+                autoComplete="username"
                 required 
               />
               <label htmlFor="username">Username</label>
@@ -119,13 +159,13 @@ function LoginPage({ onLogin }) {
                 id="password" 
                 value={password} 
                 onChange={(e) => setPassword(e.target.value)} 
+                autoComplete="current-password"
                 required 
               />
               <label htmlFor="password">Password</label>
             </div>
           </div>
 
-          {/* FLAG CHECK: Only render if flag is 0 */}
           {deptVisibilityFlag === 0 && (
             <div className="form-group animate-fade-in">
               <div className="input-wrapper select-wrapper">

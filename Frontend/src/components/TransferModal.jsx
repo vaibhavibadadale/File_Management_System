@@ -1,20 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Modal, Button, ListGroup, Form, InputGroup, Spinner } from 'react-bootstrap';
-import { Search, ShieldLock, ChatLeftText } from 'react-bootstrap-icons';
+import { Spinner } from 'react-bootstrap';
+import { Search, ShieldLock, ChatLeftText, ArrowLeft, X } from 'react-bootstrap-icons';
+import '../styles/TransferModel.css';
 
-// Receive 'user' prop to access role-based logic
-const TransferModal = ({ selectedIds, senderUsername, user, onClose, onSuccess }) => {
+const TransferModal = ({ selectedIds, senderUsername, user, onClose, onSuccess, currentTheme }) => {
     const [users, setUsers] = useState([]);
     const [searchTerm, setSearchTerm] = useState("");
     const [selectedUser, setSelectedUser] = useState(null);
-    const [step, setStep] = useState(1); 
+    const [step, setStep] = useState(1);
     const [password, setPassword] = useState("");
-    const [reason, setReason] = useState(""); 
+    const [reason, setReason] = useState("");
     const [isSubmitting, setIsSubmitting] = useState(false);
 
     useEffect(() => {
-        // Fetch users for recipient list
+        // Ensure your backend includes the 'department' field in the user objects
         axios.get("http://localhost:5000/api/users")
             .then(res => {
                 const data = Array.isArray(res.data) ? res.data : (res.data.users || []);
@@ -24,34 +24,26 @@ const TransferModal = ({ selectedIds, senderUsername, user, onClose, onSuccess }
     }, []);
 
     const handleTransfer = async () => {
-        // Security checks
         if (!password) return alert("Password is required for security.");
         if (!reason.trim()) return alert("Please provide a reason for this transfer.");
         
         setIsSubmitting(true);
-
         try {
-            /** * Updated Payload:
-             * We send 'user.role' to the backend so the Governance system 
-             * knows if this requires HOD or Admin approval.
-             */
             const response = await axios.post("http://localhost:5000/api/transfer/secure-send", {
-                senderUsername: senderUsername, 
-                senderRole: user?.role, // CRITICAL: Used for hierarchical filtering
-                password: password, 
-                recipientId: selectedUser?._id, 
+                senderUsername: senderUsername,
+                senderRole: user?.role,
+                password: password,
+                recipientId: selectedUser?._id,
                 fileIds: selectedIds,
                 reason: reason,
                 requestType: 'transfer'
             });
             
-            alert(response.data.message || "Transfer request processed."); 
-            
+            alert(response.data.message || "Transfer request processed.");
             if (onSuccess) onSuccess();
             onClose();
         } catch (err) {
             console.error("Transfer Error:", err.response?.data);
-            // Handle password verification or server errors
             alert(err.response?.data?.error || err.response?.data?.message || "Error creating transfer request.");
         } finally {
             setIsSubmitting(false);
@@ -59,97 +51,115 @@ const TransferModal = ({ selectedIds, senderUsername, user, onClose, onSuccess }
     };
 
     return (
-        <Modal show={true} onHide={onClose} centered backdrop="static">
-            <Modal.Header closeButton>
-                <Modal.Title>
-                    {step === 1 ? `Transfer Files (${selectedIds.length})` : "Security & Governance"}
-                </Modal.Title>
-            </Modal.Header>
-            <Modal.Body>
+        <div className={`wa-overlay ${currentTheme === 'dark' ? 'dark' : ''}`}>
+            <div className="wa-modal">
+                {/* Header Section */}
+                <div className="wa-header">
+                    <div className="wa-header-left">
+                        {step === 2 && (
+                            <button className="wa-back-btn" onClick={() => setStep(1)}>
+                                <ArrowLeft />
+                            </button>
+                        )}
+                        <h3>{step === 1 ? `Transfer Files (${selectedIds.length})` : "Security & Governance"}</h3>
+                    </div>
+                    <button className="wa-close-btn" onClick={onClose} aria-label="Close">
+                        <X size={28} />
+                    </button>
+                </div>
+
                 {step === 1 ? (
                     <>
-                        <InputGroup className="mb-2">
-                            <InputGroup.Text><Search /></InputGroup.Text>
-                            <Form.Control 
-                                placeholder="Search recipient..." 
-                                onChange={(e) => setSearchTerm(e.target.value)} 
-                            />
-                        </InputGroup>
-                        <ListGroup style={{maxHeight: '250px', overflowY: 'auto'}}>
-                           {users
-                            .filter(u => 
-                                (u.username || "").toLowerCase().includes(searchTerm.toLowerCase()) && 
-                                u.username !== senderUsername
-                            )
-                            .map(u => (
-                                <ListGroup.Item 
-                                    key={u._id} 
-                                    active={selectedUser?._id === u._id} 
-                                    onClick={() => setSelectedUser(u)} 
-                                    action
-                                    className="d-flex justify-content-between"
-                                >
-                                    <span>{u.username}</span>
-                                    <small className={selectedUser?._id === u._id ? "text-white" : "text-muted"}>
-                                        {u.role}
-                                    </small>
-                                </ListGroup.Item>
-                            ))}
-                        </ListGroup>
-                    </>
-                ) : (
-                    <div className="p-2">
-                        <div className="text-center mb-4">
-                            <ShieldLock size={40} className="mb-2 text-primary" />
-                            <h6>Finalize Transfer to {selectedUser?.username}</h6>
-                            <p className="text-muted small">Your request will be sent to your supervisor for approval.</p>
+                        <div className="wa-search-container">
+                            <div className="wa-search-wrapper">
+                                <Search size={14} />
+                                <input 
+                                    type="text"
+                                    className="wa-search-input"
+                                    placeholder="Search recipient..."
+                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                />
+                            </div>
                         </div>
 
-                        <Form.Group className="mb-3">
-                            <Form.Label><ChatLeftText className="me-2" />Purpose of Transfer</Form.Label>
-                            <Form.Control
-                                as="textarea"
-                                rows={2}
+                        <div className="wa-user-list">
+                            <div className="wa-section-title">Suggested Recipients</div>
+                            {users
+                                .filter(u => 
+                                    (u.username || "").toLowerCase().includes(searchTerm.toLowerCase()) && 
+                                    u.username !== senderUsername
+                                )
+                                .map(u => (
+                                    <div 
+                                        key={u._id} 
+                                        className={`wa-user-item ${selectedUser?._id === u._id ? 'active-user' : ''}`}
+                                        onClick={() => setSelectedUser(u)}
+                                    >
+                                        <div className="wa-avatar">
+                                            {u.username.charAt(0).toUpperCase()}
+                                        </div>
+                                        <div className="wa-user-info">
+                                            <div className="wa-username">{u.username}</div>
+                                            {/* Updated to display Role and Department */}
+                                            <div className="wa-status">
+                                                {u.role} {u.department ? `• ${u.department}` : ''}
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                        </div>
+
+                        <div className="wa-search-container" style={{borderTop: '1px solid var(--wa-border)'}}>
+                            <button 
+                                className="wa-send-btn w-100" 
+                                disabled={!selectedUser}
+                                onClick={() => setStep(2)}
+                            >
+                                Next Step
+                            </button>
+                        </div>
+                    </>
+                ) : (
+                    <div className="wa-password-container">
+                        <ShieldLock size={40} className="mb-2" style={{color: '#00a884'}} />
+                        <h4>Verify Identity</h4>
+                        <p>
+                            Transferring to <strong>{selectedUser?.username}</strong>
+                            {selectedUser?.department && ` (${selectedUser.department})`}
+                        </p>
+
+                        <div className="mb-4 text-start">
+                            <label className="wa-status mb-2 d-block"><ChatLeftText size={14} className="me-2"/> Purpose</label>
+                            <textarea 
+                                className="wa-password-input" 
+                                style={{fontSize: '14px', letterSpacing: 'normal', textAlign: 'left', height: '80px'}}
                                 placeholder="e.g., Project handover for Q1"
                                 value={reason}
                                 onChange={(e) => setReason(e.target.value)}
                             />
-                        </Form.Group>
+                        </div>
 
-                        <Form.Group>
-                            <Form.Label>Verify Your Identity</Form.Label>
-                            <Form.Control
+                        <div className="text-start">
+                            <label className="wa-status mb-2 d-block">Your Password</label>
+                            <input 
                                 type="password" 
-                                placeholder="Enter your login password" 
+                                className="wa-password-input"
+                                placeholder="••••••"
                                 value={password}
-                                onChange={(e) => setPassword(e.target.value)} 
-                                autoFocus 
+                                onChange={(e) => setPassword(e.target.value)}
                             />
-                        </Form.Group>
-                    </div>
-                )}
-            </Modal.Body>
-            <Modal.Footer>
-                {step === 1 ? (
-                    <Button onClick={() => setStep(2)} disabled={!selectedUser} className="w-100">
-                        Next Step
-                    </Button>
-                ) : (
-                    <div className="d-flex w-100 gap-2">
-                        <div className="w-50">
-                            <Button variant="secondary" className="w-100" onClick={() => setStep(1)} disabled={isSubmitting}>
-                                Back
-                            </Button>
                         </div>
-                        <div className="w-50">
-                            <Button variant="success" className="w-100" onClick={handleTransfer} disabled={isSubmitting}>
+
+                        <div className="wa-action-btns">
+                            <button className="wa-cancel-btn" onClick={onClose} disabled={isSubmitting}>Cancel</button>
+                            <button className="wa-send-btn" onClick={handleTransfer} disabled={isSubmitting}>
                                 {isSubmitting ? <Spinner size="sm" animation="border" /> : "Confirm & Send"}
-                            </Button>
+                            </button>
                         </div>
                     </div>
                 )}
-            </Modal.Footer>
-        </Modal>
+            </div>
+        </div>
     );
 };
 

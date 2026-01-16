@@ -1,48 +1,48 @@
-/* --- Global Reset & Base Styles (Standard Light Mode) --- */
+/* --- Global Reset & Base Styles --- */
 * {
     margin: 0;
     padding: 0;
     box-sizing: border-box;
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
 }
 
 body, #root {
-    background-color: #f8fafc; /* Light background */
+    background-color: #f8fafc;
     min-height: 100vh;
     margin: 0;
 }
 
 /* --- 1. SINGLE-PANE APP CONTAINER --- */
 .file-explorer-app-single-pane {
-    padding: 20px; 
+    padding: 24px; 
     background: #f8fafc;
     min-height: 100vh;
 }
 
-/* --- 2. MAIN CONTENT (All Elements) --- */
+/* --- 2. MAIN CONTENT --- */
 .main-content {
     width: 100%; 
     padding: 0; 
-    background-color: #f8fafc;
-    overflow-y: auto;
+    background-color: transparent;
 }
 
 .main-header h1 {
     color: #0f172a;
-    font-size: 2rem;
+    font-size: 1.75rem;
+    font-weight: 700;
     margin-bottom: 20px;
 }
 
 /* --- MAIN ACTIONS TOOLBAR --- */
 .main-actions-toolbar {
     display: flex;
-    gap: 20px;
+    gap: 15px;
     align-items: center;
-    padding: 15px;
+    padding: 12px 20px;
     margin-bottom: 20px;
     background-color: white;
-    border-radius: 8px;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    border-radius: 10px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
 .action-group {
@@ -51,11 +51,7 @@ body, #root {
     gap: 10px;
 }
 
-/* Create Folder Group - Conditional border implemented via class in JSX */
-.create-group {
-    padding-right: 0; 
-}
-
+/* Create Folder Group */
 .create-group.has-right-border {
     border-right: 1px solid #e2e8f0;
     padding-right: 20px;
@@ -63,21 +59,27 @@ body, #root {
 
 .create-input {
     padding: 8px 12px;
-    border: 1px solid #e2e8f0;
-    border-radius: 4px;
-    width: 180px;
-    background-color: white; /* Light mode input background */
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    width: 200px;
+    background-color: white;
     color: #0f172a;
+    transition: border-color 0.2s;
+}
+
+.create-input:focus {
+    border-color: #2563eb;
+    outline: none;
 }
 
 .create-btn {
     background-color: #2563eb;
     color: white;
-    padding: 8px 12px;
+    padding: 8px 16px;
     border: none;
-    border-radius: 4px;
+    border-radius: 6px;
     cursor: pointer;
-    font-weight: 500;
+    font-weight: 600;
     transition: background-color 0.2s;
 }
 
@@ -94,10 +96,10 @@ body, #root {
 .upload-label-main {
     background-color: #0d9488;
     color: white;
-    padding: 8px 12px;
-    border-radius: 4px;
+    padding: 8px 16px;
+    border-radius: 6px;
     cursor: pointer;
-    font-weight: 500;
+    font-weight: 600;
     transition: background-color 0.2s;
 }
 
@@ -107,7 +109,7 @@ body, #root {
 
 .selected-file-name {
     font-size: 13px;
-    color: #475569;
+    color: #64748b;
     max-width: 120px;
     overflow: hidden;
     white-space: nowrap;
@@ -115,17 +117,18 @@ body, #root {
 }
 
 .upload-btn-main {
-    background-color: #0f766e;
+    background-color: #0f172a;
     color: white;
-    padding: 8px 12px;
+    padding: 8px 16px;
     border: none;
-    border-radius: 4px;
+    border-radius: 6px;
     cursor: pointer;
-    font-weight: 500;
+    font-weight: 600;
 }
 
 .upload-btn-main:disabled {
-    background-color: #94a3b8;
+    background-color: #cbd5e1;
+    color: #94a3b8;
     cursor: not-allowed;
 }
 
@@ -133,8 +136,16 @@ body, #root {
 .search-group {
     flex-grow: 1; 
     background-color: #f1f5f9;
-    border-radius: 4px;
-    padding: 0 10px;
+    border-radius: 8px;
+    padding: 0 15px;
+    display: flex;
+    align-items: center;
+    border: 1px solid transparent;
+}
+
+.search-group:focus-within {
+    border-color: #2563eb;
+    background-color: white;
 }
 
 .search-icon {
@@ -143,7 +154,8 @@ body, #root {
 
 .search-input {
     flex-grow: 1;
-    padding: 8px 0;
+    padding: 10px 0;
+    margin-left: 10px;
     border: none;
     background: transparent;
     outline: none;
@@ -153,28 +165,29 @@ body, #root {
 /* Breadcrumb Styling */
 .breadcrumb {
     margin-bottom: 20px;
-    padding: 10px 15px;
+    padding: 12px 20px;
     background-color: white;
-    border-radius: 8px;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
-    font-size: 15px;
+    border-radius: 10px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
 }
 
 .path-item {
     color: #64748b;
     cursor: pointer;
-    padding: 0 5px;
     transition: color 0.2s;
 }
 
 .path-item:hover {
-    color: #0f172a;
-    text-decoration: underline;
+    color: #2563eb;
 }
 
 .path-item.active {
-    font-weight: bold;
-    color: #2563eb;
+    font-weight: 600;
+    color: #0f172a;
     cursor: default;
 }
 
@@ -184,12 +197,12 @@ body, #root {
     justify-content: space-between;
     align-items: center;
     margin-bottom: 15px;
-    padding: 10px 0;
-    border-bottom: 1px solid #e2e8f0;
+    padding: 10px 5px;
 }
 
 .list-toolbar h2 {
-    font-size: 1.2rem;
+    font-size: 1.1rem;
+    font-weight: 600;
     color: #334155;
 }
 
@@ -198,26 +211,29 @@ body, #root {
     background-color: #ef4444; 
     color: white;
     border: none;
-    border-radius: 6px;
+    border-radius: 8px;
     cursor: pointer;
-    font-weight: 500;
-    transition: background-color 0.2s;
+    font-weight: 600;
+    transition: transform 0.1s, background-color 0.2s;
 }
 
 .transfer-btn:hover:not(:disabled) {
     background-color: #dc2626;
+    transform: translateY(-1px);
 }
 
 .transfer-btn:disabled {
-    background-color: #94a3b8;
+    background-color: #e2e8f0;
+    color: #94a3b8;
     cursor: not-allowed;
 }
 
-/* --- 4. FILE TABLE VIEW (Horizontal List) --- */
+/* --- 4. FILE TABLE VIEW --- */
 .file-table-container {
     background-color: white;
-    border-radius: 8px;
-    box-shadow: 0 0 6px rgba(0, 0, 0, 0.1);
+    border-radius: 12px;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+    border: 1px solid #e2e8f0;
     overflow: hidden;
 }
 
@@ -227,40 +243,39 @@ body, #root {
 }
 
 .file-table thead th {
-    background-color: #f1f5f9;
-    padding: 12px 15px;
+    background-color: #f8fafc;
+    padding: 14px 20px;
     text-align: left;
-    color: #334155;
+    color: #64748b;
     font-weight: 600;
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.025em;
+    border-bottom: 1px solid #e2e8f0;
 }
 
 .file-table tbody td {
-    padding: 12px 15px;
-    border-bottom: 1px solid #e2e8f0;
+    padding: 14px 20px;
+    border-bottom: 1px solid #f1f5f9;
     font-size: 14px;
-    color: #0f172a;
+    color: #1e293b;
 }
 
 .file-table tbody tr:hover {
-    background-color: #f8fafc;
+    background-color: #f1f5f9;
 }
 
-/* ICON STYLING (COLORED ICONS) */
+/* ICON STYLING */
 .file-table .file-icon, .file-table .folder-icon {
-    margin-right: 10px;
-    color: #64748b; 
-    transition: color 0.15s;
+    margin-right: 12px;
+    font-size: 1.1rem;
 }
 
-.file-table .fa-folder { color: #facc15 !important; }
-.file-table .fa-file { color: #64748b !important; }
-.file-table .fa-file-pdf { color: #dc2626 !important; }
-.file-table .fa-file-excel { color: #15803d !important; }
+.file-table .fa-folder { color: #f59e0b !important; } /* Warmer Folder Yellow */
+.file-table .fa-file-pdf { color: #ef4444 !important; }
+.file-table .fa-file-excel { color: #16a34a !important; }
 .file-table .fa-file-image { color: #3b82f6 !important; }
-.file-table .fa-file-archive { color: #4c1d95 !important; }
-.file-table .fa-file-video { color: #ef4444 !important; }
-.file-table .fa-file-audio { color: #10b981 !important; }
-.file-table .fa-file-word { color: #1e40af !important; }
+.file-table .fa-file-word { color: #2563eb !important; }
 
 .file-table .folder-row {
     cursor: pointer;
@@ -269,18 +284,20 @@ body, #root {
 
 .empty-message {
     text-align: center;
-    padding: 30px;
-    color: #64748b;
+    padding: 40px;
+    color: #94a3b8;
+    font-style: italic;
 }
 
-/* --- 5. RECEIVED FILES MODAL STYLES --- */
+/* --- 5. MODAL STYLES --- */
 .modal-overlay {
     position: fixed;
     top: 0;
     left: 0;
     width: 100%;
     height: 100%;
-    background: rgba(0, 0, 0, 0.6);
+    background: rgba(15, 23, 42, 0.6);
+    backdrop-filter: blur(4px);
     display: flex;
     justify-content: center;
     align-items: center;
@@ -289,56 +306,40 @@ body, #root {
 
 .received-files-modal {
     background: white;
-    border-radius: 12px;
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
-    animation: slideDown 0.3s ease-out;
+    border-radius: 16px;
+    width: 90%;
+    max-width: 600px;
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+    animation: slideUp 0.3s ease-out;
 }
 
-@keyframes slideDown {
-    from { transform: translateY(-20px); opacity: 0; }
+@keyframes slideUp {
+    from { transform: translateY(20px); opacity: 0; }
     to { transform: translateY(0); opacity: 1; }
 }
 
 .modal-header {
-    padding: 20px;
-    border-bottom: 1px solid #eee;
+    padding: 20px 24px;
+    border-bottom: 1px solid #f1f5f9;
 }
 
 .modal-body {
-    max-height: 450px;
+    max-height: 400px;
     overflow-y: auto;
-    padding: 20px;
+    padding: 24px;
 }
 
 .modal-footer {
-    padding: 15px 20px;
-    border-top: 1px solid #eee;
+    padding: 16px 24px;
+    border-top: 1px solid #f1f5f9;
     text-align: right;
 }
 
-.btn-outline-primary {
-    border: 1px solid #2563eb;
-    background: transparent;
-    color: #2563eb;
-    padding: 8px 16px;
-    border-radius: 4px;
-    cursor: pointer;
-    transition: all 0.2s;
-}
-
-.btn-outline-primary:hover {
-    background-color: #2563eb;
-    color: white;
-}
-
-/* ========================================= */
-/* --- DARK THEME OVERRIDES (AGGRESSIVE FIX) --- */
-/* ========================================= */
+/* --- DARK THEME OVERRIDES --- */
 
 .dark-theme .file-explorer-app-single-pane,
-.dark-theme .main-content,
-.dark-theme main {
-    background-color: #1e293b !important; 
+.dark-theme .main-content {
+    background-color: #0f172a !important; 
     color: #f1f5f9 !important; 
 }
 
@@ -346,50 +347,52 @@ body, #root {
 .dark-theme .breadcrumb,
 .dark-theme .file-table-container,
 .dark-theme .received-files-modal {
-    background-color: #334155 !important; 
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4);
+    background-color: #1e293b !important; 
+    border-color: #334155 !important;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
 }
 
 .dark-theme .modal-header,
 .dark-theme .modal-footer {
-    border-color: #475569 !important;
+    border-color: #334155 !important;
 }
 
 .dark-theme .main-header h1 {
-    color: #f1f5f9 !important;
+    color: #f8fafc !important;
 }
 
 .dark-theme .create-group.has-right-border,
 .dark-theme .upload-group {
-    border-right: 1px solid #475569 !important;
+    border-right: 1px solid #334155 !important;
 }
 
 .dark-theme .create-input,
 .dark-theme .search-group,
-.dark-theme input[type="text"],
 .dark-theme .search-input {
-    background-color: #475569 !important; 
-    border: 1px solid #64748b !important;
-    color: #f1f5f9 !important;
+    background-color: #334155 !important; 
+    border: 1px solid #475569 !important;
+    color: #f8fafc !important;
 }
 
-.dark-theme .search-icon { color: #f1f5f9 !important; }
-.dark-theme .path-item { color: #cbd5e1 !important; }
-.dark-theme .path-item:hover { color: #f1f5f9 !important; }
-.dark-theme .path-item.active { color: #93c5fd !important; }
-.dark-theme .list-toolbar { border-bottom: 1px solid #475569 !important; }
+.dark-theme .search-icon { color: #94a3b8 !important; }
+.dark-theme .path-item { color: #94a3b8 !important; }
+.dark-theme .path-item:hover { color: #3b82f6 !important; }
+.dark-theme .path-item.active { color: #60a5fa !important; }
 .dark-theme .list-toolbar h2 { color: #f1f5f9 !important; }
 
 .dark-theme .file-table thead th {
-    background-color: #475569 !important; 
-    color: #f1f5f9 !important;
+    background-color: #1e293b !important; 
+    color: #94a3b8 !important;
+    border-bottom: 1px solid #334155 !important;
 }
 
 .dark-theme .file-table tbody td {
-    color: #f1ffef !important; 
-    border-bottom: 1px solid #475569 !important;
+    color: #e2e8f0 !important; 
+    border-bottom: 1px solid #334155 !important;
 }
 
 .dark-theme .file-table tbody tr:hover {
-    background-color: #3f5068 !important; 
+    background-color: #2d3748 !important; 
 }
+
+.dark-theme .selected-file-name { color: #94a3b8 !important; }

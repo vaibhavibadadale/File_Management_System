@@ -1,44 +1,93 @@
-clea/* src/styles/TransferModal.css */
+/* src/styles/TransferModal.css */
 
 .wa-overlay {
+    /* DEFAULT LIGHT MODE VARIABLES */
+    --wa-bg: #ffffff;
+    --wa-header: #f0f2f5;
+    --wa-border: #e9edef;
+    --wa-text-primary: #111b21;
+    --wa-text-secondary: #667781;
+    --wa-input-bg: #f0f2f5;
+    --wa-hover: #f5f6f6;
+    --wa-overlay-bg: rgba(255, 255, 255, 0.8);
+
     position: fixed;
     top: 0;
     left: 0;
     width: 100vw;
     height: 100vh;
-    background-color: rgba(0, 0, 0, 0.7); /* Deep dimmed background */
+    background-color: var(--wa-overlay-bg);
     display: flex;
     justify-content: center;
     align-items: center;
     z-index: 10000;
-    backdrop-filter: blur(4px); /* Modern blur effect */
+    backdrop-filter: blur(4px);
+    transition: background-color 0.3s ease;
+}
+
+/* DARK MODE OVERRIDES */
+.dark.wa-overlay, 
+.dark .wa-overlay {
+    --wa-bg: #111b21;
+    --wa-header: #202c33;
+    --wa-border: #2f3b44;
+    --wa-text-primary: #e9edef;
+    --wa-text-secondary: #8696a0;
+    --wa-input-bg: #202c33;
+    --wa-hover: #2a3942;
+    --wa-overlay-bg: rgba(0, 0, 0, 0.7);
 }
 
 .wa-modal {
-    background-color: #111b21; /* Solid WhatsApp dark background */
+    background-color: var(--wa-bg);
     width: 420px;
     height: 600px;
-    border-radius: 8px; /* Slightly more rounded */
+    border-radius: 8px;
     display: flex;
     flex-direction: column;
     box-shadow: 0 24px 64px rgba(0, 0, 0, 0.4);
     overflow: hidden;
-    border: 1px solid #2f3b44;
+    border: 1px solid var(--wa-border);
+    transition: background-color 0.3s ease, border 0.3s ease;
 }
 
 .wa-header {
-    background-color: #202c33;
+    background-color: var(--wa-header);
     padding: 16px 20px;
     display: flex;
     align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--wa-border);
+}
+
+.wa-header-left {
+    display: flex;
+    align-items: center;
     gap: 15px;
-    border-bottom: 1px solid #2f3b44;
+}
+
+.wa-close-btn {
+    background: transparent;
+    border: none;
+    color: var(--wa-text-secondary);
+    cursor: pointer;
+    padding: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    transition: background-color 0.2s, color 0.2s;
+}
+
+.wa-close-btn:hover {
+    background-color: var(--wa-hover);
+    color: #ef4444;
 }
 
 .wa-back-btn {
     background: transparent;
     border: none;
-    color: #d1d7db;
+    color: var(--wa-text-secondary);
     font-size: 22px;
     cursor: pointer;
     display: flex;
@@ -46,36 +95,25 @@ clea/* src/styles/TransferModal.css */
     transition: transform 0.2s;
 }
 
-.wa-back-btn:hover {
-    transform: translateX(-3px);
-    color: #00a884;
-}
-
 .wa-header h3 {
     margin: 0;
     font-size: 18px;
     font-weight: 500;
-    color: #e9edef;
+    color: var(--wa-text-primary);
 }
 
-/* Enhanced Search Bar */
 .wa-search-container {
     padding: 12px 16px;
-    background-color: #111b21;
 }
 
 .wa-search-wrapper {
-    background-color: #202c33;
+    background-color: var(--wa-header);
     display: flex;
     align-items: center;
     width: 100%;
     border-radius: 10px;
     padding: 2px 14px;
-    transition: background 0.3s;
-}
-
-.wa-search-wrapper:focus-within {
-    background-color: #2a3942;
+    color: var(--wa-text-secondary);
 }
 
 .wa-search-input {
@@ -83,30 +121,15 @@ clea/* src/styles/TransferModal.css */
     background: transparent;
     border: none;
     padding: 10px;
-    color: #d1d7db;
+    color: var(--wa-text-primary);
     font-size: 14px;
     outline: none;
 }
 
-.wa-search-wrapper i {
-    color: #8696a0;
-    font-size: 14px;
-}
-
-/* Professional User List */
 .wa-user-list {
     flex: 1;
     overflow-y: auto;
     padding-bottom: 10px;
-}
-
-/* Custom Scrollbar */
-.wa-user-list::-webkit-scrollbar {
-    width: 6px;
-}
-.wa-user-list::-webkit-scrollbar-thumb {
-    background: #374045;
-    border-radius: 10px;
 }
 
 .wa-section-title {
@@ -126,11 +149,10 @@ clea/* src/styles/TransferModal.css */
     transition: background 0.2s;
 }
 
-.wa-user-item:hover {
-    background-color: #202c33;
+.wa-user-item:hover, .wa-user-item.active-user {
+    background-color: var(--wa-hover);
 }
 
-/* Circular Avatar with random-like colors */
 .wa-avatar {
     width: 48px;
     height: 48px;
@@ -143,69 +165,53 @@ clea/* src/styles/TransferModal.css */
     font-weight: 600;
     color: white;
     font-size: 18px;
-    box-shadow: 0 2px 5px rgba(0,0,0,0.2);
 }
 
 .wa-user-info {
     flex: 1;
-    border-bottom: 1px solid #222d34;
+    border-bottom: 1px solid var(--wa-border);
     padding-bottom: 12px;
-}
-
-.wa-user-item:last-child .wa-user-info {
-    border-bottom: none;
 }
 
 .wa-username {
     font-size: 16px;
-    color: #e9edef;
+    color: var(--wa-text-primary);
     margin-bottom: 2px;
 }
 
 .wa-status {
     font-size: 13px;
-    color: #8696a0;
+    color: var(--wa-text-secondary);
+    /* Ensures department name doesn't break the layout if long */
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
-/* Password Identity Verification Section */
 .wa-password-container {
-    padding: 50px 30px;
+    padding: 40px 30px; /* Slightly reduced top padding to fit new text */
     text-align: center;
-    animation: fadeIn 0.3s ease-in;
-}
-
-@keyframes fadeIn {
-    from { opacity: 0; transform: translateY(10px); }
-    to { opacity: 1; transform: translateY(0); }
 }
 
 .wa-password-container h4 {
-    color: #e9edef;
-    font-size: 20px;
-    margin-bottom: 10px;
+    color: var(--wa-text-primary);
+    margin-bottom: 8px;
 }
 
 .wa-password-container p {
-    color: #8696a0;
-    margin-bottom: 30px;
+    color: var(--wa-text-secondary);
+    margin-bottom: 20px;
 }
 
 .wa-password-input {
     width: 100%;
-    background-color: #202c33;
-    border: 1px solid #2f3b44;
+    background-color: var(--wa-input-bg);
+    border: 1px solid var(--wa-border);
     padding: 14px;
     border-radius: 8px;
-    color: white;
+    color: var(--wa-text-primary);
     margin-bottom: 25px;
-    text-align: center;
-    font-size: 18px;
-    letter-spacing: 4px;
     outline: none;
-}
-
-.wa-password-input:focus {
-    border-color: #00a884;
 }
 
 .wa-action-btns {
@@ -216,25 +222,19 @@ clea/* src/styles/TransferModal.css */
 
 .wa-cancel-btn {
     background: transparent;
-    border: 1px solid #3b4a54;
+    border: 1px solid var(--wa-border);
     color: #00a884;
     padding: 10px 25px;
     border-radius: 20px;
     cursor: pointer;
-    font-weight: 500;
 }
 
 .wa-send-btn {
     background-color: #00a884;
-    color: #111b21;
+    color: white;
     border: none;
     padding: 10px 35px;
     border-radius: 20px;
     font-weight: 600;
     cursor: pointer;
-    box-shadow: 0 4px 10px rgba(0, 168, 132, 0.3);
-}
-
-.wa-send-btn:hover {
-    background-color: #06cf9c;
 }

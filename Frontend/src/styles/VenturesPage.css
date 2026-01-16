@@ -1,4 +1,4 @@
-/* Container for the toggle badge */
+/* --- TOGGLE BADGE LOGIC --- */
 .status-toggle-container {
     cursor: pointer;
     display: inline-block;
@@ -10,7 +10,6 @@
     opacity: 0.85;
 }
 
-/* The Badge styling (replaces .custom-switch) */
 .status-badge {
     padding: 6px 12px !important;
     border-radius: 6px !important;
@@ -24,7 +23,6 @@
     transition: background-color 0.3s ease;
 }
 
-/* The sliding white dot (replaces .switch-handle) */
 .toggle-dot {
     width: 14px;
     height: 14px;
@@ -34,31 +32,42 @@
     box-shadow: 0 1px 3px rgba(0,0,0,0.2);
 }
 
-/* --- ACTIVE STATE (Green) --- */
+/* ACTIVE STATE (Green) */
 .status-toggle-container.active .status-badge {
-    background-color: #28a745 !important; /* Green background */
+    background-color: #28a745 !important;
 }
 
 .status-toggle-container.active .toggle-dot {
-    transform: translateX(0); /* Default position if text is after */
-    order: 2; /* Moves dot to the right of the text */
-}
-
-/* --- INACTIVE STATE (Red) --- */
-.status-toggle-container.inactive .status-badge {
-    background-color: #dc3545 !important; /* Red background */
-}
-
-.status-toggle-container.inactive .toggle-dot {
-    transform: translateX(0); 
-    order: -1; /* Moves dot to the left of the text */
-}
-
-/* Added a small margin to separate text and dot */
-.status-toggle-container.active .toggle-dot {
+    transform: translateX(0);
+    order: 2;
     margin-left: 8px;
 }
 
+/* INACTIVE STATE (Red) */
+.status-toggle-container.inactive .status-badge {
+    background-color: #dc3545 !important;
+}
+
 .status-toggle-container.inactive .toggle-dot {
+    transform: translateX(0);
+    order: -1;
     margin-right: 8px;
+}
+
+/* --- DARK MODE VISIBILITY FIXES --- */
+
+/* Fix for the placeholder color in dark mode inputs */
+.bg-dark.text-white::placeholder {
+    color: rgba(255, 255, 255, 0.6) !important;
+    opacity: 1; /* Browser override */
+}
+
+/* Ensure cross-browser support for placeholders */
+.bg-dark.text-white::-webkit-input-placeholder { color: rgba(255, 255, 255, 0.6) !important; }
+.bg-dark.text-white::-moz-placeholder { color: rgba(255, 255, 255, 0.6) !important; }
+.bg-dark.text-white:-ms-input-placeholder { color: rgba(255, 255, 255, 0.6) !important; }
+
+/* Optional: Slight border adjustment for visibility */
+.border-secondary {
+    border-color: #495057 !important;
 }

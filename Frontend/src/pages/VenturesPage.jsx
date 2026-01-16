@@ -3,7 +3,7 @@ import { Modal, Button, Form, Table, Row, Col, Badge } from "react-bootstrap";
 import axios from "axios";
 import "../styles/VenturesPage.css"; 
 
-const VenturesPage = ({ currentTheme, user }) => { // 1. Pass 'user' as prop
+const VenturesPage = ({ currentTheme, user }) => {
     const [departments, setDepartments] = useState([]);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState("");
@@ -24,10 +24,8 @@ const VenturesPage = ({ currentTheme, user }) => { // 1. Pass 'user' as prop
     const isHOD = userRole === "hod";
     const isEmployee = userRole === "employee";
 
-    // HODs and Employees cannot create new departments
     const canCreateDept = isSuperAdmin || isAdmin;
 
-    // Fetch all departments
     const fetchDepts = async () => {
         try {
             setLoading(true);
@@ -44,7 +42,6 @@ const VenturesPage = ({ currentTheme, user }) => { // 1. Pass 'user' as prop
         if (!isEmployee) fetchDepts(); 
     }, [isEmployee]);
 
-    // Safety: If an employee somehow lands here, show access denied
     if (isEmployee) {
         return (
             <div className="p-5 text-center">
@@ -79,7 +76,6 @@ const VenturesPage = ({ currentTheme, user }) => { // 1. Pass 'user' as prop
     };
 
     const handleToggleClick = async (deptId) => {
-        // Option: Restrict status toggling to Admins only
         if (!canCreateDept) {
             alert("Only Admins can change department status.");
             return;
@@ -114,7 +110,6 @@ const VenturesPage = ({ currentTheme, user }) => { // 1. Pass 'user' as prop
             <div className="d-flex justify-content-between align-items-center mb-4">
                 <h3 className={isDark ? 'text-white' : 'text-dark'}>Ventures (Departments)</h3>
                 
-                {/* 2. Button vanishes for HODs and Employees */}
                 {canCreateDept && (
                     <Button variant="primary" onClick={() => setShowCreateModal(true)}>
                         <i className="fas fa-plus me-2"></i> Add New Department
@@ -161,7 +156,6 @@ const VenturesPage = ({ currentTheme, user }) => { // 1. Pass 'user' as prop
                                         <div className="d-flex justify-content-center">
                                             <div 
                                                 className={`status-toggle-container ${dept.isActive !== false ? "active" : "inactive"}`}
-                                                // Disable click for HODs
                                                 onClick={canCreateDept ? () => handleToggleClick(dept._id) : undefined}
                                                 style={{ cursor: canCreateDept ? 'pointer' : 'default' }}
                                             >

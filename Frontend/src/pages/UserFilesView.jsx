@@ -18,18 +18,18 @@ const UserFilesView = ({ currentTheme }) => {
     const fetchUserDataAndLogs = async () => {
       try {
         setLoading(true);
-        // 1. Fetch full database profile using ID
+        // 1. Fetch full database profile using ID from URL params
         const userRes = await axios.get(`http://localhost:5000/api/users/${userId}`);
         const profile = userRes.data;
         
         if (profile) {
           setUserData(profile);
-          // 2. Use the username from the database result to fetch physical files
+          // 2. Fetch files using the username obtained from the database record
           const fileRes = await axios.get(`http://localhost:5000/api/users/files/${profile.username}`);
           setFiles(Array.isArray(fileRes.data) ? fileRes.data : []);
         }
       } catch (err) {
-        console.error("Error loading user files:", err);
+        console.error("Error loading profile or files:", err);
       } finally {
         setLoading(false);
       }
@@ -54,45 +54,48 @@ const UserFilesView = ({ currentTheme }) => {
           <ArrowBack className="me-2" /> Back
         </Button>
 
-        {/* PROFILE SECTION: All info from database */}
+        {/* PROFILE SECTION */}
         <Card className={`mb-4 shadow-sm border-0 ${isDark ? "bg-dark text-white" : ""}`}>
           <Card.Body className="p-4">
-            {userData ? (
+            {loading ? (
+              <div className="text-center"><Spinner animation="border" variant="primary" /></div>
+            ) : userData ? (
               <Row className="align-items-center">
                 <Col md={2} className="text-center border-end">
                   <div className="bg-primary bg-opacity-10 rounded-circle d-inline-flex p-4 mb-2">
                     <Person style={{ fontSize: "60px", color: "#0d6efd" }} />
                   </div>
                   <h5 className="mb-0 fw-bold">{userData.name}</h5>
-                  <small className="text-muted">@{userData.username}</small>
+                  <small className={isDark ? "text-light opacity-75" : "text-muted"}>@{userData.username}</small>
                 </Col>
                 
                 <Col md={10} className="ps-md-5">
-                  <h4 className="mb-4">Staff Profile Overview</h4>
+                  <h4 className="mb-4">Profile Overview</h4>
                   <Row>
                     <Col md={4} className="mb-3">
                       <Email className="text-primary me-2" />
-                      <small className="text-muted d-block">Email</small>
+                      {/* Updated conditional class for visibility in dark mode */}
+                      <small className={`d-block ${isDark ? "text-light opacity-75" : "text-muted"}`}>Email</small>
                       <strong>{userData.email}</strong>
                     </Col>
                     <Col md={4} className="mb-3">
                       <BadgeIcon className="text-primary me-2" />
-                      <small className="text-muted d-block">System Role</small>
+                      <small className={`d-block ${isDark ? "text-light opacity-75" : "text-muted"}`}>System Role</small>
                       <Badge bg="info" className="text-dark">{userData.role}</Badge>
                     </Col>
                     <Col md={4} className="mb-3">
                       <Business className="text-primary me-2" />
-                      <small className="text-muted d-block">Department</small>
+                      <small className={`d-block ${isDark ? "text-light opacity-75" : "text-muted"}`}>Department</small>
                       <strong>{userData.department || userData.departmentId?.departmentName || "General"}</strong>
                     </Col>
                   </Row>
                   <Row>
                     <Col md={4}>
-                      <small className="text-muted d-block">Employee ID</small>
-                      <span className="fw-bold">{userData.employeeId}</span>
+                      <small className={`d-block ${isDark ? "text-light opacity-75" : "text-muted"}`}>Employee ID</small>
+                      <span className="fw-bold">{userData.employeeId || "N/A"}</span>
                     </Col>
                     <Col md={4}>
-                      <small className="text-muted d-block">Status</small>
+                      <small className={`d-block ${isDark ? "text-light opacity-75" : "text-muted"}`}>Status</small>
                       <Badge bg={userData.isActive !== false ? "success" : "danger"}>
                         {userData.isActive !== false ? "Active" : "Inactive"}
                       </Badge>
@@ -100,22 +103,30 @@ const UserFilesView = ({ currentTheme }) => {
                   </Row>
                 </Col>
               </Row>
-            ) : !loading && <p className="text-center">Staff not found.</p>}
+            ) : <p className="text-center">Staff information not found.</p>}
           </Card.Body>
         </Card>
 
         {/* FILES SECTION */}
         <Card className={`shadow-sm border-0 ${isDark ? "bg-dark text-white" : ""}`}>
-          <Card.Header className={`py-3 bg-white ${isDark ? "bg-dark border-secondary" : ""}`}>
+          <Card.Header className={`py-3 ${isDark ? "bg-dark border-secondary" : "bg-white"}`}>
             <Row className="align-items-center">
               <Col md={6}>
                 <h5 className="mb-0 d-flex align-items-center">
-                  <Storage className="me-2 text-primary" /> User Storage Logs
+                  <Storage className="me-2 text-primary" /> Storage History
                 </h5>
               </Col>
               <Col md={6}>
                 <InputGroup>
-                  <Form.Control placeholder="Search files..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+                  <InputGroup.Text className={isDark ? "bg-dark text-white border-secondary" : ""}>
+                    <Search fontSize="small" />
+                  </InputGroup.Text>
+                  <Form.Control 
+                    className={isDark ? "bg-dark text-white border-secondary" : ""}
+                    placeholder="Search files..." 
+                    value={searchTerm} 
+                    onChange={(e) => setSearchTerm(e.target.value)} 
+                  />
                 </InputGroup>
               </Col>
             </Row>
@@ -145,7 +156,7 @@ const UserFilesView = ({ currentTheme }) => {
                         </Button>
                       </td>
                     </tr>
-                  )) : <tr><td colSpan="5" className="text-center py-5">No files stored in directory.</td></tr>}
+                  )) : <tr><td colSpan="5" className="text-center py-5">No files found for this user.</td></tr>}
                 </tbody>
               </Table>
             )}
