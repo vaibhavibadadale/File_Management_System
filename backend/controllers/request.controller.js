@@ -25,11 +25,37 @@ async function handleMoveToTrash(files, sender, approver, deptId) {
     }
 }
 
-// 1. CREATE REQUEST
+// 1. CREATE REQUEST (Updated to save Department Names in DB)
 exports.createRequest = async (req, res) => {
     try {
         const { senderUsername, senderRole, recipientId, fileIds, reason, requestType, departmentId } = req.body;
         const isAutoApprove = ["ADMIN", "SUPERADMIN"].includes(senderRole?.toUpperCase());
+
+        // Fetch Sender Department Name for storage
+        const sUser = await User.findOne({ username: senderUsername });
+        let sDeptName = "N/A";
+        if (sUser) {
+            const sd = await Department.findById(sUser.departmentId);
+            sDeptName = sd?.departmentName || sd?.name || "N/A";
+        }
+
+        // Fetch Receiver Details for storage
+        let rName = "N/A";
+        let rDeptName = "N/A";
+        let rRole = "USER";
+
+        if (requestType === "delete") {
+            rName = "SYSTEM";
+            rDeptName = "TRASH";
+        } else if (recipientId) {
+            const rUser = await User.findById(recipientId);
+            if (rUser) {
+                rName = rUser.username;
+                rRole = rUser.role;
+                const rd = await Department.findById(rUser.departmentId);
+                rDeptName = rd?.departmentName || rd?.name || "N/A";
+            }
+        }
 
         const newRequest = new Transfer({
             senderUsername,
@@ -39,6 +65,10 @@ exports.createRequest = async (req, res) => {
             reason,
             requestType,
             departmentId,
+            senderDeptName: sDeptName,     // Saved to DB
+            receiverName: rName,           // Saved to DB
+            receiverDeptName: rDeptName,   // Saved to DB
+            receiverRole: rRole,           // Saved to DB
             status: isAutoApprove ? "completed" : "pending"
         });
 
@@ -54,10 +84,10 @@ exports.createRequest = async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 };
 
-// 2. GET DASHBOARD (Fixes the "N/A" Receiver Info)
+// 2. GET DASHBOARD (Robust lookup for existing and new records)
 exports.getPendingDashboard = async (req, res) => {
     try {
-        const { role, username, departmentId, pPage = 1, hPage = 1, limit = 5 } = req.query;
+        const { role, username, departmentId, pPage = 1, hPage = 1, limit = 5, search } = req.query;
         const roleUpper = role?.toUpperCase();
 
         let filter = {};
@@ -65,6 +95,15 @@ exports.getPendingDashboard = async (req, res) => {
             filter = { $or: [{ departmentId: departmentId, senderRole: "EMPLOYEE" }, { senderUsername: username }] };
         } else if (!["ADMIN", "SUPERADMIN"].includes(roleUpper)) {
             filter = { senderUsername: username };
+        }
+
+        // Add search functionality if search term exists
+        if (search) {
+            filter.$or = [
+                ...(filter.$or || []),
+                { senderUsername: { $regex: search, $options: "i" } },
+                { reason: { $regex: search, $options: "i" } }
+            ];
         }
 
         const pSkip = (parseInt(pPage) - 1) * parseInt(limit);
@@ -79,35 +118,39 @@ exports.getPendingDashboard = async (req, res) => {
 
         const processData = async (list) => {
             return Promise.all(list.map(async (item) => {
-                // Sender Details
-                const sUser = await User.findOne({ username: item.senderUsername });
-                let sDeptName = "N/A";
-                if (sUser) {
-                    const sd = await Department.findOne({ departmentId: String(sUser.departmentId) });
-                    sDeptName = sd?.departmentName || sd?.name || "N/A";
+                // If data is already stored in the document, use it. Otherwise, fetch it (for old records).
+                let sDeptName = item.senderDeptName;
+                let rDeptName = item.receiverDeptName;
+                let rUsername = item.receiverName;
+                let rRole = item.receiverRole;
+
+                // Fallback for older records that don't have the names saved yet
+                if (!sDeptName || sDeptName === "N/A") {
+                    const sUser = await User.findOne({ username: item.senderUsername });
+                    if (sUser) {
+                        const sd = await Department.findById(sUser.departmentId);
+                        sDeptName = sd?.departmentName || sd?.name || "N/A";
+                    }
                 }
 
-                // Receiver Details (The "N/A" Fix)
-                let rUsername = "N/A";
-                let rDeptName = "No Dept";
-                let rRole = "USER";
-
-                if (item.recipientId) {
-                    rUsername = item.recipientId.username || "User";
-                    rRole = item.recipientId.role || "USER";
-                    const rd = await Department.findOne({ departmentId: String(item.recipientId.departmentId) });
-                    rDeptName = rd?.departmentName || rd?.name || "N/A";
-                } else if (item.requestType === "delete") {
-                    rUsername = "SYSTEM";
-                    rDeptName = "TRASH";
+                if (!rDeptName || rDeptName === "N/A") {
+                    if (item.recipientId) {
+                        rUsername = item.recipientId.username;
+                        rRole = item.recipientId.role;
+                        const rd = await Department.findById(item.recipientId.departmentId);
+                        rDeptName = rd?.departmentName || rd?.name || "N/A";
+                    } else if (item.requestType === "delete") {
+                        rUsername = "SYSTEM";
+                        rDeptName = "TRASH";
+                    }
                 }
 
                 return { 
                     ...item, 
-                    senderDeptName: sDeptName, 
-                    receiverName: rUsername, 
-                    receiverDeptName: rDeptName,
-                    receiverRole: rRole 
+                    senderDeptName: sDeptName || "N/A", 
+                    receiverName: rUsername || "N/A", 
+                    receiverDeptName: rDeptName || "N/A",
+                    receiverRole: rRole || "USER" 
                 };
             }));
         };

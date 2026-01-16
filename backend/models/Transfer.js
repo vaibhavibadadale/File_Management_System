@@ -10,10 +10,14 @@ const transferSchema = new mongoose.Schema(
     requestType: { type: String, default: "transfer" }, 
     departmentId: { type: String }, 
     
-    // --- ADD THESE TWO FIELDS ---
-    senderDeptName: { type: String, default: "N/A" },   // Stores the name for the UI
-    receiverDeptName: { type: String, default: "N/A" }, // Stores the name for the UI
-    // ----------------------------
+    // --- UI/History Fields ---
+    // Storing these ensures the dashboard stays fast and data persists 
+    // even if users/departments are modified later.
+    senderDeptName: { type: String, default: "N/A" },
+    receiverName: { type: String, default: "N/A" },
+    receiverDeptName: { type: String, default: "N/A" },
+    receiverRole: { type: String, default: "USER" },
+    // -------------------------
 
     status: {
       type: String,
@@ -25,5 +29,5 @@ const transferSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-// Forces connection to 'transferrequests'
+// Forces connection to the specific collection 'transferrequests'
 module.exports = mongoose.model("Transfer", transferSchema, "transferrequests");

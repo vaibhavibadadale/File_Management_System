@@ -2,7 +2,6 @@ const express = require("express");
 const router = express.Router();
 const requestController = require("../controllers/request.controller");
 
-// Line 6 starts here
 router.post("/create", requestController.createRequest); 
 router.get("/pending-dashboard", requestController.getPendingDashboard);
 router.put("/approve/:id", requestController.approveRequest);

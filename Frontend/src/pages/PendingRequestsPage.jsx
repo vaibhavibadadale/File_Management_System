@@ -29,12 +29,24 @@ const PendingRequestsPage = ({ user, currentTheme }) => {
   const [activeRequestId, setActiveRequestId] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const renderDeptInfo = (deptName, role) => {
+  // UPDATED: Logic to handle both object and string department formats
+  const renderDeptInfo = (dept, role) => {
     const upperRole = role?.toUpperCase();
+    // Check if dept is an object (from populate) or a string
+    const deptName = typeof dept === 'object' ? dept?.name : dept;
+
     if (["ADMIN", "SUPERADMIN"].includes(upperRole)) {
-      return <span className="text-danger fw-bold d-block" style={{ fontSize: '0.65rem' }}><FaUserShield className="me-1" /> {upperRole}</span>;
+      return (
+        <span className="text-danger fw-bold d-block" style={{ fontSize: '0.65rem' }}>
+          <FaUserShield className="me-1" /> {upperRole}
+        </span>
+      );
     }
-    return <span className="text-primary d-block" style={{ fontSize: '0.65rem' }}>{deptName || "No Dept"} [{upperRole || "USER"}]</span>;
+    return (
+      <span className="text-primary d-block" style={{ fontSize: '0.65rem' }}>
+        {deptName || "No Dept"} [{upperRole || "USER"}]
+      </span>
+    );
   };
 
   const fetchDashboard = useCallback(async () => {
@@ -160,33 +172,33 @@ const PendingRequestsPage = ({ user, currentTheme }) => {
                   </td>
                   <td>
                     <div className="fw-bold">{req.senderUsername}</div>
-                    {renderDeptInfo(req.senderDeptName, req.senderRole)}
+                    {/* UPDATED: Passing both possible keys */}
+                    {renderDeptInfo(req.senderDeptName || req.senderDepartmentId, req.senderRole)}
                   </td>
-                 <td>
-              {req.requestType === "delete" ? (
-              <span className="text-muted small italic">SYSTEM (TRASH)</span>
-               ) : (
-               <>
-               {/* Use the flattened receiverName and receiverDeptName keys */}
-               <div className="fw-bold">{req.receiverName || "N/A"}</div>
-               {renderDeptInfo(req.receiverDeptName, req.receiverRole)}
-               </>
-              )}
-            </td>
-                  {/* NUMBERED FILES COLUMN */}
+                  <td>
+                    {req.requestType === "delete" ? (
+                      <span className="text-muted small italic">SYSTEM (TRASH)</span>
+                    ) : (
+                      <>
+                        <div className="fw-bold">{req.receiverName || req.receiverUsername || "N/A"}</div>
+                        {/* UPDATED: Passing both possible keys */}
+                        {renderDeptInfo(req.receiverDeptName || req.receiverDepartmentId, req.receiverRole)}
+                      </>
+                    )}
+                  </td>
                   <td className="text-start">
-  {req.fileIds?.slice(0, 3).map((f, i) => (
-    <div key={i} className="text-truncate small" style={{ maxWidth: "150px" }}>
-      {i + 1}. {f.originalName || "Folder"}
-    </div>
-  ))}
-  {req.fileIds?.length > 3 && (
-    <div className="ps-3">
-      <small className="text-muted" style={{ fontSize: '0.65rem' }}>
-        ...and {req.fileIds.length - 3} more
-      </small>
-    </div>
-  )}
+                    {req.fileIds?.slice(0, 3).map((f, i) => (
+                      <div key={i} className="text-truncate small" style={{ maxWidth: "150px" }}>
+                        {i + 1}. {f.originalName || "Folder"}
+                      </div>
+                    ))}
+                    {req.fileIds?.length > 3 && (
+                      <div className="ps-3">
+                        <small className="text-muted" style={{ fontSize: '0.65rem' }}>
+                          ...and {req.fileIds.length - 3} more
+                        </small>
+                      </div>
+                    )}
                   </td>
                   <td className="text-start">
                     <div className="small mb-1"><strong>Reason:</strong> {req.reason}</div>
@@ -218,7 +230,7 @@ const PendingRequestsPage = ({ user, currentTheme }) => {
         </Table>
         
         <Card.Footer className="bg-transparent border-0 px-3">
-           {renderPaginationControls(currentPage, totalPages, setPage)}
+            {renderPaginationControls(currentPage, totalPages, setPage)}
         </Card.Footer>
       </Card>
     );
@@ -252,5 +264,5 @@ const PendingRequestsPage = ({ user, currentTheme }) => {
     </Container>
   );
 };
- 
+
 export default PendingRequestsPage;
