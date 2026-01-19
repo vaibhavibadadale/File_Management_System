@@ -87,6 +87,24 @@ exports.getFilesByFolder = async (req, res) => {
 };
     
 
+exports.trackView = async (req, res) => {
+    try {
+        const { fileId, userId } = req.body;
+        if (!fileId || !userId) return res.status(400).json({ success: false, message: "Missing data" });
+
+        // Update last viewed time and add user to the history list
+        await File.findByIdAndUpdate(fileId, {
+            $set: { lastViewedAt: new Date() },
+            $addToSet: { viewedBy: userId } 
+        });
+        res.status(200).json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+};
+
+
+
 /**
  * Marks a file as deleted without removing it from the disk (Soft Delete).
  */

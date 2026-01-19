@@ -41,6 +41,7 @@ app.use("/api/folders", require("./routes/folder.routes"));
 app.use("/api/files", require("./routes/file.routes"));
 app.use("/api/logs", require("./routes/log.routes"));
 app.use("/api/transfer", require("./routes/transfer.routes"));
+app.use("/api/notifications", require("./routes/notification.routes"));
 
 // 2. ADD THIS LINE HERE:
 app.use("/api/requests", requestRoutes); 

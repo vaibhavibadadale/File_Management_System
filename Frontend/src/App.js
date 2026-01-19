@@ -15,6 +15,7 @@ import DepartmentStaff from "./pages/DepartmentStaff";
 import UsersPage from "./pages/UsersPage"; 
 import UserFilesView from "./pages/UserFilesView"; 
 import PendingRequestsPage from "./pages/PendingRequestsPage"; 
+import NotificationsPage from "./pages/NotificationsPage";
 
 function App() {
     const [themeMode, setThemeMode] = useState("light");
@@ -71,7 +72,6 @@ function App() {
     }
 
     return (
-        /* Added 'theme-container' and conditional 'dark' class to trigger your CSS variables */
         <div className={`theme-container ${themeMode} min-vh-100 ${themeMode === "dark" ? "bg-dark text-light" : "bg-light text-dark"}`}> 
             <div className="d-flex align-items-stretch">
                 <Sidebar themeMode={themeMode} user={user} />
@@ -86,24 +86,35 @@ function App() {
 
                     <main className="flex-grow-1 p-3 p-md-4">
                         <Routes>
+                            {/* Dashboard */}
                             <Route path="/" element={<FileDashboard user={user} currentTheme={themeMode} />} />
                             
+                            {/* File Management */}
                             <Route 
                                 path="/file-manager" 
                                 element={<UploadFilePage user={user} currentTheme={themeMode} />} 
                             />
                             
+                            {/* Ventures & Admin Sections */}
                             <Route path="/ventures" element={<VenturesPage user={user} currentTheme={themeMode} />} />
                             
+                            {/* User Management - Redirect target for NEW_USER notifications */}
                             <Route path="/users" element={<UsersPage currentTheme={themeMode} user={user} />} />
                             
                             <Route path="/department-staff/:deptId" element={<DepartmentStaff currentTheme={themeMode} user={user} />} />
                             
                             <Route path="/user-files/:userId" element={<UserFilesView currentTheme={themeMode} user={user} />} />
 
+                            {/* Pending Requests - Redirect target for TRANSFER/DELETE notifications */}
                             <Route 
                                 path="/pending" 
                                 element={<PendingRequestsPage user={user} currentTheme={themeMode} />} 
+                            />
+
+                            {/* Notifications History Page */}
+                            <Route 
+                                path="/notifications" 
+                                element={<NotificationsPage user={user} currentTheme={themeMode} />} 
                             />
 
                             <Route 
@@ -113,6 +124,7 @@ function App() {
                             
                             <Route path="/trash" element={<div className="p-4"><h3>Trash Bin</h3></div>} />
 
+                            {/* Auth Redirects */}
                             <Route path="/login" element={<Navigate to="/" />} />
                             <Route path="*" element={<Navigate to="/" />} />
                         </Routes>

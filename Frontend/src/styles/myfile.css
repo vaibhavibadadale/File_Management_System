@@ -1,8 +1,14 @@
+/* --- YOUR ORIGINAL STYLES --- */
 .file-explorer-container {
   padding: 20px;
   background-color: #f7f9fc;
   min-height: 90vh;
   border-radius: 10px;
+}
+
+/* Dark Mode Support for Container */
+.file-explorer-container.bg-dark {
+  background-color: #1a1d21 !important;
 }
 
 .file-toolbar {
@@ -20,7 +26,7 @@
 
 .file-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, 150px);
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); /* Improved for responsiveness */
   gap: 15px;
 }
 
@@ -39,6 +45,72 @@
   transform: scale(1.05);
 }
 
+/* --- NEW DASHBOARD WIDGET STYLES --- */
+
+/* Section Title Styling */
+.section-title {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #6c757d;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 15px;
+  display: flex;
+  align-items: center;
+}
+
+/* Recently Viewed Item Container */
+.recent-item-wrapper {
+  width: 110px;
+  text-align: center;
+  cursor: pointer;
+  transition: transform 0.2s;
+}
+
+.recent-item-wrapper:hover {
+  transform: translateY(-5px);
+}
+
+.recent-icon-box {
+  background: white;
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+  margin-bottom: 8px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+/* Dark Mode adjustment for Dashboard Cards */
+.bg-dark .recent-icon-box {
+  background: #2c3035;
+  border: 1px solid #444;
+}
+
+.bg-dark .file-card {
+  background: #2c3035;
+  border-color: #444;
+  color: #eee;
+}
+
+/* Dashboard Row Layout */
+.dashboard-row {
+  margin-bottom: 40px;
+}
+
+/* Action List Styling */
+.action-list-item {
+  font-size: 0.9rem;
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(0,0,0,0.05);
+}
+
+.bg-dark .action-list-item {
+  border-bottom: 1px solid rgba(255,255,255,0.1);
+}
+
+/* --- ORIGINAL FOLDER/FILE COLORS --- */
 .folder {
   color: #007bff;
   font-weight: 500;
@@ -46,4 +118,10 @@
 
 .file {
   color: #333;
+}
+
+.text-truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
