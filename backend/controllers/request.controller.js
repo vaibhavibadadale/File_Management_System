@@ -1,17 +1,33 @@
 const Transfer = require("../models/Transfer");
+const DeleteRequest = require("../models/DeleteRequest");
 const User = require("../models/User");
 const Department = require("../models/Department");
 const File = require("../models/File");
 const Trash = require("../models/Trash");
 
-// Helper to move files to the trash collection
+/**
+ * HELPER: Moves files to the trash collection and removes them from the active File collection.
+ */
+// Updated Helper: Ensures full file data is fetched before moving to Trash
 async function handleMoveToTrash(files, sender, approver, deptId) {
     for (const file of files) {
-        const fileData = typeof file === 'string' ? await File.findById(file) : file;
-        if (!fileData) continue;
+        // Step 1: Ensure we have the full file object
+        // If 'file' is just an ID string, we fetch it. If it's an object, we use it.
+        let fileData = typeof file === 'string' ? await File.findById(file) : file;
 
+        // Step 2: Safety check - if file is already deleted or not found, skip it
+        if (!fileData || !fileData.originalName) {
+            console.error(`File data missing for ID: ${file?._id || file}. Skipping trash move.`);
+            continue;
+        }
+
+        // Step 3: Fetch Department Name for the Trash record
+        const dept = await Department.findById(deptId);
+        const deptName = dept?.departmentName || dept?.name || "N/A";
+
+        // Step 4: Create Trash record with verified data
         await Trash.create({
-            originalName: fileData.originalName,
+            originalName: fileData.originalName, // This was the missing field causing the error
             path: fileData.path,
             size: fileData.size,
             mimetype: fileData.mimetype,
@@ -19,19 +35,27 @@ async function handleMoveToTrash(files, sender, approver, deptId) {
             deletedBy: sender,
             approvedBy: approver,
             departmentId: deptId,
+            departmentName: deptName,
             deletedAt: new Date()
         });
+        
+        // Step 5: Remove from active files collection
         await File.findByIdAndDelete(fileData._id);
     }
 }
 
-// 1. CREATE REQUEST (Updated to save Department Names in DB)
+// 1. CREATE REQUEST
 exports.createRequest = async (req, res) => {
     try {
         const { senderUsername, senderRole, recipientId, fileIds, reason, requestType, departmentId } = req.body;
-        const isAutoApprove = ["ADMIN", "SUPERADMIN"].includes(senderRole?.toUpperCase());
+        
+        if (!senderUsername || !senderRole || !departmentId) {
+            return res.status(400).json({ error: "Missing required user information (Role/Dept/Username)" });
+        }
 
-        // Fetch Sender Department Name for storage
+        const isAutoApprove = senderRole?.toUpperCase() === "SUPERADMIN";
+
+        // Fetch Sender Department Name
         const sUser = await User.findOne({ username: senderUsername });
         let sDeptName = "N/A";
         if (sUser) {
@@ -39,7 +63,6 @@ exports.createRequest = async (req, res) => {
             sDeptName = sd?.departmentName || sd?.name || "N/A";
         }
 
-        // Fetch Receiver Details for storage
         let rName = "N/A";
         let rDeptName = "N/A";
         let rRole = "USER";
@@ -57,74 +80,93 @@ exports.createRequest = async (req, res) => {
             }
         }
 
-        const newRequest = new Transfer({
+        const commonData = {
             senderUsername,
             senderRole,
-            recipientId: recipientId || null,
             fileIds,
             reason,
             requestType,
             departmentId,
-            senderDeptName: sDeptName,     // Saved to DB
-            receiverName: rName,           // Saved to DB
-            receiverDeptName: rDeptName,   // Saved to DB
-            receiverRole: rRole,           // Saved to DB
+            senderDeptName: sDeptName,
+            receiverName: rName,
+            receiverDeptName: rDeptName,
+            receiverRole: rRole,
             status: isAutoApprove ? "completed" : "pending"
-        });
+        };
+
+        let newRequest;
+        if (requestType === "delete") {
+            newRequest = new DeleteRequest(commonData);
+        } else {
+            newRequest = new Transfer({ ...commonData, recipientId: recipientId || null });
+        }
 
         if (isAutoApprove) {
             if (requestType === "delete") {
-                await handleMoveToTrash(fileIds, senderUsername, "AUTO-ADMIN", departmentId);
+                await handleMoveToTrash(fileIds, senderUsername, "AUTO-SUPERADMIN", departmentId);
             } else if (recipientId) {
                 await File.updateMany({ _id: { $in: fileIds } }, { $addToSet: { sharedWith: recipientId } });
             }
         }
+
         await newRequest.save();
-        res.status(201).json({ message: "Request processed" });
+        res.status(201).json({ message: isAutoApprove ? "Action completed" : "Request sent for approval" });
     } catch (err) { res.status(500).json({ error: err.message }); }
 };
 
-// 2. GET DASHBOARD (Robust lookup for existing and new records)
+// 2. GET DASHBOARD (HOD/Admin View)
 exports.getPendingDashboard = async (req, res) => {
     try {
         const { role, username, departmentId, pPage = 1, hPage = 1, limit = 5, search } = req.query;
         const roleUpper = role?.toUpperCase();
 
         let filter = {};
-        if (roleUpper === "HOD") {
-            filter = { $or: [{ departmentId: departmentId, senderRole: "EMPLOYEE" }, { senderUsername: username }] };
-        } else if (!["ADMIN", "SUPERADMIN"].includes(roleUpper)) {
+
+        if (roleUpper === "SUPERADMIN") {
+            filter = { senderUsername: { $ne: username } };
+        } 
+        else if (roleUpper === "ADMIN") {
+            filter = { 
+                senderRole: { $in: ["HOD", "EMPLOYEE", "USER"] },
+                senderUsername: { $ne: username } 
+            };
+        } 
+        else if (roleUpper === "HOD") {
+            filter = { 
+                $or: [
+                    { departmentId: departmentId, senderRole: { $in: ["EMPLOYEE", "USER"] } }, 
+                    { senderUsername: username }
+                ] 
+            };
+        } 
+        else {
             filter = { senderUsername: username };
         }
 
-        // Add search functionality if search term exists
         if (search) {
-            filter.$or = [
-                ...(filter.$or || []),
-                { senderUsername: { $regex: search, $options: "i" } },
-                { reason: { $regex: search, $options: "i" } }
+            const searchRegex = { $regex: search, $options: "i" };
+            filter.$and = [
+                { ...filter },
+                {
+                    $or: [
+                        { senderUsername: searchRegex },
+                        { reason: searchRegex }
+                    ]
+                }
             ];
+            if (filter.$or && roleUpper === "HOD") delete filter.$or;
         }
 
-        const pSkip = (parseInt(pPage) - 1) * parseInt(limit);
-        const hSkip = (parseInt(hPage) - 1) * parseInt(limit);
-
-        const [pReqs, hReqs, totalP, totalH] = await Promise.all([
-            Transfer.find({ ...filter, status: "pending" }).sort({ createdAt: -1 }).skip(pSkip).limit(parseInt(limit)).populate("fileIds").populate("recipientId").lean(),
-            Transfer.find({ ...filter, status: { $ne: "pending" } }).sort({ updatedAt: -1 }).skip(hSkip).limit(parseInt(limit)).populate("fileIds").populate("recipientId").lean(),
-            Transfer.countDocuments({ ...filter, status: "pending" }),
-            Transfer.countDocuments({ ...filter, status: { $ne: "pending" } })
+        const [transfers, deletes] = await Promise.all([
+            Transfer.find(filter).populate("fileIds").populate("recipientId").lean(),
+            DeleteRequest.find(filter).populate("fileIds").lean()
         ]);
+
+        const combined = [...transfers, ...deletes];
 
         const processData = async (list) => {
             return Promise.all(list.map(async (item) => {
-                // If data is already stored in the document, use it. Otherwise, fetch it (for old records).
                 let sDeptName = item.senderDeptName;
-                let rDeptName = item.receiverDeptName;
-                let rUsername = item.receiverName;
-                let rRole = item.receiverRole;
-
-                // Fallback for older records that don't have the names saved yet
                 if (!sDeptName || sDeptName === "N/A") {
                     const sUser = await User.findOne({ username: item.senderUsername });
                     if (sUser) {
@@ -132,72 +174,109 @@ exports.getPendingDashboard = async (req, res) => {
                         sDeptName = sd?.departmentName || sd?.name || "N/A";
                     }
                 }
-
-                if (!rDeptName || rDeptName === "N/A") {
-                    if (item.recipientId) {
-                        rUsername = item.recipientId.username;
-                        rRole = item.recipientId.role;
-                        const rd = await Department.findById(item.recipientId.departmentId);
-                        rDeptName = rd?.departmentName || rd?.name || "N/A";
-                    } else if (item.requestType === "delete") {
-                        rUsername = "SYSTEM";
-                        rDeptName = "TRASH";
-                    }
-                }
-
                 return { 
                     ...item, 
-                    senderDeptName: sDeptName || "N/A", 
-                    receiverName: rUsername || "N/A", 
-                    receiverDeptName: rDeptName || "N/A",
-                    receiverRole: rRole || "USER" 
+                    senderDeptName: sDeptName || "N/A",
+                    receiverName: item.receiverName || (item.requestType === "delete" ? "SYSTEM" : "N/A"),
+                    receiverDeptName: item.receiverDeptName || (item.requestType === "delete" ? "TRASH" : "N/A")
                 };
             }));
         };
 
+        const processedAll = await processData(combined);
+        const mainRequests = processedAll.filter(r => r.status === "pending").sort((a,b) => b.createdAt - a.createdAt);
+        const logs = processedAll.filter(r => r.status !== "pending").sort((a,b) => b.updatedAt - a.updatedAt);
+
+        const pLimit = parseInt(limit);
+        const pStart = (parseInt(pPage) - 1) * pLimit;
+        const hStart = (parseInt(hPage) - 1) * pLimit;
+
         res.json({
-            mainRequests: await processData(pReqs),
-            logs: await processData(hReqs),
-            totalPending: totalP,
-            totalHistory: totalH,
-            pendingTotalPages: Math.ceil(totalP / limit),
-            historyTotalPages: Math.ceil(totalH / limit)
+            mainRequests: mainRequests.slice(pStart, pStart + pLimit),
+            logs: logs.slice(hStart, hStart + pLimit),
+            totalPending: mainRequests.length,
+            totalHistory: logs.length,
+            pendingTotalPages: Math.ceil(mainRequests.length / pLimit),
+            historyTotalPages: Math.ceil(logs.length / pLimit)
         });
     } catch (err) { res.status(500).json({ error: err.message }); }
 };
 
-// 3. APPROVE / DENY
+// 3. GET MY REQUESTS (For the user who sent them)
+exports.getMyRequests = async (req, res) => {
+    try {
+        const { username } = req.query;
+        const [transfers, deletes] = await Promise.all([
+            Transfer.find({ senderUsername: username }).populate("fileIds").lean(),
+            DeleteRequest.find({ senderUsername: username }).populate("fileIds").lean()
+        ]);
+        res.json([...transfers, ...deletes].sort((a, b) => b.createdAt - a.createdAt));
+    } catch (err) { res.status(500).json({ error: err.message }); }
+};
+
+// 4. APPROVE / DENY
+
 exports.approveRequest = async (req, res) => {
     try {
-        const request = await Transfer.findById(req.params.id);
-        if (!request) return res.status(404).json({ message: "Not found" });
+        const { id } = req.params;
+        const { approverUsername } = req.body; 
+
+        // POPULATE is the key here to fix the "originalName required" error
+        let request = await Transfer.findById(id).populate("fileIds") || 
+                      await DeleteRequest.findById(id).populate("fileIds");
+        
+        if (!request) return res.status(404).json({ message: "Request not found" });
 
         if (request.requestType === "delete") {
-            await handleMoveToTrash(request.fileIds, request.senderUsername, "Authorized", request.departmentId);
+            // Passes the full file objects (containing originalName) to the helper
+            await handleMoveToTrash(
+                request.fileIds, 
+                request.senderUsername, 
+                approverUsername || "Authorized Admin", 
+                request.departmentId
+            );
         } else {
-            await File.updateMany({ _id: { $in: request.fileIds } }, { $addToSet: { sharedWith: request.recipientId } });
+            const idsOnly = request.fileIds.map(f => f._id);
+            await File.updateMany(
+                { _id: { $in: idsOnly } }, 
+                { $addToSet: { sharedWith: request.recipientId } }
+            );
         }
+        
         request.status = "completed";
         await request.save();
-        res.json({ message: "Approved" });
-    } catch (err) { res.status(500).json({ error: err.message }); }
-};
+        res.json({ message: "Approved successfully" });
 
+    } catch (err) { 
+        console.error("Approval Error:", err);
+        res.status(500).json({ error: "Server Error: " + err.message }); 
+    }
+};
 exports.denyRequest = async (req, res) => {
     try {
-        await Transfer.findByIdAndUpdate(req.params.id, { 
-            status: "denied", 
-            denialComment: req.body.denialComment || "Rejected" 
-        });
+        const { id } = req.params;
+        let request = await Transfer.findById(id) || await DeleteRequest.findById(id);
+        
+        if (!request) return res.status(404).json({ message: "Request not found" });
+
+        request.status = "denied";
+        request.denialComment = req.body.denialComment || "Rejected";
+        
+        await request.save();
         res.json({ message: "Denied" });
     } catch (err) { res.status(500).json({ error: err.message }); }
 };
 
-// 4. TRASH HANDLERS
+// 5. TRASH HANDLERS
 exports.getTrashItems = async (req, res) => {
     try {
         const { role, departmentId } = req.query;
-        let query = (role?.toUpperCase() === "HOD") ? { departmentId } : {};
+        let query = {};
+        
+        if (role?.toUpperCase() === "HOD") {
+            query = { departmentId: departmentId };
+        }
+
         const items = await Trash.find(query).sort({ deletedAt: -1 });
         res.json(items);
     } catch (err) { res.status(500).json({ error: err.message }); }
@@ -206,12 +285,21 @@ exports.getTrashItems = async (req, res) => {
 exports.restoreFromTrash = async (req, res) => {
     try {
         const item = await Trash.findById(req.params.id);
-        if (!item) return res.status(404).json({ message: "Not found" });
+        if (!item) return res.status(404).json({ message: "Trash item not found" });
+        
         const data = item.toObject();
         const originalId = data.originalFileId;
-        delete data._id; delete data.deletedAt; delete data.originalFileId;
+        
+        delete data._id; 
+        delete data.deletedAt; 
+        delete data.originalFileId;
+        delete data.departmentName;
+        delete data.approvedBy;
+        delete data.deletedBy;
+
         await File.create({ ...data, _id: originalId });
         await Trash.findByIdAndDelete(req.params.id);
+        
         res.json({ message: "Restored" });
     } catch (err) { res.status(500).json({ error: err.message }); }
 };

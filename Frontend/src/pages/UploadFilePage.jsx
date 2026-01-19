@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import axios from "axios";
 import "../styles/UploadFilePage.css"; 
 import TransferModal from "../components/TransferModal"; 
+import DeleteModal from "../components/DeleteModal"; 
 
 const DEPARTMENT_ID = "694050d65c12077b1957bc98";
 const USER_ID = "694130dd872795f2641e2621"; 
@@ -49,6 +50,12 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
     const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
     const [starredItems, setStarredItems] = useState({});
 
+    // Delete Modal State
+    const [deleteModalConfig, setDeleteModalConfig] = useState({
+        isOpen: false,
+        itemsToDelete: [], 
+    });
+
     const isDark = currentTheme === "dark";
 
     useEffect(() => {
@@ -59,7 +66,6 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
         setItemsToTransfer({});
         const activeFolderId = parentId || "null"; 
         const currentUserId = user?._id || USER_ID;
-
         let params = { userId: currentUserId };
         
         if (viewMode === "important") {
@@ -67,16 +73,14 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
         } else {
             params.parentId = activeFolderId;
             params.folderId = activeFolderId;
-            params.departmentId = user?.departmentId || DEPARTMENT_ID;
+            params.departmentId = user?.departmentId?._id || user?.departmentId || DEPARTMENT_ID;
         }
 
         try {
             const folderRes = await axios.get(`${BACKEND_URL}/api/folders`, { params });
             setFoldersInCurrentView(folderRes.data.folders || []);
-
             const fileRes = await axios.get(`${BACKEND_URL}/api/files`, { params });
             setFilesInCurrentView(fileRes.data.files || []);
-
             const stars = {};
             [...(folderRes.data.folders || []), ...(fileRes.data.files || [])].forEach(item => {
                 if (item.isStarred) stars[item._id] = true;
@@ -85,26 +89,109 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
         } catch (err) { console.error("Error loading content:", err); }
     };
 
+    // --- UPDATED Deletion Logic with Full Schema Support ---
+
+    const openSingleDelete = (item) => {
+        const isFolder = item.type === 'Folder' || item.isFolder;
+        setDeleteModalConfig({
+            isOpen: true,
+            itemsToDelete: [{
+                id: item._id,
+                isFolder: isFolder,
+                name: item.displayName || item.originalName || item.folderName
+            }]
+        });
+    };
+
+    const openBulkDelete = () => {
+        const selectedIds = Object.keys(itemsToTransfer).filter(id => itemsToTransfer[id]);
+        const items = selectedIds.map(id => {
+            const folder = foldersInCurrentView.find(f => f._id === id);
+            const file = filesInCurrentView.find(f => f._id === id);
+            return {
+                id,
+                isFolder: !!folder,
+                name: folder ? (folder.folderName || folder.name) : (file?.originalName || "File")
+            };
+        });
+        setDeleteModalConfig({ isOpen: true, itemsToDelete: items });
+    };
+
+    const handleConfirmDelete = async ({ reason, password }) => {
+        try {
+            const fileIdsToDelete = [];
+            const folderIdsToDelete = [];
+
+            deleteModalConfig.itemsToDelete.forEach(item => {
+                if (item.isFolder) folderIdsToDelete.push(item.id);
+                else fileIdsToDelete.push(item.id);
+            });
+
+            // 1. Handle Folder Deletions (Immediate as per your logic)
+            for (const folderId of folderIdsToDelete) {
+                await axios.delete(`${BACKEND_URL}/api/folders/${folderId}`, { 
+                    data: { userId: user?._id || USER_ID } 
+                });
+            }
+
+            // 2. Handle File Deletions (Payload matching Mongoose Schema)
+            if (fileIdsToDelete.length > 0) {
+                const deptId = user?.departmentId?._id || user?.departmentId || DEPARTMENT_ID;
+                const deptName = user?.departmentId?.name || "N/A";
+
+                const payload = {
+                    // Logic/Filtering Fields
+                    requestType: "delete",
+                    fileIds: fileIdsToDelete,
+                    senderUsername: user?.username || "Guest",
+                    senderRole: user?.role || "EMPLOYEE",
+                    departmentId: String(deptId), // Force String as per schema
+                    reason: reason || "No reason provided",
+                    
+                    // UI/History Tracking Fields
+                    senderDeptName: deptName,
+                    receiverName: "SYSTEM",
+                    receiverDeptName: "TRASH",
+                    receiverRole: "SYSTEM",
+
+                    // Security verification for backend
+                    password: password 
+                };
+
+                await axios.post(`${BACKEND_URL}/api/requests/create`, payload);
+                
+                if (user?.role === "SUPERADMIN") {
+                    alert("Files processed for deletion.");
+                } else {
+                    alert(`Deletion request submitted for ${fileIdsToDelete.length} file(s). Waiting for HOD approval.`);
+                }
+            }
+
+            // Reset UI
+            setDeleteModalConfig({ isOpen: false, itemsToDelete: [] });
+            setItemsToTransfer({}); 
+            loadContent(currentFolderId);
+        } catch (err) {
+            console.error("Delete error:", err);
+            alert(err.response?.data?.message || err.response?.data?.error || "Delete request failed.");
+        }
+    };
+
+    // --- Existing Handlers ---
+
     const handleToggleStar = async (e, item) => {
         e.stopPropagation(); 
         const isFolder = item.type === 'Folder' || item.isFolder;
         if (isFolder) return; 
-
         const newStarredState = !starredItems[item._id];
-
         try {
-            const endpoint = `${BACKEND_URL}/api/files/star/${item._id}`;
-            await axios.patch(endpoint, { 
+            await axios.patch(`${BACKEND_URL}/api/files/star/${item._id}`, { 
                 userId: user?._id || USER_ID,
                 isStarred: newStarredState 
             });
             setStarredItems(prev => ({ ...prev, [item._id]: newStarredState }));
-            if (viewMode === "important") {
-                loadContent(currentFolderId);
-            }
-        } catch (err) {
-            alert("Could not update star status.");
-        }
+            if (viewMode === "important") loadContent(currentFolderId);
+        } catch (err) { alert("Could not update star status."); }
     };
 
     const handleSelectAll = (e) => {
@@ -115,40 +202,6 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
             setItemsToTransfer(allIds);
         } else {
             setItemsToTransfer({});
-        }
-    };
-
-    const handleDeleteItem = async (item) => {
-        const isFolder = item.type === 'Folder' || item.isFolder;
-        if (!window.confirm(`Delete ${isFolder ? 'folder' : 'file'}: "${item.displayName || item.originalName || item.folderName}"?`)) return;
-
-        try {
-            const endpoint = isFolder 
-                ? `${BACKEND_URL}/api/folders/${item._id}` 
-                : `${BACKEND_URL}/api/files/${item._id}`;
-
-            await axios.delete(endpoint, { data: { userId: user?._id || USER_ID } });
-            await loadContent(currentFolderId);
-            if (isReceivedModalOpen) fetchReceivedFiles();
-        } catch (err) { alert("Delete failed."); }
-    };
-
-    const handleBulkDelete = async () => {
-        const selectedIds = Object.keys(itemsToTransfer).filter(id => itemsToTransfer[id]);
-        if (selectedIds.length === 0) return;
-        if (!window.confirm(`Delete ${selectedIds.length} selected item(s)?`)) return;
-
-        try {
-            for (const id of selectedIds) {
-                const isFolder = foldersInCurrentView.some(f => f._id === id);
-                const endpoint = isFolder ? `${BACKEND_URL}/api/folders/${id}` : `${BACKEND_URL}/api/files/${id}`;
-                await axios.delete(endpoint, { data: { userId: user?._id || USER_ID } });
-            }
-            alert("Bulk deletion complete.");
-            await loadContent(currentFolderId);
-        } catch (err) {
-            alert("Some items could not be deleted.");
-            await loadContent(currentFolderId);
         }
     };
 
@@ -191,9 +244,8 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
         formData.append("username", user?.username || "Admin"); 
         formData.append("folderId", currentFolderId || "null");
         formData.append("uploadedBy", user?._id || USER_ID);
-        formData.append("departmentId", user?.departmentId || DEPARTMENT_ID);
+        formData.append("departmentId", user?.departmentId?._id || user?.departmentId || DEPARTMENT_ID);
         formData.append("file", selectedFile);
-
         try {
             await axios.post(`${BACKEND_URL}/api/files/upload`, formData);
             setSelectedFile(null);
@@ -209,7 +261,7 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
                 name: folderName, 
                 parent: currentFolderId || null, 
                 createdBy: user?._id || USER_ID, 
-                departmentId: user?.departmentId || DEPARTMENT_ID,
+                departmentId: user?.departmentId?._id || user?.departmentId || DEPARTMENT_ID,
             });
             setFolderName("");
             loadContent(currentFolderId);
@@ -242,20 +294,12 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
         setItemsToTransfer(prev => ({ ...prev, [id]: !prev[id] }));
     };
 
-    let combinedItems = [];
-    
+    // Item Mapping
     const foldersMapped = foldersInCurrentView.map(f => ({ ...f, type: 'Folder', displayName: f.folderName || f.name }));
     const filesMapped = filesInCurrentView.map(f => ({ ...f, type: f.mimeType || 'File', displayName: f.originalName || "Unnamed File" }));
-
-    if (viewMode === "important") {
-        combinedItems = [...foldersMapped, ...filesMapped];
-    } else {
-        if (currentFolderId === null) {
-            combinedItems = [...foldersMapped];
-        } else {
-            combinedItems = [...foldersMapped, ...filesMapped];
-        }
-    }
+    let combinedItems = (viewMode === "important" || currentFolderId !== null) 
+        ? [...foldersMapped, ...filesMapped] 
+        : [...foldersMapped];
 
     if (searchQuery) {
         combinedItems = combinedItems.filter(item => item.displayName.toLowerCase().includes(searchQuery.toLowerCase()));
@@ -269,11 +313,9 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
             <main className="main-content">
                 <header className="main-header mb-4">
                     <div className="d-flex align-items-center justify-content-between w-100">
-                        <div className="d-flex align-items-center">
-                            <h1 className="mb-0">
-                                {viewMode === "important" ? "⭐ Important Files" : "📁 File Manager"}
-                            </h1>
-                        </div>
+                        <h1 className="mb-0">
+                            {viewMode === "important" ? "⭐ Important Files" : "📁 File Manager"}
+                        </h1>
                         {viewMode !== "important" && (
                             <button className={`btn ${isDark ? 'btn-outline-light' : 'btn-outline-primary'} border-2 fw-bold px-4 rounded-pill`} onClick={fetchReceivedFiles}>
                                 <i className="fas fa-inbox me-2"></i> Received
@@ -286,60 +328,33 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
                     {viewMode !== "important" ? (
                         <>
                             <div className="action-group create-group d-flex align-items-center has-right-border">
-                                <button 
-                                    className={`btn btn-sm ${isDark ? 'btn-secondary text-white' : 'btn-outline-secondary'} me-2`} 
-                                    onClick={handleGoBack} 
-                                    disabled={currentFolderId === null}
-                                >
+                                <button className={`btn btn-sm ${isDark ? 'btn-secondary text-white' : 'btn-outline-secondary'} me-2`} onClick={handleGoBack} disabled={currentFolderId === null}>
                                     <i className="fas fa-arrow-left"></i>
                                 </button>
-                                <input 
-                                    type="text" 
-                                    placeholder="New folder..." 
-                                    value={folderName} 
-                                    onChange={(e) => setFolderName(e.target.value)} 
-                                    className="create-input" 
-                                />
+                                <input type="text" placeholder="New folder..." value={folderName} onChange={(e) => setFolderName(e.target.value)} className="create-input" />
                                 <button onClick={handleCreateFolder} className="create-btn">Create</button>
                             </div>
 
-                            {/* SMALLER ADD FILE BUTTON LOGIC */}
                             {currentFolderId !== null && (
                                 <div className="action-group upload-group d-flex align-items-center ms-2">
                                     <label className="upload-label-main btn btn-sm btn-outline-primary mb-0 d-flex align-items-center py-1 px-2" htmlFor="file-input" style={{ fontSize: '0.85rem', cursor: 'pointer' }}>
                                         <i className="fas fa-plus-circle me-1"></i> {selectedFile ? "Ready" : "Add File"}
                                     </label>
                                     <input id="file-input" type="file" onChange={(e) => setSelectedFile(e.target.files[0])} hidden />
-                                    <button 
-                                        onClick={handleFileUpload} 
-                                        disabled={!selectedFile} 
-                                        className="btn btn-sm btn-primary ms-1 py-1 px-2"
-                                        style={{ fontSize: '0.85rem' }}
-                                    >
-                                        Upload
-                                    </button>
+                                    <button onClick={handleFileUpload} disabled={!selectedFile} className="btn btn-sm btn-primary ms-1 py-1 px-2" style={{ fontSize: '0.85rem' }}>Upload</button>
                                 </div>
                             )}
                         </>
                     ) : (
                         <div className="action-group d-flex align-items-center">
                             <i className="fas fa-star text-warning me-2"></i>
-                            {/* UPDATED: Dark mode aware visibility for the message */}
-                            <span className={isDark ? "text-light-50 small" : "text-muted small"} style={{ opacity: isDark ? 0.7 : 1 }}>
-                                Starred items from all folders.
-                            </span>
+                            <span className={isDark ? "text-light-50 small" : "text-muted small"} style={{ opacity: isDark ? 0.7 : 1 }}>Starred items from all folders.</span>
                         </div>
                     )}
 
                     <div className="action-group search-group ms-auto">
                         <i className="fas fa-search search-icon ms-2"></i>
-                        <input 
-                            type="text" 
-                            placeholder="Search..." 
-                            value={searchQuery} 
-                            onChange={(e) => setSearchQuery(e.target.value)} 
-                            className="search-input" 
-                        />
+                        <input type="text" placeholder="Search..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="search-input" />
                     </div>
                 </div>
 
@@ -348,11 +363,7 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
                         <nav aria-label="breadcrumb">
                             <ol className="breadcrumb mb-0">
                                 {currentPath.map((item, index) => (
-                                    <li key={item._id || index} 
-                                        className={`breadcrumb-item ${index === currentPath.length-1 ? 'active' : ''}`}
-                                        onClick={() => handlePathClick(item)}
-                                        style={{ cursor: 'pointer' }}
-                                    >
+                                    <li key={item._id || index} className={`breadcrumb-item ${index === currentPath.length-1 ? 'active' : ''}`} onClick={() => handlePathClick(item)} style={{ cursor: 'pointer' }}>
                                         {item.name}
                                     </li>
                                 ))}
@@ -370,16 +381,10 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
                         <div className="selection-action-bar animate__animated animate__fadeInDown d-flex align-items-center gap-2 p-2 px-3 rounded-pill shadow-sm" 
                              style={{ background: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)', border: '1px solid #ddd' }}>
                             <span className="me-3 small fw-bold text-primary">{selectedCount} Selected</span>
-                            <button 
-                                onClick={() => setIsTransferModalOpen(true)} 
-                                className="btn btn-success btn-sm rounded-pill px-3 d-flex align-items-center"
-                            >
+                            <button onClick={() => setIsTransferModalOpen(true)} className="btn btn-success btn-sm rounded-pill px-3 d-flex align-items-center">
                                 <i className="fas fa-paper-plane me-2"></i> Transfer
                             </button>
-                            <button 
-                                onClick={handleBulkDelete} 
-                                className="btn btn-danger btn-sm rounded-pill px-3 d-flex align-items-center"
-                            >
+                            <button onClick={openBulkDelete} className="btn btn-danger btn-sm rounded-pill px-3 d-flex align-items-center">
                                 <i className="fas fa-trash me-2"></i> Delete
                             </button>
                             <div className="vr mx-2"></div>
@@ -408,30 +413,19 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
                         </thead>
                         <tbody>
                             {combinedItems.length > 0 ? combinedItems.map((item) => (
-                                <tr key={item._id} 
-                                    onDoubleClick={item.type === 'Folder' ? () => handleFolderClick(item) : null}
-                                    className={itemsToTransfer[item._id] ? 'table-active' : ''}>
+                                <tr key={item._id} onDoubleClick={item.type === 'Folder' ? () => handleFolderClick(item) : null} className={itemsToTransfer[item._id] ? 'table-active' : ''}>
                                     <td>
                                         {viewMode !== "important" && (
-                                            <input 
-                                                type="checkbox" 
-                                                checked={!!itemsToTransfer[item._id]} 
-                                                onChange={() => handleSelectItem(item._id)} 
-                                                className="form-check-input"
-                                            />
+                                            <input type="checkbox" checked={!!itemsToTransfer[item._id]} onChange={() => handleSelectItem(item._id)} className="form-check-input" />
                                         )}
                                     </td>
                                     <td className={item.type === 'Folder' ? 'folder-row' : ''}>
                                         <div className="d-flex align-items-center">
                                             <i className={`${item.type === 'Folder' ? 'fas fa-folder text-warning' : getFileIcon(item.type)} file-icon me-3 fs-5`}></i>
                                             <span className="text-truncate" style={{maxWidth: '250px'}}>{item.displayName}</span>
-                                            
                                             {item.type !== 'Folder' && (
-                                                <i 
-                                                    className={`${starredItems[item._id] ? 'fas fa-star text-warning' : 'far fa-star text-muted'} ms-3`}
-                                                    style={{ cursor: 'pointer', fontSize: '0.9rem' }}
-                                                    onClick={(e) => handleToggleStar(e, item)}
-                                                ></i>
+                                                <i className={`${starredItems[item._id] ? 'fas fa-star text-warning' : 'far fa-star text-muted'} ms-3`}
+                                                   style={{ cursor: 'pointer', fontSize: '0.9rem' }} onClick={(e) => handleToggleStar(e, item)}></i>
                                             )}
                                         </div>
                                     </td>
@@ -446,7 +440,7 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
                                                 </button>
                                             )}
                                             {viewMode !== "important" && (
-                                                <button className="btn btn-link btn-sm p-0" title="Delete" onClick={() => handleDeleteItem(item)}>
+                                                <button className="btn btn-link btn-sm p-0" title="Delete" onClick={() => openSingleDelete(item)}>
                                                     <i className="fas fa-trash-alt text-danger"></i>
                                                 </button>
                                             )}
@@ -470,7 +464,16 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
                 </div>
             </main>
 
-            {/* Modal Components */}
+            {/* Modals */}
+            <DeleteModal 
+                isOpen={deleteModalConfig.isOpen}
+                isDark={isDark}
+                itemCount={deleteModalConfig.itemsToDelete.length}
+                itemName={deleteModalConfig.itemsToDelete[0]?.name}
+                onClose={() => setDeleteModalConfig({ isOpen: false, itemsToDelete: [] })}
+                onConfirm={handleConfirmDelete}
+            />
+
             {isReceivedModalOpen && (
                 <div className="modal-overlay">
                     <div className="received-files-modal shadow-lg" style={{ maxWidth: '850px', width: '90%', borderRadius: '12px' }}>
@@ -504,7 +507,7 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
                                                                 <i className="fas fa-download text-success action-icon" onClick={() => handleDownload(item)}></i>
                                                             </>
                                                         )}
-                                                        <i className="fas fa-trash-alt text-danger action-icon" onClick={() => handleDeleteItem({...item, type: item.isFolder ? 'Folder' : 'File'})}></i>
+                                                        <i className="fas fa-trash-alt text-danger action-icon" onClick={() => openSingleDelete({...item, type: item.isFolder ? 'Folder' : 'File'})}></i>
                                                     </div>
                                                 </td>
                                             </tr>

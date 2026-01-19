@@ -15,6 +15,7 @@ import DepartmentStaff from "./pages/DepartmentStaff";
 import UsersPage from "./pages/UsersPage"; 
 import UserFilesView from "./pages/UserFilesView"; 
 import PendingRequestsPage from "./pages/PendingRequestsPage"; 
+import TrashPage from "./pages/TrashPage"; // Added Import
 
 function App() {
     const [themeMode, setThemeMode] = useState("light");
@@ -71,7 +72,6 @@ function App() {
     }
 
     return (
-        /* Added 'theme-container' and conditional 'dark' class to trigger your CSS variables */
         <div className={`theme-container ${themeMode} min-vh-100 ${themeMode === "dark" ? "bg-dark text-light" : "bg-light text-dark"}`}> 
             <div className="d-flex align-items-stretch">
                 <Sidebar themeMode={themeMode} user={user} />
@@ -111,7 +111,8 @@ function App() {
                                 element={<UploadFilePage user={user} viewMode="important" currentTheme={themeMode} />} 
                             />
                             
-                            <Route path="/trash" element={<div className="p-4"><h3>Trash Bin</h3></div>} />
+                            {/* Updated Trash Route */}
+                            <Route path="/trash" element={<TrashPage user={user} currentTheme={themeMode} />} />
 
                             <Route path="/login" element={<Navigate to="/" />} />
                             <Route path="*" element={<Navigate to="/" />} />

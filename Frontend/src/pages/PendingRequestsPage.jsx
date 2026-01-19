@@ -29,11 +29,15 @@ const PendingRequestsPage = ({ user, currentTheme }) => {
   const [activeRequestId, setActiveRequestId] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // UPDATED: Logic to handle both object and string department formats
+  // Helper to extract ID string regardless of object nesting
+  const getCleanDeptId = (dept) => {
+    if (!dept) return null;
+    return typeof dept === 'object' ? (dept._id || dept.id) : dept;
+  };
+
   const renderDeptInfo = (dept, role) => {
     const upperRole = role?.toUpperCase();
-    // Check if dept is an object (from populate) or a string
-    const deptName = typeof dept === 'object' ? dept?.name : dept;
+    const deptName = typeof dept === 'object' ? (dept?.departmentName || dept?.name) : dept;
 
     if (["ADMIN", "SUPERADMIN"].includes(upperRole)) {
       return (
@@ -52,7 +56,7 @@ const PendingRequestsPage = ({ user, currentTheme }) => {
   const fetchDashboard = useCallback(async () => {
     setLoading(true);
     try {
-      const deptId = user.departmentId?._id || user.departmentId;
+      const deptId = getCleanDeptId(user.departmentId);
       const res = await axios.get("http://localhost:5000/api/requests/pending-dashboard", {
         params: {
           role: user.role?.toUpperCase(),
@@ -77,22 +81,36 @@ const PendingRequestsPage = ({ user, currentTheme }) => {
     return () => clearTimeout(delayDebounceFn);
   }, [searchTerm, fetchDashboard]);
 
+  // UPDATED: Logic to ensure approverUsername is always sent to match backend controller
   const handleApprove = async (id) => {
     if (!window.confirm("Approve this request?")) return;
     try {
-      await axios.put(`http://localhost:5000/api/requests/approve/${id}`);
-      fetchDashboard();
+        // Ensure user.username exists. If not, fallback to a string.
+        const username = user?.username || "Admin";
+
+        await axios.put(`http://localhost:5000/api/requests/approve/${id}`, {
+            approverUsername: username 
+        });
+        
+        // Refresh the list after success
+        fetchDashboard();
     } catch (err) {
-      alert("Approve failed.");
+        console.error("Full Error Object:", err);
+        // This will show you the EXACT message from the backend
+        const msg = err.response?.data?.message || err.response?.data?.error || "Approve failed.";
+        alert(msg);
     }
-  };
+};
 
   const handleConfirmDeny = async () => {
     if (!denialComment.trim()) return alert("Please enter a reason.");
     setIsSubmitting(true);
     try {
-      await axios.put(`http://localhost:5000/api/requests/deny/${activeRequestId}`, { denialComment });
+      await axios.put(`http://localhost:5000/api/requests/deny/${activeRequestId}`, { 
+        denialComment 
+      });
       setShowDenyModal(false);
+      setDenialComment(""); 
       fetchDashboard();
     } catch (err) {
       alert("Deny failed.");
@@ -172,24 +190,22 @@ const PendingRequestsPage = ({ user, currentTheme }) => {
                   </td>
                   <td>
                     <div className="fw-bold">{req.senderUsername}</div>
-                    {/* UPDATED: Passing both possible keys */}
-                    {renderDeptInfo(req.senderDeptName || req.senderDepartmentId, req.senderRole)}
+                    {renderDeptInfo(req.senderDeptName || req.departmentId, req.senderRole)}
                   </td>
                   <td>
                     {req.requestType === "delete" ? (
                       <span className="text-muted small italic">SYSTEM (TRASH)</span>
                     ) : (
                       <>
-                        <div className="fw-bold">{req.receiverName || req.receiverUsername || "N/A"}</div>
-                        {/* UPDATED: Passing both possible keys */}
-                        {renderDeptInfo(req.receiverDeptName || req.receiverDepartmentId, req.receiverRole)}
+                        <div className="fw-bold">{req.receiverName || "N/A"}</div>
+                        {renderDeptInfo(req.receiverDeptName, req.receiverRole)}
                       </>
                     )}
                   </td>
                   <td className="text-start">
                     {req.fileIds?.slice(0, 3).map((f, i) => (
                       <div key={i} className="text-truncate small" style={{ maxWidth: "150px" }}>
-                        {i + 1}. {f.originalName || "Folder"}
+                        {i + 1}. {f.originalName || "File/Folder"}
                       </div>
                     ))}
                     {req.fileIds?.length > 3 && (
@@ -215,13 +231,45 @@ const PendingRequestsPage = ({ user, currentTheme }) => {
                   <td style={{ fontSize: "0.75rem" }}>{new Date(req.createdAt).toLocaleDateString()}</td>
                   <td>
                     {isMain ? (
-                      ((["ADMIN", "SUPERADMIN"].includes(user.role?.toUpperCase())) || (user.role?.toUpperCase() === "HOD" && req.senderUsername !== user.username)) ? (
-                        <div className="d-flex gap-2 justify-content-center">
-                          <Button variant="success" size="sm" onClick={() => handleApprove(req._id)}><FaCheck /></Button>
-                          <Button variant="danger" size="sm" onClick={() => { setActiveRequestId(req._id); setShowDenyModal(true); }}><FaTimes /></Button>
-                        </div>
-                      ) : <Badge bg="info" className="px-2 py-1">AWAITING</Badge>
-                    ) : <Badge bg={req.status === "completed" ? "success" : "danger"}>{req.status?.toUpperCase()}</Badge>}
+                      (() => {
+                        const myRole = user.role?.toUpperCase();
+                        const senderRole = req.senderRole?.toUpperCase();
+                        const isMyOwnRequest = req.senderUsername === user.username;
+                        
+                        let canApprove = false;
+
+                        // Permission Logic
+                        if (!isMyOwnRequest) {
+                          if (myRole === "SUPERADMIN") {
+                            canApprove = true;
+                          } else if (myRole === "ADMIN") {
+                            if (["HOD", "EMPLOYEE", "USER"].includes(senderRole)) {
+                              canApprove = true;
+                            }
+                          } else if (myRole === "HOD") {
+                            const myDeptId = getCleanDeptId(user.departmentId);
+                            const senderDeptId = getCleanDeptId(req.departmentId);
+
+                            if (["EMPLOYEE", "USER"].includes(senderRole) && myDeptId === senderDeptId) {
+                              canApprove = true;
+                            }
+                          }
+                        }
+
+                        if (canApprove) {
+                          return (
+                            <div className="d-flex gap-2 justify-content-center">
+                              <Button variant="success" size="sm" onClick={() => handleApprove(req._id)}><FaCheck /></Button>
+                              <Button variant="danger" size="sm" onClick={() => { setActiveRequestId(req._id); setShowDenyModal(true); }}><FaTimes /></Button>
+                            </div>
+                          );
+                        } else {
+                          return <Badge bg="info" className="px-2 py-1">AWAITING</Badge>;
+                        }
+                      })()
+                    ) : (
+                      <Badge bg={req.status === "completed" ? "success" : "danger"}>{req.status?.toUpperCase()}</Badge>
+                    )}
                   </td>
                 </tr>
               ))

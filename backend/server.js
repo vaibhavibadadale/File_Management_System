@@ -6,8 +6,6 @@ const path = require("path");
 const fs = require("fs");
 
 const app = express();
-// 1. Correct import
-const requestRoutes = require('./routes/request.routes'); 
 
 // ================= CONFIG =================
 const PORT = process.env.PORT || 5000;
@@ -42,8 +40,8 @@ app.use("/api/files", require("./routes/file.routes"));
 app.use("/api/logs", require("./routes/log.routes"));
 app.use("/api/transfer", require("./routes/transfer.routes"));
 
-// 2. ADD THIS LINE HERE:
-app.use("/api/requests", requestRoutes); 
+// Unified Request & Trash Route
+app.use("/api/requests", require('./routes/request.routes')); 
 
 // ================= DATABASE =================
 const connectWithRetry = () => {
