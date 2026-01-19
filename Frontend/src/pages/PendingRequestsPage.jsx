@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 import axios from "axios";
+import Swal from "sweetalert2"; // Added for fancy popups
 import {
   Table, Badge, Container, Card, Button, Spinner, Form, Modal, Alert, InputGroup, Row, Col
 } from "react-bootstrap";
@@ -19,7 +20,6 @@ const PendingRequestsPage = ({ user, currentTheme }) => {
     totalHistory: 0,
   });
   const [loading, setLoading] = useState(true);
-  
   const [pPage, setPPage] = useState(1);
   const [hPage, setHPage] = useState(1);
   const [searchTerm, setSearchTerm] = useState("");
@@ -29,12 +29,10 @@ const PendingRequestsPage = ({ user, currentTheme }) => {
   const [activeRequestId, setActiveRequestId] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // UPDATED: Logic to handle both object and string department formats
+  // Helper for Department Rendering
   const renderDeptInfo = (dept, role) => {
     const upperRole = role?.toUpperCase();
-    // Check if dept is an object (from populate) or a string
     const deptName = typeof dept === 'object' ? dept?.name : dept;
-
     if (["ADMIN", "SUPERADMIN"].includes(upperRole)) {
       return (
         <span className="text-danger fw-bold d-block" style={{ fontSize: '0.65rem' }}>
@@ -77,22 +75,60 @@ const PendingRequestsPage = ({ user, currentTheme }) => {
     return () => clearTimeout(delayDebounceFn);
   }, [searchTerm, fetchDashboard]);
 
+  // --- FANCY APPROVE POPUP ---
   const handleApprove = async (id) => {
-    if (!window.confirm("Approve this request?")) return;
-    try {
-      await axios.put(`http://localhost:5000/api/requests/approve/${id}`);
-      fetchDashboard();
-    } catch (err) {
-      alert("Approve failed.");
-    }
+    Swal.fire({
+      title: "Confirm Approval",
+      text: "Are you sure you want to approve this request?",
+      icon: "question",
+      showCancelButton: true,
+      confirmButtonColor: "#28a745",
+      cancelButtonColor: "#d33",
+      confirmButtonText: "Yes, Approve",
+      background: currentTheme === "dark" ? "#1a1d20" : "#fff",
+      color: currentTheme === "dark" ? "#fff" : "#000",
+    }).then(async (result) => {
+      if (result.isConfirmed) {
+        try {
+          await axios.put(`http://localhost:5000/api/requests/approve/${id}`, {
+            approverUsername: user.username
+          });
+          Swal.fire({
+            title: "Approved!",
+            text: "The request has been processed.",
+            icon: "success",
+            timer: 2000,
+            showConfirmButton: false,
+            background: currentTheme === "dark" ? "#1a1d20" : "#fff",
+            color: currentTheme === "dark" ? "#fff" : "#000",
+          });
+          fetchDashboard();
+        } catch (err) {
+          Swal.fire("Error", "Failed to approve the request", "error");
+        }
+      }
+    });
   };
 
   const handleConfirmDeny = async () => {
     if (!denialComment.trim()) return alert("Please enter a reason.");
     setIsSubmitting(true);
     try {
-      await axios.put(`http://localhost:5000/api/requests/deny/${activeRequestId}`, { denialComment });
+      await axios.put(`http://localhost:5000/api/requests/deny/${activeRequestId}`, { 
+        denialComment,
+        approverUsername: user.username 
+      });
       setShowDenyModal(false);
+      setDenialComment("");
+      Swal.fire({
+        title: "Denied",
+        text: "The request has been rejected.",
+        icon: "info",
+        timer: 2000,
+        showConfirmButton: false,
+        background: currentTheme === "dark" ? "#1a1d20" : "#fff",
+        color: currentTheme === "dark" ? "#fff" : "#000",
+      });
       fetchDashboard();
     } catch (err) {
       alert("Deny failed.");
@@ -112,7 +148,6 @@ const PendingRequestsPage = ({ user, currentTheme }) => {
       >
         <FaChevronLeft className="me-1" /> Previous
       </Button>
-
       <Button 
         variant={currentTheme === "dark" ? "outline-light" : "outline-primary"} 
         size="sm" 
@@ -172,7 +207,6 @@ const PendingRequestsPage = ({ user, currentTheme }) => {
                   </td>
                   <td>
                     <div className="fw-bold">{req.senderUsername}</div>
-                    {/* UPDATED: Passing both possible keys */}
                     {renderDeptInfo(req.senderDeptName || req.senderDepartmentId, req.senderRole)}
                   </td>
                   <td>
@@ -180,8 +214,7 @@ const PendingRequestsPage = ({ user, currentTheme }) => {
                       <span className="text-muted small italic">SYSTEM (TRASH)</span>
                     ) : (
                       <>
-                        <div className="fw-bold">{req.receiverName || req.receiverUsername || "N/A"}</div>
-                        {/* UPDATED: Passing both possible keys */}
+                        <div className="fw-bold">{req.receiverName || req.receiverUsername || req.recipientId?.username || "N/A"}</div>
                         {renderDeptInfo(req.receiverDeptName || req.receiverDepartmentId, req.receiverRole)}
                       </>
                     )}
@@ -189,7 +222,7 @@ const PendingRequestsPage = ({ user, currentTheme }) => {
                   <td className="text-start">
                     {req.fileIds?.slice(0, 3).map((f, i) => (
                       <div key={i} className="text-truncate small" style={{ maxWidth: "150px" }}>
-                        {i + 1}. {f.originalName || "Folder"}
+                        {i + 1}. {f.originalName || "File/Folder"}
                       </div>
                     ))}
                     {req.fileIds?.length > 3 && (
@@ -247,18 +280,43 @@ const PendingRequestsPage = ({ user, currentTheme }) => {
         </>
       )}
 
-      <Modal show={showDenyModal} onHide={() => setShowDenyModal(false)} centered>
-        <Modal.Header closeButton className={currentTheme === "dark" ? "bg-dark text-white border-secondary" : ""}>
-          <Modal.Title className="h6">Deny Request</Modal.Title>
+      {/* --- FANCY DENY MODAL --- */}
+      <Modal 
+        show={showDenyModal} 
+        onHide={() => setShowDenyModal(false)} 
+        centered 
+        className="fancy-modal"
+      >
+        <Modal.Header closeButton className={currentTheme === "dark" ? "bg-dark text-white border-secondary" : "bg-light"}>
+          <Modal.Title className="h6 text-danger d-flex align-items-center">
+            <FaExclamationTriangle className="me-2" /> Reject Transfer Request
+          </Modal.Title>
         </Modal.Header>
-        <Modal.Body className={currentTheme === "dark" ? "bg-dark text-white" : ""}>
+        <Modal.Body className={currentTheme === "dark" ? "bg-dark text-white border-0" : "bg-white"}>
           <Form.Group>
-            <Form.Label className="small fw-bold">Reason for denial:</Form.Label>
-            <Form.Control as="textarea" rows={3} value={denialComment} onChange={(e) => setDenialComment(e.target.value)} placeholder="Provide rejection reason..." />
+            <Form.Label className="small fw-bold mb-2">Internal Reason for Denial</Form.Label>
+            <Form.Control 
+              as="textarea" 
+              rows={3} 
+              value={denialComment} 
+              onChange={(e) => setDenialComment(e.target.value)} 
+              placeholder="Explain why this request is being rejected..." 
+              className={currentTheme === "dark" ? "bg-secondary text-white border-0 shadow-sm" : "bg-light border-1 shadow-sm"}
+              style={{ borderRadius: '8px' }}
+            />
           </Form.Group>
         </Modal.Body>
-        <Modal.Footer className={currentTheme === "dark" ? "bg-dark border-secondary" : ""}>
-          <Button variant="danger" size="sm" onClick={handleConfirmDeny} disabled={isSubmitting}>Confirm Rejection</Button>
+        <Modal.Footer className={currentTheme === "dark" ? "bg-dark border-secondary" : "bg-light border-0"}>
+          <Button variant="link" className="text-muted text-decoration-none" onClick={() => setShowDenyModal(false)}>Cancel</Button>
+          <Button 
+            variant="danger" 
+            className="px-4 shadow-sm" 
+            style={{ borderRadius: '20px' }} 
+            onClick={handleConfirmDeny} 
+            disabled={isSubmitting}
+          >
+            {isSubmitting ? "Rejecting..." : "Deny Request"}
+          </Button>
         </Modal.Footer>
       </Modal>
     </Container>

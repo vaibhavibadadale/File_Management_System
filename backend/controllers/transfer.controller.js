@@ -3,6 +3,8 @@ const File = require("../models/File");
 const Folder = require("../models/Folder");
 const User = require("../models/User");
 const Department = require("../models/Department");
+const Notification = require("../models/Notification"); 
+const Trash = require("../models/Trash"); // Ensure Trash is imported
 
 // 1. CREATE TRANSFER REQUEST
 exports.createRequest = async (req, res) => {
@@ -39,16 +41,40 @@ exports.createRequest = async (req, res) => {
       status: isAutoApprove ? "completed" : "pending"
     });
 
-    // If Admin/Superadmin, perform action immediately
     if (isAutoApprove) {
       if (requestType === "delete") {
-        await handleMoveToTrash(fileIds, senderUsername, "AUTO-ADMIN", sDept);
+        await handleMoveToTrash(fileIds, senderUsername, "AUTO-ADMIN", departmentId);
       } else {
         await File.updateMany({ _id: { $in: fileIds } }, { $addToSet: { sharedWith: recipientId } });
         await Folder.updateMany({ _id: { $in: fileIds } }, { $addToSet: { sharedWith: recipientId } });
       }
-    }
+    } else {
+      // --- NOTIFY ADMINS/HOD OF NEW REQUEST ---
+      const staffToNotify = await User.find({
+    $or: [
+        { role: { $in: ['Admin', 'SuperAdmin', 'ADMIN', 'SUPERADMIN'] } },
+        { role: 'HOD', departmentId: departmentId }
+    ]
+});
 
+if (staffToNotify.length > 0) {
+    // 2. Create a unique notification document for EVERY specific person
+    const notificationEntries = staffToNotify
+        .filter(staff => staff.username !== senderUsername) // Don't notify the person who made the request
+        .map(staff => ({
+            recipientId: staff._id, // This links the notification directly to the user
+            title: 'New Request Pending',
+            message: `A new ${requestType} request has been created by ${senderUsername}.`,
+            type: 'REQUEST_NEW',
+            targetRoles: [staff.role], // Keep this for your current frontend logic
+            isRead: false,
+            createdAt: new Date()
+        }));
+
+    // 3. Insert all notifications into the collection
+    await Notification.insertMany(notificationEntries);
+  }
+}
     await newTransfer.save();
     res.status(201).json({ 
       message: isAutoApprove ? "Action completed immediately" : "Request sent for approval", 
@@ -58,7 +84,8 @@ exports.createRequest = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
-// 2. GET DASHBOARD (WITH REAL-TIME DEPT LOOKUP)
+
+// 2. GET DASHBOARD
 exports.getPendingDashboard = async (req, res) => {
   try {
     const { role, username, departmentId, search = "", pPage = 1, hPage = 1, limit = 10 } = req.query;
@@ -75,7 +102,6 @@ exports.getPendingDashboard = async (req, res) => {
     let pendingQuery = { status: "pending", ...searchFilter };
     let historyQuery = { status: { $ne: "pending" }, ...searchFilter };
 
-    // HOD LOGIC: See employee requests AND own requests
     if (roleUpper === "HOD") {
       pendingQuery = {
         ...pendingQuery,
@@ -100,33 +126,20 @@ exports.getPendingDashboard = async (req, res) => {
       Transfer.countDocuments(historyQuery),
     ]);
 
-    // THE FIX: FETCH DEPARTMENT NAMES FROM USER COLLECTION REAL-TIME
     const processData = async (list) => {
       return Promise.all(list.map(async (item) => {
-        // 1. Get Sender Dept Name
         const sUser = await User.findOne({ username: item.senderUsername });
         let sDeptFinal = "N/A";
         if (sUser) {
           const d = await Department.findOne({ departmentId: String(sUser.departmentId) });
           sDeptFinal = d?.name || d?.departmentName || "N/A";
         }
-
-        // 2. Get Receiver Dept Name
         let rDeptFinal = "N/A";
         if (item.recipientId && item.recipientId.departmentId) {
           const d = await Department.findOne({ departmentId: String(item.recipientId.departmentId) });
           rDeptFinal = d?.name || d?.departmentName || "N/A";
         }
-
-        // 3. ACTION LOGIC: If HOD sent it, they can't approve it (Show "Pending")
-        const isOwnRequest = item.senderUsername === username;
-
-        return { 
-          ...item, 
-          senderDeptName: sDeptFinal, 
-          receiverDeptName: rDeptFinal,
-          isActionable: !isOwnRequest 
-        };
+        return { ...item, senderDeptName: sDeptFinal, receiverDeptName: rDeptFinal, isActionable: item.senderUsername !== username };
       }));
     };
 
@@ -140,22 +153,19 @@ exports.getPendingDashboard = async (req, res) => {
       currentPendingPage: parseInt(pPage),
       currentHistoryPage: parseInt(hPage),
     });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: err.message }); }
 };
 
-// 3. APPROVE & DENY HANDLERS
+// 3. APPROVE HANDLER
 exports.approveTransfer = async (req, res) => {
   try {
     const { transferId } = req.params;
-    const { approverUsername } = req.body; // Pass this from Frontend
+    const { approverUsername } = req.body; 
     
     const transfer = await Transfer.findById(transferId).populate('fileIds');
     if (!transfer) return res.status(404).json({ message: "Request not found" });
 
     if (transfer.requestType === "delete") {
-      // Instead of deleteMany, we move to Trash
       await handleMoveToTrash(transfer.fileIds, transfer.senderUsername, approverUsername || "Authorized User", transfer.departmentId);
     } else {
       await File.updateMany({ _id: { $in: transfer.fileIds } }, { $addToSet: { sharedWith: transfer.recipientId } });
@@ -164,16 +174,56 @@ exports.approveTransfer = async (req, res) => {
 
     transfer.status = "completed";
     await transfer.save();
+
+    // --- NOTIFY THE SENDER THAT IT WAS APPROVED ---
+    const sender = await User.findOne({ username: transfer.senderUsername });
+    if (sender) {
+      await Notification.create({
+        recipientId: sender._id,
+        title: 'Request Approved',
+        message: `Your ${transfer.requestType} request has been approved by ${approverUsername}.`,
+        type: 'REQUEST_APPROVED',
+        isRead: false
+      });
+    }
+
     res.status(200).json({ message: "Request approved and processed" });
   } catch (err) { res.status(500).json({ error: err.message }); }
 };
 
-// HELPER FUNCTION: To avoid repeating code
+// 4. DENY HANDLER
+exports.denyTransfer = async (req, res) => {
+  try {
+    const { transferId } = req.params;
+    const { denialComment, approverUsername } = req.body;
+    
+    const transfer = await Transfer.findByIdAndUpdate(transferId, { 
+      status: "denied", 
+      denialComment: denialComment || "No specific reason" 
+    }, { new: true });
+
+    if (!transfer) return res.status(404).json({ message: "Request not found" });
+
+    // --- NOTIFY THE SENDER THAT IT WAS DENIED ---
+    const sender = await User.findOne({ username: transfer.senderUsername });
+    if (sender) {
+      await Notification.create({
+        recipientId: sender._id,
+        title: 'Request Denied',
+        message: `Your ${transfer.requestType} request was denied. Reason: ${denialComment || "N/A"}`,
+        type: 'REQUEST_DENIED',
+        isRead: false
+      });
+    }
+
+    res.status(200).json({ message: "Request denied successfully" });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+};
+
 async function handleMoveToTrash(files, sender, approver, deptId) {
     for (const file of files) {
         const fileData = typeof file === 'string' ? await File.findById(file) : file;
         if (!fileData) continue;
-
         await Trash.create({
             originalName: fileData.originalName,
             path: fileData.path,
@@ -185,18 +235,6 @@ async function handleMoveToTrash(files, sender, approver, deptId) {
             departmentId: deptId,
             reason: "Approved Request"
         });
-
-        // Remove from main collection
         await File.findByIdAndDelete(fileData._id);
     }
 }
-
-exports.denyTransfer = async (req, res) => {
-  try {
-    const { transferId } = req.params;
-    const { denialComment } = req.body;
-    const transfer = await Transfer.findByIdAndUpdate(transferId, { status: "denied", denialComment: denialComment || "No specific reason" }, { new: true });
-    if (!transfer) return res.status(404).json({ message: "Request not found" });
-    res.status(200).json({ message: "Request denied successfully" });
-  } catch (err) { res.status(500).json({ error: err.message }); }
-};

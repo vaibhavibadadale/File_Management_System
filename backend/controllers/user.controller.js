@@ -2,48 +2,42 @@ const User = require("../models/User");
 const fs = require("fs");
 const path = require("path");
 const mongoose = require("mongoose");
+const Notification = require("../models/Notification");
 
 // 1. CREATE USER (Logic preserved)
 exports.createUser = async (req, res) => {
-    const { role, username } = req.body;
-    const creatorRoleRaw = req.headers['creator-role'] || "";
-    const creatorRole = creatorRoleRaw.trim().toLowerCase();
-
     try {
-        const allowedRolesByCreator = {
-            superadmin: ["superadmin", "admin", "hod", "employee"],
-            admin: ["hod", "employee"],
-            hod: ["employee"],
-            employee: [] 
-        };
+        const { username, password, role, departmentId } = req.body;
 
-        const requestedRole = (role || "").trim().toLowerCase();
-        const allowed = allowedRolesByCreator[creatorRole] || [];
+        // 1. Create the new user
+        const newUser = new User({ username, password, role, departmentId });
+        await newUser.save();
 
-        if (!allowed.includes(requestedRole)) {
-            return res.status(403).json({
-                error: `Access Denied: As a ${creatorRole}, you cannot create a ${role}.`
-            });
+        // 2. Notify Admins about the new user
+        // Find all SuperAdmins or Admins to notify them
+        const admins = await User.find({ 
+            role: { $in: ['Admin', 'SuperAdmin', 'ADMIN', 'SUPERADMIN'] } 
+        });
+
+        if (admins.length > 0) {
+            const notificationEntries = admins.map(admin => ({
+                recipientId: admin._id,
+                title: "New User Created",
+                message: `A new user "${username}" has been added to the system.`,
+                type: "USER_CREATED", // This triggers the redirect to /users in Header.jsx
+                isRead: false,
+                createdAt: new Date()
+            }));
+
+            await Notification.insertMany(notificationEntries);
         }
 
-        const userData = {
-            ...req.body,
-            employeeId: req.body.employeeId || `EMP-${Date.now()}`,
-        };
-
-        const user = await User.create(userData);
-
-        const folderPath = path.join(__dirname, "..", "uploads", user.username);
-        if (!fs.existsSync(folderPath)) {
-            fs.mkdirSync(folderPath, { recursive: true });
-        }
-
-        res.status(201).json({ message: "User created successfully", user });
-    } catch (error) {
-        res.status(400).json({ error: error.message });
+        res.status(201).json({ message: "User created successfully", user: newUser });
+    } catch (err) {
+        console.error("User Creation Error:", err); // Check your terminal for this!
+        res.status(500).json({ error: err.message });
     }
 };
-
 // 2. VERIFY PASSWORD
 exports.verifyPassword = async (req, res) => {
     try {

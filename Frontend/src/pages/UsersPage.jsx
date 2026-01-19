@@ -30,7 +30,6 @@ const UsersPage = ({ currentTheme, user }) => {
     password: "",
   });
 
-  // Role prefix mapping for validation
   const rolePrefixes = {
     HOD: "h-",
     Admin: "a-",
@@ -85,20 +84,31 @@ const UsersPage = ({ currentTheme, user }) => {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    // --- NEW VALIDATION LOGIC ADDED ---
     const requiredPrefix = rolePrefixes[formData.role];
     if (requiredPrefix && !formData.username.startsWith(requiredPrefix)) {
-      alert(`Invalid Username! For role "${formData.role}", the username must start with "${requiredPrefix}" (e.g., ${requiredPrefix}john)`);
+      alert(`Invalid Username! For role "${formData.role}", the username must start with "${requiredPrefix}"`);
       return; 
     }
-    // ----------------------------------
 
     try {
+      // The payload must strictly match the "required" fields in your Mongoose model
+      const payload = {
+        name: formData.name,           
+        email: formData.email,         
+        username: formData.username,   
+        password: formData.password,   
+        role: formData.role,           
+        department: formData.department,
+        departmentId: formData.departmentId === "ALL_DEPT" ? null : formData.departmentId,
+        employeeId: `EMP-${Math.floor(1000 + Math.random() * 9000)}` // Short unique ID
+      };
+
       await axios.post(
         "http://localhost:5000/api/users",
-        { ...formData, employeeId: `EMP-${Date.now()}` },
+        payload,
         { headers: { "creator-role": user?.role } }
       );
+
       alert(`User Created Successfully!`);
       setShowModal(false);
       setFormData({
@@ -112,26 +122,23 @@ const UsersPage = ({ currentTheme, user }) => {
       });
       fetchData();
     } catch (err) {
-      alert("Error: " + (err.response?.data?.error || err.message));
+      // This will alert the specific validation error from Mongoose
+      const errorMsg = err.response?.data?.error || err.message;
+      alert("Registration Error: " + errorMsg);
     }
   };
 
   const toggleStatus = async (userId) => {
-    if (!canManageStatus) {
-      alert("Access Denied: Only Admins can change user status.");
-      return;
-    }
+    if (!canManageStatus) return;
     try {
       await axios.put(`http://localhost:5000/api/users/status/${userId}`);
       fetchData();
     } catch (err) {
-      console.error("Error toggling status:", err);
       alert("Error updating status");
     }
   };
 
   const renderRoleOptions = () => {
-    if (!user) return <option value="">Loading permissions...</option>;
     return (
       <>
         <option value="">Select Role</option>
@@ -156,104 +163,54 @@ const UsersPage = ({ currentTheme, user }) => {
     };
     const style = roleStyles[role] || { bg: "#9e9e9e", color: "white" };
     return (
-      <div
-        style={{
-          backgroundColor: style.bg,
-          color: style.color,
-          width: "100px",
-          padding: "6px 0",
-          borderRadius: "4px",
-          fontWeight: "500",
-          fontSize: "0.85rem",
-          textAlign: "center",
-          display: "inline-block",
-        }}
-      >
+      <div style={{
+          backgroundColor: style.bg, color: style.color,
+          width: "100px", padding: "6px 0", borderRadius: "4px",
+          fontWeight: "500", fontSize: "0.85rem", textAlign: "center", display: "inline-block",
+        }}>
         {role}
       </div>
     );
   };
 
   const filteredUsers = users.filter((u) => {
-    const matchesSearch =
-      (u.name || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (u.username || "").toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesSearch = (u.name || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+                          (u.username || "").toLowerCase().includes(searchTerm.toLowerCase());
     const matchesDept = filterDept === "" || u.department === filterDept;
     const matchesRole = filterRole === "" || u.role === filterRole;
     return matchesSearch && matchesDept && matchesRole;
   });
 
-  // Explicit dynamic styles for Dark Mode visibility
-  const dynamicInputStyle = isDark 
-    ? { 
-        backgroundColor: "#2b3035", 
-        color: "#ffffff", 
-        borderColor: "#495057",
-      } 
-    : {};
+  const dynamicInputStyle = isDark ? { backgroundColor: "#2b3035", color: "#ffffff", borderColor: "#495057" } : {};
 
   return (
     <div className="p-4">
-      {/* Inline style block to specifically target the placeholder text in dark mode */}
-      {isDark && (
-        <style>
-          {`
-            .dark-mode-input::placeholder {
-              color: #adb5bd !important;
-              opacity: 1;
-            }
-          `}
-        </style>
-      )}
-
       <div className="d-flex justify-content-between align-items-center mb-4">
         <h3 className={isDark ? "text-white" : "text-dark"}>User Management</h3>
         {myRole !== "employee" && (
-          <Col md={2} className="px-0 text-end">
-            <Button
-              variant="primary"
-              className="w-100 py-2 d-flex align-items-center justify-content-center"
-              onClick={() => setShowModal(true)}
-              style={{ height: "45px" }}
-            >
-              <PersonAdd className="me-2" fontSize="small" /> Add New User
-            </Button>
-          </Col>
+          <Button variant="primary" onClick={() => setShowModal(true)}>
+            <PersonAdd className="me-2" /> Add New User
+          </Button>
         )}
       </div>
 
-      <Row className="mb-4 g-2 align-items-center">
+      <Row className="mb-4 g-2">
         <Col md={4}>
           <Form.Control
-            placeholder="Search name or username..."
+            placeholder="Search name..."
             value={searchTerm}
-            className={isDark ? "bg-dark text-white border-secondary dark-mode-input" : ""}
             style={dynamicInputStyle}
             onChange={(e) => setSearchTerm(e.target.value)}
           />
         </Col>
         <Col md={3}>
-          <Form.Select
-            value={filterDept}
-            className={isDark ? "bg-dark text-white border-secondary" : ""}
-            style={dynamicInputStyle}
-            onChange={(e) => setFilterDept(e.target.value)}
-          >
+          <Form.Select value={filterDept} style={dynamicInputStyle} onChange={(e) => setFilterDept(e.target.value)}>
             <option value="">All Departments</option>
-            {deptList.map((d) => (
-              <option key={d._id} value={d.departmentName}>
-                {d.departmentName}
-              </option>
-            ))}
+            {deptList.map((d) => <option key={d._id} value={d.departmentName}>{d.departmentName}</option>)}
           </Form.Select>
         </Col>
         <Col md={3}>
-          <Form.Select
-            value={filterRole}
-            className={isDark ? "bg-dark text-white border-secondary" : ""}
-            style={dynamicInputStyle}
-            onChange={(e) => setFilterRole(e.target.value)}
-          >
+          <Form.Select value={filterRole} style={dynamicInputStyle} onChange={(e) => setFilterRole(e.target.value)}>
             <option value="">All Roles</option>
             <option value="SuperAdmin">SuperAdmin</option>
             <option value="Admin">Admin</option>
@@ -262,89 +219,55 @@ const UsersPage = ({ currentTheme, user }) => {
           </Form.Select>
         </Col>
         <Col md={2}>
-          <Button
-            variant="outline-secondary"
-            className="w-100 py-2 d-flex align-items-center justify-content-center"
-            style={{ height: "45px" }}
-            onClick={handleReset}
-          >
-            <RestartAlt className="me-1" /> Reset
-          </Button>
+          <Button variant="outline-secondary" className="w-100" onClick={handleReset}><RestartAlt /> Reset</Button>
         </Col>
       </Row>
 
       <div className={`card shadow-sm border-0 ${isDark ? "bg-dark" : ""}`}>
-        <div className="table-responsive">
-          <Table hover className={`mb-0 ${isDark ? "table-dark" : ""}`}>
-            <thead>
-              <tr style={{ fontSize: "0.9rem", fontWeight: "500" }}>
-                <th className="ps-4">Full Name</th>
-                <th>Username</th>
-                <th>Role</th>
-                <th>Department</th>
-                <th className="text-center">Status</th>
-                <th className="text-center">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <tr>
-                  <td colSpan="6" className="text-center py-4">
-                    Loading Users...
+        <Table hover className={isDark ? "table-dark" : ""}>
+          <thead>
+            <tr>
+              <th className="ps-4">Full Name</th>
+              <th>Username</th>
+              <th>Role</th>
+              <th>Department</th>
+              <th className="text-center">Status</th>
+              <th className="text-center">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading ? (
+              <tr><td colSpan="6" className="text-center">Loading...</td></tr>
+            ) : (
+              filteredUsers.map((u) => (
+                <tr key={u._id} className="align-middle">
+                  <td className="ps-4">{u.name}</td>
+                  <td>{u.username}</td>
+                  <td>{getRoleBadge(u.role)}</td>
+                  <td>{u.department || "All"}</td>
+                  <td className="text-center">
+                    <Badge 
+                       bg={u.isActive !== false ? "success" : "danger"}
+                       onClick={() => toggleStatus(u._id)}
+                       style={{ cursor: canManageStatus ? "pointer" : "default" }}
+                    >
+                      {u.isActive !== false ? "Active" : "Inactive"}
+                    </Badge>
+                  </td>
+                  <td className="text-center">
+                    <Button variant="outline-primary" size="sm" onClick={() => navigate(`/user-files/${u._id}`)}>
+                      <Visibility fontSize="small" />
+                    </Button>
                   </td>
                 </tr>
-              ) : filteredUsers.length > 0 ? (
-                filteredUsers.map((u) => (
-                  <tr key={u._id} className="align-middle">
-                    <td className="ps-4">{u.name}</td>
-                    <td>{u.username}</td>
-                    <td>{getRoleBadge(u.role)}</td>
-                    <td>{u.department || "All"}</td>
-                    <td className="text-center">
-                      <div className="d-flex justify-content-center">
-                        <div
-                          className={`status-toggle-container ${
-                            u.isActive !== false ? "active" : "inactive"
-                          }`}
-                          onClick={() => toggleStatus(u._id)}
-                          style={{ cursor: canManageStatus ? "pointer" : "default" }}
-                        >
-                          <Badge
-                            bg={u.isActive !== false ? "success" : "danger"}
-                            className="status-badge d-flex align-items-center gap-1"
-                            style={{ width: "85px", padding: "8px" }}
-                          >
-                            <div className="toggle-dot"></div>
-                            {u.isActive !== false ? "Active" : "Inactive"}
-                          </Badge>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="text-center">
-                      <Button
-                        variant="outline-primary"
-                        size="sm"
-                        onClick={() => navigate(`/user-files/${u._id}`)}
-                      >
-                        <Visibility fontSize="small" />
-                      </Button>
-                    </td>
-                  </tr>
-                ))
-              ) : (
-                <tr>
-                  <td colSpan="6" className="text-center py-4 text-muted">
-                    No users found.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </Table>
-        </div>
+              ))
+            )}
+          </tbody>
+        </Table>
       </div>
 
       <Modal show={showModal} onHide={() => setShowModal(false)} centered size="lg">
-        <div className={isDark ? "bg-dark text-white border border-secondary" : ""}>
+        <div className={isDark ? "bg-dark text-white" : ""}>
           <Modal.Header closeButton closeVariant={isDark ? "white" : undefined}>
             <Modal.Title>Create New User</Modal.Title>
           </Modal.Header>
@@ -353,60 +276,25 @@ const UsersPage = ({ currentTheme, user }) => {
               <Row>
                 <Col md={6} className="mb-3">
                   <Form.Label>Full Name</Form.Label>
-                  <Form.Control
-                    name="name"
-                    required
-                    className={isDark ? "bg-dark text-white border-secondary dark-mode-input" : ""}
-                    style={dynamicInputStyle}
-                    value={formData.name}
-                    onChange={handleInputChange}
-                  />
+                  <Form.Control name="name" required style={dynamicInputStyle} value={formData.name} onChange={handleInputChange} />
                 </Col>
                 <Col md={6} className="mb-3">
                   <Form.Label>Office Email</Form.Label>
-                  <Form.Control
-                    name="email"
-                    type="email"
-                    required
-                    className={isDark ? "bg-dark text-white border-secondary dark-mode-input" : ""}
-                    style={dynamicInputStyle}
-                    value={formData.email}
-                    onChange={handleInputChange}
-                  />
+                  <Form.Control name="email" type="email" required style={dynamicInputStyle} value={formData.email} onChange={handleInputChange} />
                 </Col>
               </Row>
               <Row>
                 <Col md={6} className="mb-3">
                   <Form.Label>Department</Form.Label>
-                  <Form.Select
-                    name="departmentId"
-                    required
-                    className={isDark ? "bg-dark text-white border-secondary" : ""}
-                    style={dynamicInputStyle}
-                    value={formData.departmentId}
-                    onChange={handleInputChange}
-                  >
+                  <Form.Select name="departmentId" required style={dynamicInputStyle} value={formData.departmentId} onChange={handleInputChange}>
                     <option value="">Select Department</option>
-                    {(myRole === "admin" || myRole === "superadmin") && (
-                      <option value="ALL_DEPT">All (Admin/Super Admin)</option>
-                    )}
-                    {deptList.map((d) => (
-                      <option key={d._id} value={d._id}>
-                        {d.departmentName}
-                      </option>
-                    ))}
+                    {(myRole === "admin" || myRole === "superadmin") && <option value="ALL_DEPT">All (Admin/Super Admin)</option>}
+                    {deptList.map((d) => <option key={d._id} value={d._id}>{d.departmentName}</option>)}
                   </Form.Select>
                 </Col>
                 <Col md={6} className="mb-3">
                   <Form.Label>Assign Role</Form.Label>
-                  <Form.Select
-                    name="role"
-                    required
-                    className={isDark ? "bg-dark text-white border-secondary" : ""}
-                    style={dynamicInputStyle}
-                    value={formData.role}
-                    onChange={handleInputChange}
-                  >
+                  <Form.Select name="role" required style={dynamicInputStyle} value={formData.role} onChange={handleInputChange}>
                     {renderRoleOptions()}
                   </Form.Select>
                 </Col>
@@ -414,39 +302,21 @@ const UsersPage = ({ currentTheme, user }) => {
               <Row>
                 <Col md={6} className="mb-3">
                   <Form.Label>Username</Form.Label>
-                  <Form.Control
-                    name="username"
-                    required
-                    className={isDark ? "bg-dark text-white border-secondary dark-mode-input" : ""}
-                    style={dynamicInputStyle}
-                    placeholder={
-                      formData.role ? `Must start with ${rolePrefixes[formData.role]}` : "Select role first"
-                    }
-                    value={formData.username}
-                    onChange={handleInputChange}
+                  <Form.Control 
+                    name="username" required style={dynamicInputStyle} 
+                    placeholder={formData.role ? `Must start with ${rolePrefixes[formData.role]}` : ""}
+                    value={formData.username} onChange={handleInputChange} 
                   />
                 </Col>
                 <Col md={6} className="mb-3">
                   <Form.Label>Password</Form.Label>
-                  <Form.Control
-                    type="password"
-                    name="password"
-                    required
-                    className={isDark ? "bg-dark text-white border-secondary dark-mode-input" : ""}
-                    style={dynamicInputStyle}
-                    value={formData.password}
-                    onChange={handleInputChange}
-                  />
+                  <Form.Control type="password" name="password" required style={dynamicInputStyle} value={formData.password} onChange={handleInputChange} />
                 </Col>
               </Row>
             </Modal.Body>
             <Modal.Footer>
-              <Button variant="outline-secondary" onClick={() => setShowModal(false)}>
-                Cancel
-              </Button>
-              <Button variant="primary" type="submit">
-                Create User Account
-              </Button>
+              <Button variant="outline-secondary" onClick={() => setShowModal(false)}>Cancel</Button>
+              <Button variant="primary" type="submit">Create User Account</Button>
             </Modal.Footer>
           </Form>
         </div>
