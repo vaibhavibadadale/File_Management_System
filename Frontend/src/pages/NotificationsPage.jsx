@@ -54,31 +54,33 @@ const NotificationsPage = ({ user, currentTheme }) => {
   // INDIVIDUAL CLICK REDIRECTION
   const handleNotificationClick = async (notification) => {
     try {
-      // 1. Mark as read in backend
-      await axios.put(`http://localhost:5000/api/notifications/mark-read/${notification._id}`);
-      
-      // 2. Remove from local list so it disappears immediately
-      setNotifications(prev => prev.filter(n => n._id !== notification._id));
+        // 1. Mark as read in the database
+        await axios.put(`http://localhost:5000/api/notifications/mark-read/${notification._id}`);
+        
+        // 2. Normalize strings (Lowercasing is critical for "TRANSFER" vs "transfer")
+        const title = (notification.title || "").toLowerCase().trim();
+        const msg = (notification.message || "").toLowerCase().trim();
 
-      const title = notification.title.toLowerCase();
-      const msg = notification.message ? notification.message.toLowerCase() : "";
+        console.log("History Redirection for:", title);
 
-      // 3. Redirection Logic (Matched to your App.js Routes)
-      if (title.includes("user")) {
-        navigate("/users");
-      } else if (
-        title.includes("request") || 
-        title.includes("transfer") || 
-        title.includes("delete") || 
-        msg.includes("requested")
-      ) {
-        // FIXED: Changed from "/pending-request" to "/pending" to match App.js
-        navigate("/pending"); 
-      }
+        // 3. Routing Logic
+        if (title.includes('user')) {
+            navigate('/users');
+        } 
+        else if (
+            title.includes('transfer') || 
+            title.includes('request') || 
+            title.includes('delete') || 
+            msg.includes('requested') ||
+            msg.includes('transfer')
+        ) {
+            navigate('/pending'); 
+        } 
+        // Note: In history page, if it doesn't match, we stay on the page
     } catch (err) {
-      console.error("Click error:", err);
+        console.error("Redirection error from history:", err);
     }
-  };
+};
 
   // DELETE ALL (Clears list and stays on current page)
   const handleDeleteAll = async () => {
