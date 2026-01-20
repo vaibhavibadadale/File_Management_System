@@ -1,11 +1,14 @@
 import express from "express";
-// IMPORTANT: Add .js at the end of the file path
-import { getNotifications, markAsRead, markAllAsRead } from "../controllers/notification.controller.js";
+import { 
+  getNotifications, 
+  markAsRead, 
+  markAllAsRead 
+} from "../controllers/notification.controller.js";
 
 const router = express.Router();
 
 router.get("/", getNotifications);
-router.put("/read-all", markAllAsRead); 
-router.put("/:id/read", markAsRead);
+router.put("/mark-read/:id", markAsRead);
+router.post("/mark-all-read", markAllAsRead);
 
-export default router; // Use export default, not module.exports
+export default router;

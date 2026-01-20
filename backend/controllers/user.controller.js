@@ -7,18 +7,44 @@ const Notification = require("../models/Notification");
 // 1. CREATE USER
 exports.createUser = async (req, res) => {
     try {
-        const { username, password, role, departmentId, department } = req.body;
+        // 1. Destructure ALL required fields from req.body
+        const { 
+            username, 
+            password, 
+            role, 
+            departmentId, 
+            department, 
+            name, 
+            email, 
+            employeeId 
+        } = req.body;
 
-        // Save both the ID and the string name for backward compatibility
+        // 2. Check for existing user to prevent E11000 duplicate error
+        const existingUser = await User.findOne({ 
+            $or: [{ email }, { employeeId }, { username }] 
+        });
+
+        if (existingUser) {
+            return res.status(400).json({ 
+                error: "A user with this Email, Employee ID, or Username already exists." 
+            });
+        }
+
+        // 3. Create the new user object
         const newUser = new User({ 
             username, 
             password, 
             role, 
             departmentId, 
-            department 
+            department,
+            name,
+            email,
+            employeeId
         });
+
         await newUser.save();
 
+        // 4. Notification Logic
         const admins = await User.find({ 
             role: { $in: ['Admin', 'SuperAdmin', 'ADMIN', 'SUPERADMIN'] },
             deletedAt: null 
@@ -29,7 +55,7 @@ exports.createUser = async (req, res) => {
                 recipientId: admin._id,
                 targetRoles: ['ADMIN', 'SUPERADMIN'],
                 title: "New User Created",
-                message: `User "${username}" has been added to the system.`,
+                message: `User "${username}" has been added by the system.`,
                 type: "USER_CREATED", 
                 isRead: false
             }));
@@ -37,11 +63,12 @@ exports.createUser = async (req, res) => {
         }
 
         res.status(201).json({ message: "User created successfully", user: newUser });
+
     } catch (err) {
+        console.error("Registration Error:", err);
         res.status(500).json({ error: err.message });
     }
 };
-
 // 2. VERIFY PASSWORD
 exports.verifyPassword = async (req, res) => {
     try {

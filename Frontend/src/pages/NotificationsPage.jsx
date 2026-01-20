@@ -1,23 +1,34 @@
 import React, { useState, useEffect } from "react";
-import { Container, Card, ListGroup, Badge, Button, Row, Col, Spinner } from "react-bootstrap";
-import { CheckCircle, Cancel, PendingActions, Notifications, DeleteSweep, PersonAdd, Share, DeleteForever } from "@mui/icons-material";
+import { Container, Button, Card, Badge, Row, Col, Spinner } from "react-bootstrap";
 import { useNavigate } from "react-router-dom";
+import { 
+  NotificationsActive, 
+  DeleteSweep, 
+  NotificationImportant, 
+  PersonAdd, 
+  SwapHoriz, 
+  DeleteForever,
+  History
+} from "@mui/icons-material";
 import axios from "axios";
+import Swal from "sweetalert2";
 
-const NotificationsPage = ({ currentTheme, user }) => {
+const NotificationsPage = ({ user, currentTheme }) => {
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(true);
-  const isDark = currentTheme === "dark";
   const navigate = useNavigate();
+  const isDark = currentTheme === "dark";
+
+  const swalConfig = {
+    background: isDark ? "#212529" : "#fff",
+    color: isDark ? "#fff" : "#545454",
+  };
 
   const fetchNotifications = async () => {
-    if (!user?._id) return;
-    
     try {
       setLoading(true);
-      // Fetches notifications where recipientId matches logged-in user
       const res = await axios.get(`http://localhost:5000/api/notifications`, {
-        params: { userId: user._id }
+        params: { userId: user?._id, role: user?.role }
       });
       setNotifications(res.data);
     } catch (err) {
@@ -28,145 +39,133 @@ const NotificationsPage = ({ currentTheme, user }) => {
   };
 
   useEffect(() => {
-    fetchNotifications();
-  }, [user?._id]);
+    if (user) fetchNotifications();
+  }, [user]);
 
-  const markAllAsRead = async () => {
-    try {
-      await axios.put(`http://localhost:5000/api/notifications/read-all`, { 
-        userId: user._id 
-      });
-      // Refresh list to show them as "read" or clear them depending on your preference
-      fetchNotifications();
-    } catch (err) {
-      console.error("Error marking all as read:", err);
-    }
+  // LOGO LOGIC - Assigns icons based on the notification title
+  const getNotificationIcon = (title) => {
+    const lowerTitle = title.toLowerCase();
+    if (lowerTitle.includes("user")) return <PersonAdd className="text-primary" />;
+    if (lowerTitle.includes("transfer")) return <SwapHoriz className="text-warning" />;
+    if (lowerTitle.includes("delete")) return <DeleteForever className="text-danger" />;
+    return <NotificationImportant className="text-info" />;
   };
 
+  // INDIVIDUAL CLICK REDIRECTION
   const handleNotificationClick = async (notification) => {
     try {
-        // 1. Mark as read in the database
-        if (!notification.isRead) {
-            await axios.put(`http://localhost:5000/api/notifications/${notification._id}/read`);
-        }
+      // 1. Mark as read in backend
+      await axios.put(`http://localhost:5000/api/notifications/mark-read/${notification._id}`);
+      
+      // 2. Remove from local list so it disappears immediately
+      setNotifications(prev => prev.filter(n => n._id !== notification._id));
 
-        // 2. SMART REDIRECT LOGIC based on our Backend Enums
-        switch (notification.type) {
-            case 'TRANSFER_REQUEST':
-            case 'DELETE_REQUEST':
-            case 'REQUEST_NEW':
-                navigate('/pending-requests'); 
-                break;
+      const title = notification.title.toLowerCase();
+      const msg = notification.message ? notification.message.toLowerCase() : "";
 
-            case 'USER_CREATED':
-                navigate('/users'); 
-                break;
-
-            case 'REQUEST_APPROVED':
-            case 'REQUEST_DENIED':
-                // Navigate to the user's personal dashboard/history
-                navigate('/dashboard');
-                break;
-
-            default:
-                break;
-        }
-        
-        // Refresh to update UI (remove "New" badge)
-        fetchNotifications();
+      // 3. Redirection Logic (Matched to your App.js Routes)
+      if (title.includes("user")) {
+        navigate("/users");
+      } else if (
+        title.includes("request") || 
+        title.includes("transfer") || 
+        title.includes("delete") || 
+        msg.includes("requested")
+      ) {
+        // FIXED: Changed from "/pending-request" to "/pending" to match App.js
+        navigate("/pending"); 
+      }
     } catch (err) {
-        console.error("Error during notification redirect:", err);
+      console.error("Click error:", err);
     }
   };
 
-  const getNotificationStyles = (type) => {
-    switch (type) {
-      case 'REQUEST_APPROVED':
-        return { icon: <CheckCircle className="text-success" />, bg: "rgba(40, 167, 69, 0.1)" };
-      case 'REQUEST_DENIED':
-        return { icon: <Cancel className="text-danger" />, bg: "rgba(220, 53, 69, 0.1)" };
-      case 'TRANSFER_REQUEST':
-      case 'REQUEST_NEW':
-        return { icon: <Share className="text-warning" />, bg: "rgba(255, 193, 7, 0.1)" };
-      case 'DELETE_REQUEST':
-        return { icon: <DeleteForever className="text-danger" />, bg: "rgba(220, 53, 69, 0.1)" };
-      case 'USER_CREATED':
-        return { icon: <PersonAdd className="text-info" />, bg: "rgba(23, 162, 184, 0.1)" };
-      default:
-        return { icon: <Notifications className="text-primary" />, bg: "transparent" };
+  // DELETE ALL (Clears list and stays on current page)
+  const handleDeleteAll = async () => {
+    const result = await Swal.fire({
+      ...swalConfig,
+      title: 'Delete all notifications?',
+      text: "This will clear your current notification list.",
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#d33',
+      cancelButtonColor: '#3085d6',
+      confirmButtonText: 'Yes, delete all'
+    });
+
+    if (result.isConfirmed) {
+      try {
+        await axios.post("http://localhost:5000/api/notifications/mark-all-read", {
+          userId: user?._id,
+          role: user?.role
+        });
+        setNotifications([]); // UI clears instantly
+        Swal.fire({ ...swalConfig, title: 'Deleted!', icon: 'success', timer: 1500, showConfirmButton: false });
+      } catch (err) {
+        console.error("Delete error:", err);
+      }
     }
   };
+
+  const cardStyle = isDark 
+    ? { backgroundColor: "#2b3035", color: "#fff", border: "1px solid #495057" } 
+    : { backgroundColor: "#fff", color: "#212529" };
 
   return (
     <Container className="py-4">
-      <Card className={`shadow-sm border-0 ${isDark ? "bg-dark text-white" : ""}`}>
-        <Card.Header className={`d-flex justify-content-between align-items-center bg-transparent border-bottom py-3 ${isDark ? "border-secondary" : ""}`}>
-          <h4 className="mb-0 fw-bold">Notification History</h4>
-          <Button 
-            variant={isDark ? "outline-light" : "outline-primary"} 
-            size="sm" 
-            onClick={markAllAsRead} 
-            disabled={notifications.length === 0}
-          >
-            <DeleteSweep className="me-1" /> Mark all as read
+      <div className="d-flex justify-content-between align-items-center mb-4">
+        <div className="d-flex align-items-center">
+          <History className="me-2 text-primary" fontSize="large" />
+          <h3 className={`mb-0 ${isDark ? "text-white" : "text-dark"}`}>Notification History</h3>
+        </div>
+        {notifications.length > 0 && (
+          <Button variant="outline-danger" onClick={handleDeleteAll} className="d-flex align-items-center">
+            <DeleteSweep className="me-1" /> Delete All
           </Button>
-        </Card.Header>
-        <Card.Body className="p-0">
-          {loading ? (
-            <div className="text-center p-5">
-                <Spinner animation="border" variant="primary" />
-                <p className="mt-2 text-muted">Loading your notifications...</p>
-            </div>
-          ) : notifications.length > 0 ? (
-            <ListGroup variant="flush">
-              {notifications.map((n) => {
-                const styles = getNotificationStyles(n.type);
-                return (
-                  <ListGroup.Item
-                    key={n._id}
-                    onClick={() => handleNotificationClick(n)}
-                    className={`border-bottom py-3 ${isDark ? "bg-dark text-white border-secondary" : ""}`}
-                    style={{ 
-                        backgroundColor: !n.isRead ? styles.bg : "transparent",
-                        cursor: 'pointer'
-                    }}
-                  >
-                    <Row className="align-items-center g-0">
-                      <Col xs="auto" className="px-3">{styles.icon}</Col>
-                      <Col>
-                        <div className="d-flex justify-content-between align-items-start">
-                          <div className="pe-3">
-                            <strong className={`d-block ${!n.isRead ? 'text-primary' : ''}`}>
-                                {n.title}
-                            </strong>
-                            <p className="mb-0 text-muted small mt-1">{n.message}</p>
-                          </div>
-                          <div className="text-end" style={{ minWidth: '80px' }}>
-                            <small className="text-muted d-block" style={{ fontSize: '0.7rem' }}>
-                              {new Date(n.createdAt).toLocaleDateString()}
-                            </small>
-                            <small className="text-muted" style={{ fontSize: '0.7rem' }}>
-                              {new Date(n.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                            </small>
-                          </div>
-                        </div>
-                      </Col>
-                      <Col xs="auto" className="px-3">
-                        {!n.isRead && <Badge pill bg="primary">New</Badge>}
-                      </Col>
-                    </Row>
-                  </ListGroup.Item>
-                );
-              })}
-            </ListGroup>
-          ) : (
-            <div className="text-center p-5 text-muted">
-              <Notifications sx={{ fontSize: 60, opacity: 0.2 }} />
-              <p className="mt-3 fs-5">Your inbox is empty</p>
-            </div>
-          )}
-        </Card.Body>
-      </Card>
+        )}
+      </div>
+
+      <hr className={isDark ? "text-secondary" : ""} />
+
+      {loading ? (
+        <div className="text-center p-5"><Spinner animation="border" variant="primary" /></div>
+      ) : notifications.length === 0 ? (
+        <Card className={`text-center p-5 border-0 shadow-sm ${isDark ? "bg-dark text-light" : "bg-light"}`}>
+          <NotificationImportant style={{ fontSize: "5rem", opacity: 0.1 }} />
+          <h4 className="text-muted mt-3">Your inbox is empty</h4>
+        </Card>
+      ) : (
+        <Row>
+          {notifications.map((n) => (
+            <Col md={12} key={n._id} className="mb-3">
+              <Card 
+                className="shadow-sm border-0" 
+                style={{ ...cardStyle, cursor: 'pointer', borderLeft: '5px solid #007bff' }}
+                onClick={() => handleNotificationClick(n)}
+              >
+                <Card.Body className="d-flex justify-content-between align-items-center">
+                  <div className="d-flex align-items-center">
+                    <div className="me-3 p-2 rounded-circle bg-light d-flex align-items-center justify-content-center" style={{ width: '45px', height: '45px' }}>
+                      {getNotificationIcon(n.title)}
+                    </div>
+                    <div>
+                      <h5 className="mb-1" style={{ fontWeight: 'bold' }}>{n.title}</h5>
+                      <p className="mb-0 opacity-75">{n.message}</p>
+                    </div>
+                  </div>
+                  <div className="text-end">
+                    <small className="d-block opacity-50 mb-2">
+                      {new Date(n.createdAt).toLocaleDateString()} <br/>
+                      {new Date(n.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </small>
+                    <Badge bg="primary" pill>New</Badge>
+                  </div>
+                </Card.Body>
+              </Card>
+            </Col>
+          ))}
+        </Row>
+      )}
     </Container>
   );
 };
