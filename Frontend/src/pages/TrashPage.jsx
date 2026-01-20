@@ -10,12 +10,15 @@ const TrashPage = ({ user, currentTheme }) => {
   const fetchTrash = useCallback(async () => {
     setLoading(true);
     try {
+      const deptId = user.departmentId?._id || user.departmentId;
       const res = await axios.get("http://localhost:5000/api/requests/trash", {
         params: {
           role: user.role?.toUpperCase(),
-          departmentId: user.departmentId?._id || user.departmentId,
+          departmentId: deptId,
         },
       });
+      // The backend should return records from the 'Trash' or 'DeleteRequest' 
+      // collection where status is 'completed'
       setItems(res.data);
     } catch (err) {
       console.error("Trash Fetch Error:", err);
@@ -24,7 +27,9 @@ const TrashPage = ({ user, currentTheme }) => {
     }
   }, [user]);
 
-  useEffect(() => { fetchTrash(); }, [fetchTrash]);
+  useEffect(() => {
+    fetchTrash();
+  }, [fetchTrash]);
 
   const handleRestore = async (id) => {
     if (!window.confirm("Restore this file to its original location?")) return;
@@ -47,21 +52,27 @@ const TrashPage = ({ user, currentTheme }) => {
   };
 
   return (
-    <Container fluid className="mt-4 px-4">
+    <Container fluid className="mt-4 px-4 pb-5">
       <div className="d-flex justify-content-between align-items-center mb-4">
         <h4 className={currentTheme === "dark" ? "text-white" : "text-dark"}>
           <FaTrash className="me-2 text-danger" /> Recycle Bin
         </h4>
-        <Badge bg="danger">{items.length} Items</Badge>
+        <Badge bg="danger" pill className="px-3 py-2">{items.length} Items</Badge>
       </div>
 
-      <Alert variant="info" className="d-flex align-items-center small py-2">
+      <Alert variant="info" className="d-flex align-items-center small py-2 border-0 shadow-sm">
         <FaInfoCircle className="me-2" />
-        HODs see deleted files from their department. Admin/Superadmin see all deleted files.
+        <div>
+          <strong>System Logic:</strong> Completed delete requests are moved here. 
+          HODs see departmental items; Admins & Superadmins see all records.
+        </div>
       </Alert>
 
       {loading ? (
-        <div className="text-center py-5"><Spinner animation="border" variant="primary" /></div>
+        <div className="text-center py-5">
+          <Spinner animation="border" variant="primary" />
+          <p className="text-muted mt-2">Fetching deleted records...</p>
+        </div>
       ) : (
         <Card className={`border-0 ${currentTheme === "dark" ? "bg-dark text-white shadow-lg" : "shadow-sm"}`}>
           <Table responsive hover variant={currentTheme === "dark" ? "dark" : "light"} className="text-center mb-0">
@@ -76,40 +87,51 @@ const TrashPage = ({ user, currentTheme }) => {
               </tr>
             </thead>
             <tbody>
-              {items.length > 0 ? items.map((item) => (
-                <tr key={item._id} className="align-middle border-bottom">
-                  <td className="fw-bold">{item.originalName}</td>
-                  <td className="small">{item.deletedBy}</td>
-                  <td>
-                    <Badge bg="secondary" style={{ fontSize: '0.65rem' }}>
-                      <FaUserShield className="me-1" /> {item.approvedBy}
-                    </Badge>
-                  </td>
-                  <td className="text-primary small">{item.departmentName || "N/A"}</td>
-                  <td className="small">{new Date(item.deletedAt).toLocaleString()}</td>
-                  <td>
-                    <div className="d-flex gap-2 justify-content-center">
-                      <Button 
-                        variant="outline-success" 
-                        size="sm" 
-                        onClick={() => handleRestore(item._id)}
-                        title="Restore"
-                      >
-                        <FaTrashRestore /> Restore
-                      </Button>
-                      <Button 
-                        variant="outline-danger" 
-                        size="sm" 
-                        onClick={() => handlePermanentDelete(item._id)}
-                        title="Permanent Delete"
-                      >
-                        <FaSkull /> Delete
-                      </Button>
-                    </div>
+              {items.length > 0 ? (
+                items.map((item) => (
+                  <tr key={item._id} className="align-middle border-bottom">
+                    <td className="fw-bold text-start ps-3">{item.originalName}</td>
+                    <td className="small">{item.deletedBy}</td>
+                    <td>
+                      <Badge bg="secondary" style={{ fontSize: '0.65rem' }}>
+                        <FaUserShield className="me-1" /> {item.approvedBy || "Admin"}
+                      </Badge>
+                    </td>
+                    <td className="text-primary small fw-bold">
+                      {item.departmentName || "N/A"}
+                    </td>
+                    <td className="small">
+                      {item.deletedAt ? new Date(item.deletedAt).toLocaleString() : "Recently"}
+                    </td>
+                    <td>
+                      <div className="d-flex gap-2 justify-content-center">
+                        <Button 
+                          variant="outline-success" 
+                          size="sm" 
+                          onClick={() => handleRestore(item._id)}
+                          title="Restore File"
+                        >
+                          <FaTrashRestore className="me-1" /> Restore
+                        </Button>
+                        <Button 
+                          variant="outline-danger" 
+                          size="sm" 
+                          onClick={() => handlePermanentDelete(item._id)}
+                          title="Permanent Delete"
+                        >
+                          <FaSkull className="me-1" /> Purge
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan="6" className="py-5 text-muted">
+                    <FaTrash className="mb-2 d-block mx-auto opacity-25" size={30} />
+                    Recycle bin is empty.
                   </td>
                 </tr>
-              )) : (
-                <tr><td colSpan="6" className="py-5 text-muted">Recycle bin is empty.</td></tr>
               )}
             </tbody>
           </Table>

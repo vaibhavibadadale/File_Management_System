@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useCallback } from "react";
 import axios from "axios";
-import Swal from "sweetalert2"; // Added for fancy popups
+import Swal from "sweetalert2";
 import {
   Table, Badge, Container, Card, Button, Spinner, Form, Modal, Alert, InputGroup, Row, Col
 } from "react-bootstrap";
 import {
   FaCheck, FaTimes, FaHistory, FaHourglassHalf, FaArrowUp, FaArrowDown,
-  FaTrashAlt, FaExchangeAlt, FaExclamationTriangle, FaUserShield, FaSearch,
+  FaTrashAlt, FaExchangeAlt, FaUserShield, FaSearch,
   FaChevronLeft, FaChevronRight
 } from "react-icons/fa";
 
@@ -29,10 +29,19 @@ const PendingRequestsPage = ({ user, currentTheme }) => {
   const [activeRequestId, setActiveRequestId] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Helper for Department Rendering
+  const isDark = currentTheme === "dark";
+
+  // --- HELPERS ---
+
+  const getCleanDeptId = (dept) => {
+    if (!dept) return null;
+    return typeof dept === 'object' ? (dept._id || dept.id) : dept;
+  };
+
   const renderDeptInfo = (dept, role) => {
     const upperRole = role?.toUpperCase();
-    const deptName = typeof dept === 'object' ? dept?.name : dept;
+    const deptName = typeof dept === 'object' ? (dept?.departmentName || dept?.name) : dept;
+
     if (["ADMIN", "SUPERADMIN"].includes(upperRole)) {
       return (
         <span className="text-danger fw-bold d-block" style={{ fontSize: '0.65rem' }}>
@@ -42,15 +51,17 @@ const PendingRequestsPage = ({ user, currentTheme }) => {
     }
     return (
       <span className="text-primary d-block" style={{ fontSize: '0.65rem' }}>
-        {deptName || "No Dept"} [{upperRole || "USER"}]
+        {deptName || "General"} [{upperRole || "USER"}]
       </span>
     );
   };
 
+  // --- DATA FETCHING ---
+
   const fetchDashboard = useCallback(async () => {
     setLoading(true);
     try {
-      const deptId = user.departmentId?._id || user.departmentId;
+      const deptId = getCleanDeptId(user.departmentId);
       const res = await axios.get("http://localhost:5000/api/requests/pending-dashboard", {
         params: {
           role: user.role?.toUpperCase(),
@@ -75,43 +86,46 @@ const PendingRequestsPage = ({ user, currentTheme }) => {
     return () => clearTimeout(delayDebounceFn);
   }, [searchTerm, fetchDashboard]);
 
-  // --- FANCY APPROVE POPUP ---
+  // --- ACTIONS ---
+
   const handleApprove = async (id) => {
     Swal.fire({
-      title: "Confirm Approval",
-      text: "Are you sure you want to approve this request?",
-      icon: "question",
+      title: "Approve Request?",
+      text: "This action will be processed and logged immediately.",
+      icon: "warning",
       showCancelButton: true,
       confirmButtonColor: "#28a745",
       cancelButtonColor: "#d33",
       confirmButtonText: "Yes, Approve",
-      background: currentTheme === "dark" ? "#1a1d20" : "#fff",
-      color: currentTheme === "dark" ? "#fff" : "#000",
+      background: isDark ? "#1a1d20" : "#fff",
+      color: isDark ? "#fff" : "#000",
     }).then(async (result) => {
       if (result.isConfirmed) {
         try {
           await axios.put(`http://localhost:5000/api/requests/approve/${id}`, {
             approverUsername: user.username
           });
+          
+          // Role-based custom success message
+          const isAdmin = ["ADMIN", "SUPERADMIN"].includes(user.role?.toUpperCase());
           Swal.fire({
-            title: "Approved!",
-            text: "The request has been processed.",
+            title: isAdmin ? "Transferred Successfully!" : "Approved!",
+            text: isAdmin ? "Files have been transferred." : "Request completed successfully.",
             icon: "success",
-            timer: 2000,
-            showConfirmButton: false,
-            background: currentTheme === "dark" ? "#1a1d20" : "#fff",
-            color: currentTheme === "dark" ? "#fff" : "#000",
+            background: isDark ? "#1a1d20" : "#fff",
+            color: isDark ? "#fff" : "#000",
           });
           fetchDashboard();
         } catch (err) {
-          Swal.fire("Error", "Failed to approve the request", "error");
+          const msg = err.response?.data?.message || "Approval failed.";
+          Swal.fire("Error", msg, "error");
         }
       }
     });
   };
 
   const handleConfirmDeny = async () => {
-    if (!denialComment.trim()) return alert("Please enter a reason.");
+    if (!denialComment.trim()) return Swal.fire("Required", "Please enter a reason for rejection.", "info");
     setIsSubmitting(true);
     try {
       await axios.put(`http://localhost:5000/api/requests/deny/${activeRequestId}`, { 
@@ -123,42 +137,52 @@ const PendingRequestsPage = ({ user, currentTheme }) => {
       Swal.fire({
         title: "Denied",
         text: "The request has been rejected.",
-        icon: "info",
-        timer: 2000,
-        showConfirmButton: false,
-        background: currentTheme === "dark" ? "#1a1d20" : "#fff",
-        color: currentTheme === "dark" ? "#fff" : "#000",
+        icon: "success",
+        background: isDark ? "#1a1d20" : "#fff",
+        color: isDark ? "#fff" : "#000",
       });
       fetchDashboard();
     } catch (err) {
-      alert("Deny failed.");
+      Swal.fire("Error", "Rejection failed.", "error");
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const renderPaginationControls = (current, total, setPage) => (
-    <div className="d-flex justify-content-end align-items-center py-2 gap-2">
-      <Button 
-        variant={currentTheme === "dark" ? "outline-light" : "outline-primary"} 
-        size="sm" 
-        style={{ fontSize: '0.75rem', borderRadius: '4px' }}
-        disabled={current === 1}
-        onClick={() => setPage(p => Math.max(p - 1, 1))}
-      >
-        <FaChevronLeft className="me-1" /> Previous
-      </Button>
-      <Button 
-        variant={currentTheme === "dark" ? "outline-light" : "outline-primary"} 
-        size="sm" 
-        style={{ fontSize: '0.75rem', borderRadius: '4px' }}
-        disabled={current >= total}
-        onClick={() => setPage(p => Math.min(p + 1, total))}
-      >
-        Next <FaChevronRight className="ms-1" />
-      </Button>
-    </div>
-  );
+  // --- RENDERERS ---
+
+  const renderPaginationControls = (current, total, setPage) => {
+    // FIX: Ensure 'total' is a valid number to prevent NaN/1 display
+    const safeTotal = isNaN(total) || total < 1 ? 1 : total;
+
+    return (
+      <div className="d-flex justify-content-end align-items-center py-2 gap-2">
+        <Button 
+          variant={isDark ? "outline-light" : "outline-primary"} 
+          size="sm" 
+          style={{ fontSize: '0.75rem', borderRadius: '4px' }}
+          disabled={current === 1}
+          onClick={() => setPage(p => Math.max(p - 1, 1))}
+        >
+          <FaChevronLeft className="me-1" /> Prev
+        </Button>
+
+        <span className="small fw-bold text-muted mx-2">
+          {current} / {safeTotal}
+        </span>
+
+        <Button 
+          variant={isDark ? "outline-light" : "outline-primary"} 
+          size="sm" 
+          style={{ fontSize: '0.75rem', borderRadius: '4px' }}
+          disabled={current >= safeTotal}
+          onClick={() => setPage(p => p + 1)}
+        >
+          Next <FaChevronRight className="ms-1" />
+        </Button>
+      </div>
+    );
+  };
 
   const renderTable = (title, items, isMain) => {
     const currentPage = isMain ? pPage : hPage;
@@ -166,7 +190,7 @@ const PendingRequestsPage = ({ user, currentTheme }) => {
     const setPage = isMain ? setPPage : setHPage;
 
     return (
-      <Card className={`mb-5 border-0 ${currentTheme === "dark" ? "bg-dark text-white border-secondary shadow-lg" : "shadow-sm"}`}>
+      <Card className={`mb-5 border-0 ${isDark ? "bg-dark text-white border-secondary shadow-lg" : "shadow-sm"}`}>
         <Card.Header className={`${isMain ? "bg-primary" : "bg-dark"} text-white py-3`}>
           <Row className="align-items-center">
             <Col xs={12} md={6} className="d-flex align-items-center">
@@ -176,12 +200,12 @@ const PendingRequestsPage = ({ user, currentTheme }) => {
             {isMain && (
               <Col xs={12} md={6} className="mt-2 mt-md-0">
                 <InputGroup size="sm" style={{ maxWidth: "250px" }} className="ms-md-auto">
-                  <InputGroup.Text className="bg-light border-0"><FaSearch /></InputGroup.Text>
+                  <InputGroup.Text className={isDark ? "bg-secondary border-0 text-white" : "bg-light border-0"}><FaSearch /></InputGroup.Text>
                   <Form.Control
-                    placeholder="Search..."
+                    placeholder="Search sender..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    className="border-0 shadow-none"
+                    className={isDark ? "bg-secondary border-0 text-white shadow-none" : "border-0 shadow-none"}
                   />
                 </InputGroup>
               </Col>
@@ -189,7 +213,7 @@ const PendingRequestsPage = ({ user, currentTheme }) => {
           </Row>
         </Card.Header>
 
-        <Table responsive hover variant={currentTheme === "dark" ? "dark" : "light"} className="text-center mb-0">
+        <Table responsive hover variant={isDark ? "dark" : "light"} className="text-center mb-0">
           <thead>
             <tr className="text-uppercase text-muted border-bottom" style={{ fontSize: "0.7rem" }}>
               <th>Dir</th><th>Type</th><th>Sender Info</th><th>Receiver Info</th><th>Files</th><th>Reason / Denial Info</th><th>Date</th><th>Action</th>
@@ -197,67 +221,84 @@ const PendingRequestsPage = ({ user, currentTheme }) => {
           </thead>
           <tbody>
             {items && items.length > 0 ? (
-              items.map((req) => (
-                <tr key={req._id} className="align-middle border-bottom">
-                  <td>{req.senderUsername === user.username ? <FaArrowUp className="text-warning" /> : <FaArrowDown className="text-info" />}</td>
-                  <td>
-                    {req.requestType === "delete" ? 
-                      <Badge bg="danger" className="p-2"><FaTrashAlt /></Badge> : 
-                      <Badge bg="success" className="p-2"><FaExchangeAlt /></Badge>}
-                  </td>
-                  <td>
-                    <div className="fw-bold">{req.senderUsername}</div>
-                    {renderDeptInfo(req.senderDeptName || req.senderDepartmentId, req.senderRole)}
-                  </td>
-                  <td>
-                    {req.requestType === "delete" ? (
-                      <span className="text-muted small italic">SYSTEM (TRASH)</span>
-                    ) : (
-                      <>
-                        <div className="fw-bold">{req.receiverName || req.receiverUsername || req.recipientId?.username || "N/A"}</div>
-                        {renderDeptInfo(req.receiverDeptName || req.receiverDepartmentId, req.receiverRole)}
-                      </>
-                    )}
-                  </td>
-                  <td className="text-start">
-                    {req.fileIds?.slice(0, 3).map((f, i) => (
-                      <div key={i} className="text-truncate small" style={{ maxWidth: "150px" }}>
-                        {i + 1}. {f.originalName || "File/Folder"}
-                      </div>
-                    ))}
-                    {req.fileIds?.length > 3 && (
-                      <div className="ps-3">
-                        <small className="text-muted" style={{ fontSize: '0.65rem' }}>
-                          ...and {req.fileIds.length - 3} more
-                        </small>
-                      </div>
-                    )}
-                  </td>
-                  <td className="text-start">
-                    <div className="small mb-1"><strong>Reason:</strong> {req.reason}</div>
-                    {!isMain && req.status === "denied" && (
-                      <Alert variant="danger" className="py-2 px-2 m-0 mt-1 d-flex align-items-start" style={{ borderLeft: '4px solid #dc3545', borderRadius: '4px' }}>
-                        <FaExclamationTriangle className="me-2 mt-1 text-danger" />
-                        <div style={{ fontSize: '0.7rem' }}>
-                          <strong className="text-danger text-uppercase">Denied Reason:</strong><br/>
-                          {req.denialComment || "No comment provided"}
+              items.map((req) => {
+                const myRole = user.role?.toUpperCase();
+                const senderRole = req.senderRole?.toUpperCase();
+                const isMyOwnRequest = req.senderUsername === user.username;
+                
+                let canApprove = false;
+                if (!isMyOwnRequest) {
+                  if (myRole === "SUPERADMIN" || myRole === "ADMIN") {
+                    canApprove = true;
+                  } else if (myRole === "HOD") {
+                    const myDeptId = getCleanDeptId(user.departmentId);
+                    const senderDeptId = getCleanDeptId(req.departmentId);
+                    if (["EMPLOYEE", "USER"].includes(senderRole) && myDeptId === senderDeptId) {
+                      canApprove = true;
+                    }
+                  }
+                }
+
+                return (
+                  <tr key={req._id} className="align-middle border-bottom">
+                    <td>{isMyOwnRequest ? <FaArrowUp className="text-warning" /> : <FaArrowDown className="text-info" />}</td>
+                    <td>
+                      {req.requestType === "delete" ? 
+                        <Badge bg="danger" className="p-2"><FaTrashAlt /></Badge> : 
+                        <Badge bg="success" className="p-2"><FaExchangeAlt /></Badge>}
+                    </td>
+                    <td>
+                      <div className="fw-bold">{req.senderUsername}</div>
+                      {renderDeptInfo(req.senderDeptName || req.departmentId, req.senderRole)}
+                    </td>
+                    <td>
+                      {req.requestType === "delete" ? (
+                        <span className="text-muted small italic">SYSTEM (TRASH)</span>
+                      ) : (
+                        <>
+                          <div className="fw-bold text-truncate" style={{maxWidth: '120px'}}>{req.receiverName || "N/A"}</div>
+                          {renderDeptInfo(req.receiverDeptName, req.receiverRole)}
+                        </>
+                      )}
+                    </td>
+                    <td className="text-start">
+                      {req.fileIds?.slice(0, 3).map((f, i) => (
+                        <div key={i} className="text-truncate small" style={{ maxWidth: "160px" }}>
+                          <span className="text-muted me-1">{i + 1}.</span> {f.originalName || "File"}
                         </div>
-                      </Alert>
-                    )}
-                  </td>
-                  <td style={{ fontSize: "0.75rem" }}>{new Date(req.createdAt).toLocaleDateString()}</td>
-                  <td>
-                    {isMain ? (
-                      ((["ADMIN", "SUPERADMIN"].includes(user.role?.toUpperCase())) || (user.role?.toUpperCase() === "HOD" && req.senderUsername !== user.username)) ? (
-                        <div className="d-flex gap-2 justify-content-center">
-                          <Button variant="success" size="sm" onClick={() => handleApprove(req._id)}><FaCheck /></Button>
-                          <Button variant="danger" size="sm" onClick={() => { setActiveRequestId(req._id); setShowDenyModal(true); }}><FaTimes /></Button>
-                        </div>
-                      ) : <Badge bg="info" className="px-2 py-1">AWAITING</Badge>
-                    ) : <Badge bg={req.status === "completed" ? "success" : "danger"}>{req.status?.toUpperCase()}</Badge>}
-                  </td>
-                </tr>
-              ))
+                      ))}
+                      {req.fileIds?.length > 3 && (
+                        <div className="ps-3"><small className="text-muted" style={{ fontSize: '0.65rem' }}>...and {req.fileIds.length - 3} more</small></div>
+                      )}
+                    </td>
+                    <td className="text-start">
+                      <div className="small mb-1"><strong>Reason:</strong> {req.reason}</div>
+                      {!isMain && req.status === "denied" && (
+                        <Alert variant="danger" className="py-2 px-2 m-0 mt-2 d-flex align-items-start border-0 shadow-sm" style={{ borderLeft: '4px solid #dc3545' }}>
+                          <div style={{ fontSize: '0.7rem' }}>
+                            <strong className="text-danger text-uppercase">Denied:</strong> {req.denialComment || "No reason."}
+                          </div>
+                        </Alert>
+                      )}
+                    </td>
+                    <td style={{ fontSize: "0.75rem" }}>{new Date(req.createdAt).toLocaleDateString()}</td>
+                    <td>
+                      {isMain ? (
+                        canApprove ? (
+                          <div className="d-flex gap-2 justify-content-center">
+                            <Button variant="success" size="sm" onClick={() => handleApprove(req._id)} title="Approve"><FaCheck /></Button>
+                            <Button variant="danger" size="sm" onClick={() => { setActiveRequestId(req._id); setShowDenyModal(true); }} title="Reject"><FaTimes /></Button>
+                          </div>
+                        ) : <Badge bg="info" className="px-2 py-1">AWAITING</Badge>
+                      ) : (
+                        <Badge bg={req.status === "completed" ? "success" : "danger"} className="px-3 py-2">
+                          {req.status?.toUpperCase()}
+                        </Badge>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })
             ) : <tr><td colSpan="8" className="py-5 text-muted">No records found.</td></tr>}
           </tbody>
         </Table>
@@ -276,46 +317,31 @@ const PendingRequestsPage = ({ user, currentTheme }) => {
       ) : (
         <>
           {renderTable("Awaiting Approval", data.mainRequests, true)}
-          {renderTable("Global Request History", data.logs, false)}
+          {renderTable("Global History", data.logs, false)}
         </>
       )}
 
-      {/* --- FANCY DENY MODAL --- */}
-      <Modal 
-        show={showDenyModal} 
-        onHide={() => setShowDenyModal(false)} 
-        centered 
-        className="fancy-modal"
-      >
-        <Modal.Header closeButton className={currentTheme === "dark" ? "bg-dark text-white border-secondary" : "bg-light"}>
-          <Modal.Title className="h6 text-danger d-flex align-items-center">
-            <FaExclamationTriangle className="me-2" /> Reject Transfer Request
-          </Modal.Title>
+      <Modal show={showDenyModal} onHide={() => setShowDenyModal(false)} centered>
+        <Modal.Header closeButton className={isDark ? "bg-dark text-white border-secondary" : ""}>
+          <Modal.Title className="h6 text-danger fw-bold">Reject Request</Modal.Title>
         </Modal.Header>
-        <Modal.Body className={currentTheme === "dark" ? "bg-dark text-white border-0" : "bg-white"}>
+        <Modal.Body className={isDark ? "bg-dark text-white" : ""}>
           <Form.Group>
-            <Form.Label className="small fw-bold mb-2">Internal Reason for Denial</Form.Label>
+            <Form.Label className="small fw-bold mb-2 text-uppercase">Reason for Rejection</Form.Label>
             <Form.Control 
               as="textarea" 
               rows={3} 
               value={denialComment} 
               onChange={(e) => setDenialComment(e.target.value)} 
-              placeholder="Explain why this request is being rejected..." 
-              className={currentTheme === "dark" ? "bg-secondary text-white border-0 shadow-sm" : "bg-light border-1 shadow-sm"}
-              style={{ borderRadius: '8px' }}
+              placeholder="Provide a reason for rejection..." 
+              className={isDark ? "bg-secondary border-secondary text-white shadow-none" : "shadow-none"}
             />
           </Form.Group>
         </Modal.Body>
-        <Modal.Footer className={currentTheme === "dark" ? "bg-dark border-secondary" : "bg-light border-0"}>
-          <Button variant="link" className="text-muted text-decoration-none" onClick={() => setShowDenyModal(false)}>Cancel</Button>
-          <Button 
-            variant="danger" 
-            className="px-4 shadow-sm" 
-            style={{ borderRadius: '20px' }} 
-            onClick={handleConfirmDeny} 
-            disabled={isSubmitting}
-          >
-            {isSubmitting ? "Rejecting..." : "Deny Request"}
+        <Modal.Footer className={isDark ? "bg-dark border-secondary" : ""}>
+          <Button variant="outline-secondary" size="sm" onClick={() => setShowDenyModal(false)}>Cancel</Button>
+          <Button variant="danger" size="sm" onClick={handleConfirmDeny} disabled={isSubmitting}>
+               Confirm Reject
           </Button>
         </Modal.Footer>
       </Modal>

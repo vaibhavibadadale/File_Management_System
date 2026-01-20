@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import Swal from 'sweetalert2';
 import { Modal, Button, ListGroup, Form, InputGroup, Spinner, Alert, Badge } from 'react-bootstrap';
 import { Search, ShieldLock, Person, ArrowRightCircle } from 'react-bootstrap-icons';
 import { transferFilesApi } from '../services/apiService';
@@ -16,6 +17,7 @@ const TransferModal = ({ selectedIds, senderUsername, user, onClose, onSuccess, 
 
     const isDark = currentTheme === "dark";
 
+    // 1. Fetch users for the list
     useEffect(() => {
         const fetchUsers = async () => {
             try {
@@ -24,6 +26,7 @@ const TransferModal = ({ selectedIds, senderUsername, user, onClose, onSuccess, 
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
                 const data = Array.isArray(res.data) ? res.data : (res.data.users || []);
+                // Ensure we don't show the current logged-in user
                 setUsers(data.filter(u => u.username !== senderUsername));
             } catch (err) {
                 setError("Could not load user list.");
@@ -32,6 +35,7 @@ const TransferModal = ({ selectedIds, senderUsername, user, onClose, onSuccess, 
         fetchUsers();
     }, [senderUsername]);
 
+    // 2. Handle the actual transfer
     const handleTransfer = async () => {
         if (!password) return setError("Verification password is required.");
         if (!reason.trim()) return setError("Please provide a reason for the transfer.");
@@ -40,24 +44,48 @@ const TransferModal = ({ selectedIds, senderUsername, user, onClose, onSuccess, 
         setError(null);
 
         try {
+            // Safety check: extract IDs correctly
+            const deptId = user?.departmentId?._id || user?.departmentId;
+
             const transferData = {
                 senderUsername: senderUsername, 
-                senderRole: user?.role?.toUpperCase() || "EMPLOYEE", 
+                senderRole: user?.role || "USER", 
                 recipientId: selectedUser?._id, 
+                // Adding these ensures the Pending page shows info immediately
+                receiverName: selectedUser?.username,
+                receiverDeptName: selectedUser?.departmentId?.departmentName || "General",
+                receiverRole: selectedUser?.role || "USER",
                 fileIds: selectedIds,
                 reason: reason,
                 requestType: 'transfer',
-                departmentId: user?.departmentId?._id || user?.departmentId,
+                departmentId: deptId,
                 password: password 
             };
 
             const response = await transferFilesApi(transferData);
-            alert(response.message || "Request processed"); 
+            
+            await Swal.fire({
+                title: 'Request Sent',
+                text: response.message || "Your transfer request is pending approval.",
+                icon: 'success',
+                background: isDark ? '#212529' : '#fff',
+                color: isDark ? '#fff' : '#000',
+                confirmButtonColor: '#0d6efd'
+            });
             
             if (onSuccess) onSuccess();
             onClose();
         } catch (err) {
-            setError(err.response?.data?.error || err.response?.data?.message || "Error processing transfer.");
+            const errMsg = err.response?.data?.error || "Error processing transfer request.";
+            setError(errMsg);
+            
+            Swal.fire({
+                title: 'Transfer Failed',
+                text: errMsg,
+                icon: 'error',
+                background: isDark ? '#212529' : '#fff',
+                color: isDark ? '#fff' : '#000'
+            });
         } finally {
             setIsSubmitting(false);
         }
@@ -65,9 +93,8 @@ const TransferModal = ({ selectedIds, senderUsername, user, onClose, onSuccess, 
 
     return (
         <Modal show={true} onHide={onClose} centered backdrop="static" size="md">
-            {/* Conditional classes for Header, Body, and Footer */}
             <Modal.Header closeButton className={`border-0 pb-0 ${isDark ? 'bg-dark text-white border-secondary' : ''}`}>
-                <Modal.Title className="fw-bold">
+                <Modal.Title className="fw-bold fs-5">
                     {step === 1 ? `Transferring ${selectedIds.length} Item(s)` : "Security Verification"}
                 </Modal.Title>
             </Modal.Header>
@@ -77,16 +104,15 @@ const TransferModal = ({ selectedIds, senderUsername, user, onClose, onSuccess, 
                 
                 {step === 1 ? (
                     <div className="mt-2">
-                        <Form.Label className={`small fw-bold ${isDark ? 'text-light' : 'text-muted'}`}>SELECT RECIPIENT</Form.Label>
+                        <Form.Label className={`small fw-bold mb-2 ${isDark ? 'text-light' : 'text-muted'}`}>SELECT RECIPIENT</Form.Label>
                         <InputGroup className="mb-3">
                             <InputGroup.Text className={isDark ? 'bg-secondary border-secondary text-white' : 'bg-white'}>
-                                <Search />
+                                <Search size={14}/>
                             </InputGroup.Text>
                             <Form.Control 
                                 placeholder="Search by name..." 
                                 onChange={(e) => setSearchTerm(e.target.value)} 
                                 className={isDark ? 'bg-secondary border-secondary text-white placeholder-light' : ''}
-                                style={isDark ? { colorScheme: 'dark' } : {}}
                             />
                         </InputGroup>
 
@@ -114,7 +140,7 @@ const TransferModal = ({ selectedIds, senderUsername, user, onClose, onSuccess, 
                                             <div>
                                                 <div className="fw-bold">{u.username}</div>
                                                 <small className={isSelected ? "text-white" : (isDark ? "text-info" : "text-muted")}>
-                                                    {typeof u.departmentId === 'object' ? u.departmentId?.departmentName : 'General Department'}
+                                                    {u.departmentId?.departmentName || 'General'}
                                                 </small>
                                             </div>
                                         </div>
@@ -131,27 +157,28 @@ const TransferModal = ({ selectedIds, senderUsername, user, onClose, onSuccess, 
                         <div className="bg-primary bg-opacity-10 p-3 rounded-circle d-inline-block mb-3">
                             <ShieldLock size={40} className="text-primary" />
                         </div>
-                        <h6 className="fw-bold">Confirm Transfer to {selectedUser?.username}</h6>
+                        <h6 className="fw-bold mb-1">Confirm Transfer</h6>
+                        <p className="small text-muted mb-4">You are sending files to <strong>{selectedUser?.username}</strong></p>
                         
-                        <Form.Group className="mb-3 text-start mt-4">
-                            <Form.Label className={`small fw-bold ${isDark ? 'text-info' : 'text-secondary'}`}>REASON</Form.Label>
+                        <Form.Group className="mb-3 text-start">
+                            <Form.Label className={`small fw-bold ${isDark ? 'text-info' : 'text-secondary'}`}>REASON FOR TRANSFER</Form.Label>
                             <Form.Control
                                 as="textarea"
                                 rows={2}
                                 value={reason}
                                 onChange={(e) => setReason(e.target.value)}
-                                placeholder="Purpose of transfer..."
+                                placeholder="Purpose of this transfer..."
                                 className={isDark ? 'bg-secondary border-secondary text-white' : ''}
                             />
                         </Form.Group>
 
                         <Form.Group className="text-start">
-                            <Form.Label className={`small fw-bold ${isDark ? 'text-info' : 'text-secondary'}`}>PASSWORD</Form.Label>
+                            <Form.Label className={`small fw-bold ${isDark ? 'text-info' : 'text-secondary'}`}>YOUR PASSWORD</Form.Label>
                             <Form.Control
                                 type="password" 
                                 value={password}
                                 onChange={(e) => setPassword(e.target.value)} 
-                                placeholder="Enter login password"
+                                placeholder="Enter password to verify identity"
                                 className={isDark ? 'bg-secondary border-secondary text-white' : ''}
                             />
                         </Form.Group>
@@ -159,10 +186,10 @@ const TransferModal = ({ selectedIds, senderUsername, user, onClose, onSuccess, 
                 )}
             </Modal.Body>
 
-            <Modal.Footer className={`border-0 pt-0 ${isDark ? 'bg-dark border-secondary' : ''}`}>
+            <Modal.Footer className={`border-0 pt-0 pb-4 px-4 ${isDark ? 'bg-dark' : ''}`}>
                 {step === 1 ? (
-                    <Button variant="primary" onClick={() => setStep(2)} disabled={!selectedUser} className="w-100 py-2 fw-bold">
-                        Continue <ArrowRightCircle className="ms-2" />
+                    <Button variant="primary" onClick={() => setStep(2)} disabled={!selectedUser} className="w-100 py-2 fw-bold shadow-sm">
+                        Continue to Verify <ArrowRightCircle className="ms-2" />
                     </Button>
                 ) : (
                     <div className="d-flex w-100 gap-2">
@@ -174,8 +201,8 @@ const TransferModal = ({ selectedIds, senderUsername, user, onClose, onSuccess, 
                         >
                             Back
                         </Button>
-                        <Button variant="success" className="w-50 py-2 fw-bold" onClick={handleTransfer} disabled={isSubmitting}>
-                            {isSubmitting ? <Spinner size="sm" animation="border" /> : "Confirm"}
+                        <Button variant="success" className="w-50 py-2 fw-bold shadow-sm" onClick={handleTransfer} disabled={isSubmitting}>
+                            {isSubmitting ? <Spinner size="sm" animation="border" /> : "Send Request"}
                         </Button>
                     </div>
                 )}

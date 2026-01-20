@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
+import axios from "axios";
 
 // Components
 import Sidebar from "./components/Sidebar";        
@@ -42,8 +43,8 @@ function App() {
 
     const handleLoginSuccess = (userData) => {
         sessionStorage.setItem("userSession", JSON.stringify(userData));
-        setIsAuthenticated(true);
         setUser(userData); 
+        setIsAuthenticated(true);
     };
 
     const handleLogout = () => {
@@ -74,6 +75,7 @@ function App() {
     return (
         <div className={`theme-container ${themeMode} min-vh-100 ${themeMode === "dark" ? "bg-dark text-light" : "bg-light text-dark"}`}> 
             <div className="d-flex align-items-stretch">
+                {/* Sidebar gets the user for role-based links */}
                 <Sidebar themeMode={themeMode} user={user} />
                 
                 <div className="flex-grow-1 d-flex flex-column" style={{ minHeight: "100vh", minWidth: 0 }}>
@@ -86,32 +88,23 @@ function App() {
 
                     <main className="flex-grow-1 p-3 p-md-4">
                         <Routes>
-                            {/* Dashboard */}
                             <Route path="/" element={<FileDashboard user={user} currentTheme={themeMode} />} />
                             
-                            {/* File Management */}
                             <Route 
                                 path="/file-manager" 
                                 element={<UploadFilePage user={user} currentTheme={themeMode} />} 
                             />
                             
-                            {/* Ventures & Admin Sections */}
                             <Route path="/ventures" element={<VenturesPage user={user} currentTheme={themeMode} />} />
-                            
-                            {/* User Management - Redirect target for NEW_USER notifications */}
                             <Route path="/users" element={<UsersPage currentTheme={themeMode} user={user} />} />
-                            
                             <Route path="/department-staff/:deptId" element={<DepartmentStaff currentTheme={themeMode} user={user} />} />
-                            
                             <Route path="/user-files/:userId" element={<UserFilesView currentTheme={themeMode} user={user} />} />
 
-                            {/* Pending Requests - Redirect target for TRANSFER/DELETE notifications */}
                             <Route 
                                 path="/pending" 
                                 element={<PendingRequestsPage user={user} currentTheme={themeMode} />} 
                             />
 
-                            {/* Notifications History Page */}
                             <Route 
                                 path="/notifications" 
                                 element={<NotificationsPage user={user} currentTheme={themeMode} />} 
@@ -124,7 +117,6 @@ function App() {
                             
                             <Route path="/trash" element={<div className="p-4"><h3>Trash Bin</h3></div>} />
 
-                            {/* Auth Redirects */}
                             <Route path="/login" element={<Navigate to="/" />} />
                             <Route path="*" element={<Navigate to="/" />} />
                         </Routes>
