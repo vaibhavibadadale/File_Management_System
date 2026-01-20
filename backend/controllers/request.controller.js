@@ -78,49 +78,49 @@ export const createRequest = async (req, res) => {
 
         await newRequest.save();
 
-        if (isAutoApprove) {
-            if (requestType === "delete") {
-                await handleMoveToTrash(fileIds, senderUsername, `AUTO-${sRole}`, finalDeptId);
-            } else if (newRequest.recipientId) {
-                await File.updateMany({ _id: { $in: fileIds } }, { $addToSet: { sharedWith: newRequest.recipientId } });
-            }
-        } else {
-            // --- NOTIFICATION ENGINE ---
-            try {
-                // Convert string ID to MongoDB ObjectId for the HOD search
-                const hodeDeptId = finalDeptId ? new mongoose.Types.ObjectId(finalDeptId) : null;
+if (isAutoApprove) {
+    if (requestType === "delete") {
+        await handleMoveToTrash(fileIds, senderUsername, `AUTO-${sRole}`, finalDeptId);
+    } else if (newRequest.recipientId) {
+        await File.updateMany({ _id: { $in: fileIds } }, { $addToSet: { sharedWith: newRequest.recipientId } });
+    }
+} else {
+    // PASTE THE NOTIFICATION ENGINE HERE
+    try {
+        const hodeDeptId = finalDeptId ? new mongoose.Types.ObjectId(finalDeptId) : null;
 
-                const staffToNotify = await User.find({
-                    $or: [
-                        { role: { $in: ['ADMIN', 'SUPERADMIN'] } },
-                        // Finding HOD matching the department of the sender
-                        { role: 'HOD', departmentId: hodeDeptId }
-                    ],
-                    deletedAt: null
-                });
+        const staffToNotify = await User.find({
+            $or: [
+                { role: { $in: ['ADMIN', 'SUPERADMIN'] } },
+                { role: 'HOD', departmentId: hodeDeptId }
+            ],
+            deletedAt: null
+        });
 
-                const notificationEntries = staffToNotify
-                    .filter(u => u.username !== senderUsername)
-                    .map(u => ({
-                        recipientId: u._id,
-                        targetRoles: ['ADMIN', 'SUPERADMIN', 'HOD'],
-                        departmentId: finalDeptId,
-                        title: `New ${requestType.toUpperCase()} Request`,
-                        message: `${senderUsername} (${sDeptName}) requested a ${requestType}.`,
-                        type: requestType === 'delete' ? 'DELETE_REQUEST' : 'TRANSFER_REQUEST',
-                        isRead: false
-                    }));
+        const notificationEntries = staffToNotify
+            .filter(u => u.username !== senderUsername)
+            .map(u => ({
+                recipientId: u._id,
+                targetRoles: ['ADMIN', 'SUPERADMIN', 'HOD'],
+                department: sDeptName, // Match the string filtering in your Notification Controller
+                departmentId: finalDeptId, 
+                title: `New ${requestType.toUpperCase()} Request`,
+                message: `${senderUsername} (${sDeptName}) requested a ${requestType}.`,
+                type: requestType === 'delete' ? 'DELETE_REQUEST' : 'TRANSFER_REQUEST',
+                isRead: false
+            }));
 
-                if (notificationEntries.length > 0) {
-                    await Notification.insertMany(notificationEntries);
-                    console.log(`✅ Notifications sent to ${notificationEntries.length} staff members.`);
-                }
-            } catch (nErr) { 
-                console.error("❌ Notification Engine Error:", nErr); 
-            }
+        if (notificationEntries.length > 0) {
+            await Notification.insertMany(notificationEntries);
+            console.log(`✅ Notifications sent to ${notificationEntries.length} staff members.`);
         }
+    } catch (nErr) { 
+        console.error("❌ Notification Engine Error:", nErr); 
+    }
+}
 
-        res.status(201).json({ message: "Success", data: newRequest });
+// Final response at the very end of the function
+res.status(201).json({ message: "Success", data: newRequest });
     } catch (err) { 
         res.status(500).json({ error: err.message }); 
     }
