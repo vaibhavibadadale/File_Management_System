@@ -11,62 +11,72 @@ const Header = ({ user, currentTheme, onThemeToggle, onLogout }) => {
     const notifyRef = useRef(null);
     const navigate = useNavigate();
 
-    // 1. Fetch logic: We only fetch UNREAD notifications for the bell icon
-    const fetchNotifications = async () => {
-        try {
-            // Check if user and user._id exist to avoid 400 errors
-            if (!user || !user._id) return;
+   const fetchNotifications = async () => {
+    try {
+        if (!user || !user._id) return;
 
-            const res = await axios.get(`http://localhost:5000/api/notifications`, {
-                params: { 
-                    role: user.role,
-                    userId: user._id
-                }
-            });
-
-            // Filtering for unread here to ensure they "disappear" once clicked
-            const unreadOnly = res.data.filter(n => !n.isRead);
-            setNotifications(unreadOnly);
-        } catch (err) {
-            console.error("Error fetching notifications:", err);
-        }
-    };
-
-    // 2. Click Handler: Mark as read, Disappear, and SMART REDIRECT
-    const handleNotificationClick = async (notification) => {
-        try {
-            // 1. Mark as read in the database
-            await axios.put(`http://localhost:5000/api/notifications/${notification._id}/read`); 
-            
-            // 2. Update local state immediately for responsiveness
-            setNotifications(prev => prev.filter(n => n._id !== notification._id));
-            setIsNotifyOpen(false);
-
-            // 3. Smart Redirect logic based on notification type
-            const type = notification.type ? notification.type.toUpperCase() : "";
-
-            if (type.includes('REQUEST') || type.includes('TRANSFER') || type.includes('DELETE')) {
-                navigate('/pending'); 
-            } else if (type.includes('USER') || type.includes('NEW_USER')) {
-                navigate('/users');
-            } else {
-                navigate('/notifications');
+        const res = await axios.get(`http://localhost:5000/api/notifications`, {
+            params: { 
+                role: user.role,
+                userId: user._id,
+                // Ensures if department is missing, it sends an empty string instead of undefined
+                department: user.department || "" 
             }
-        } catch (err) {
-            console.error("Notification action error:", err);
-            // Even if API fails, still navigate to let user see the content
+        });
+
+        const unreadOnly = res.data.filter(n => !n.isRead);
+        setNotifications(unreadOnly);
+    } catch (err) {
+        console.error("Error fetching notifications:", err);
+    }
+};
+
+    const handleNotificationClick = async (notification) => {
+    try {
+        // 1. Mark as read in the backend
+        await axios.put(`http://localhost:5000/api/notifications/mark-read/${notification._id}`); 
+        
+        // 2. Remove from the local dropdown list
+        setNotifications(prev => prev.filter(n => n._id !== notification._id));
+        setIsNotifyOpen(false);
+
+        // 3. Normalize strings (Convert to lowercase and remove hidden spaces)
+        const title = (notification.title || "").toLowerCase().trim();
+        const msg = (notification.message || "").toLowerCase().trim();
+
+        console.log("Processing Redirection for:", title); // This helps you debug in F12
+
+        // 4. Redirection Logic
+        if (title.includes('user')) {
+            navigate('/users');
+        } 
+        // This will now catch "New TRANSFER Request", "TRANSFER", etc.
+        else if (
+            title.includes('transfer') || 
+            title.includes('request') || 
+            title.includes('delete') || 
+            msg.includes('requested') ||
+            msg.includes('transfer')
+        ) {
+            console.log("Match found! Redirecting to /pending");
+            navigate('/pending'); 
+        } 
+        else {
+            // If no keywords match, it goes here
+            console.log("No keyword match. Defaulting to history.");
             navigate('/notifications');
         }
-    };
-
-    // Auto-refresh notifications every 10 seconds
+    } catch (err) {
+        console.error("Notification action error:", err);
+        navigate('/notifications');
+    }
+};
     useEffect(() => {
         fetchNotifications();
         const interval = setInterval(fetchNotifications, 10000); 
         return () => clearInterval(interval);
     }, [user]);
 
-    // Handle clicking outside of dropdowns to close them
     useEffect(() => {
         const handleClickOutside = (event) => {
             if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
@@ -80,6 +90,18 @@ const Header = ({ user, currentTheme, onThemeToggle, onLogout }) => {
         return () => document.removeEventListener("mousedown", handleClickOutside);
     }, []);
 
+    // SHARED STYLE: Now 40px to match User Circle
+    const iconButtonStyle = {
+        width: "40px",
+        height: "40px",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "0",
+        border: "1px solid",
+        borderColor: currentTheme === 'dark' ? '#495057' : '#dee2e6',
+    };
+
     return (
         <header className={`p-3 border-bottom d-flex justify-content-between align-items-center sticky-top z-3 ${
             currentTheme === "dark" ? "bg-dark border-secondary text-light" : "bg-white text-dark shadow-sm"
@@ -87,33 +109,31 @@ const Header = ({ user, currentTheme, onThemeToggle, onLogout }) => {
             <h5 className="m-0 fw-bold px-2 text-truncate">Aaryans File Management System</h5>
 
             <div className="d-flex align-items-center gap-3">
+                {/* Theme Toggle Button (40px) */}
                 <button 
-                    className={`btn d-flex align-items-center justify-content-center rounded-circle p-0 ${currentTheme === "dark" ? "btn-outline-warning" : "btn-outline-dark"}`} 
+                    className={`btn rounded-circle shadow-none ${currentTheme === "dark" ? "btn-outline-warning" : "btn-outline-dark"}`} 
                     onClick={onThemeToggle}
-                    style={{ width: "35px", height: "35px", border: '1px solid' }}
+                    style={iconButtonStyle}
                 >
-                    {currentTheme === "dark" ? "☀️" : "🌙"}
+                    <span style={{ fontSize: "20px" }}>{currentTheme === "dark" ? "☀️" : "🌙"}</span>
                 </button>
 
-                {/* Notification Bell */}
+                {/* Notification Bell Button (40px) */}
                 <div className="position-relative" ref={notifyRef}>
                     <button 
-                        className={`btn d-flex align-items-center justify-content-center rounded-circle p-0 shadow-none`}
-                        style={{ 
-                            width: "35px", height: "35px", border: '1px solid',
-                            borderColor: currentTheme === 'dark' ? '#6c757d' : '#dee2e6',
-                            color: currentTheme === 'dark' ? '#f8f9fa' : '#212529'
-                        }}
+                        className={`btn rounded-circle shadow-none ${currentTheme === "dark" ? "btn-outline-light" : "btn-outline-dark"}`}
+                        style={iconButtonStyle}
                         onClick={() => {
                             setIsNotifyOpen(!isNotifyOpen);
                             setIsDropdownOpen(false);
                         }}
                     >
-                        <svg width="18" height="18" fill="currentColor" viewBox="0 0 16 16">
+                        <svg width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
                             <path d="M8 16a2 2 0 0 0 2-2H6a2 2 0 0 0 2 2M8 1.918l-.797.161A4 4 0 0 0 4 6c0 .628-.134 2.197-.459 3.742-.16.767-.376 1.566-.663 2.258h10.244c-.287-.692-.502-1.49-.663-2.258C12.134 8.197 12 6.628 12 6a4 4 0 0 0-3.203-3.92zM14.22 12c.223.447.481.801.78 1H1c.299-.199.557-.553.78-1C2.68 10.2 3 6.88 3 6c0-2.42 1.72-4.44 4.005-4.901a1 1 0 1 1 1.99 0A5 5 0 0 1 13 6c0 .88.32 4.2 1.22 6"/>
                         </svg>
                         {notifications.length > 0 && (
-                            <span className="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" style={{ fontSize: '0.6rem' }}>
+                            <span className="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger border border-2 border-white" 
+                                  style={{ fontSize: '0.65rem', padding: '0.3em 0.5em', marginTop: '2px', marginLeft: '-2px' }}>
                                 {notifications.length}
                             </span>
                         )}
@@ -122,14 +142,12 @@ const Header = ({ user, currentTheme, onThemeToggle, onLogout }) => {
                     {isNotifyOpen && (
                         <div className={`position-absolute end-0 mt-2 shadow-lg rounded-3 overflow-hidden ${currentTheme === 'dark' ? 'bg-dark border border-secondary' : 'bg-white border'}`} 
                              style={{ width: "350px", zIndex: 1060 }}>
-                            
                             <div className="px-3 py-2 border-bottom d-flex justify-content-between align-items-center bg-opacity-10 bg-primary">
                                 <span className="fw-bold small">Notifications</span>
                                 <Link to="/notifications" className="text-primary fw-bold text-decoration-none" style={{ fontSize: '0.75rem' }} onClick={() => setIsNotifyOpen(false)}>
                                     View All
                                 </Link>
                             </div>
-
                             <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
                                 {notifications.length === 0 ? (
                                     <div className="p-4 text-center small text-muted">No new alerts</div>
@@ -159,7 +177,7 @@ const Header = ({ user, currentTheme, onThemeToggle, onLogout }) => {
                     )}
                 </div>
 
-                {/* Profile Section */}
+                {/* Profile Section (Already 40px) */}
                 <div className="position-relative" ref={dropdownRef}>
                     <div className="d-flex align-items-center gap-2 ps-3 border-start border-secondary" style={{ cursor: 'pointer' }} 
                          onClick={() => {
