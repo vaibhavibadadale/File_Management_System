@@ -2,18 +2,18 @@ const express = require("express");
 const router = express.Router();
 const requestController = require("../controllers/request.controller");
 
-// Request Management
+// 1. Creation
 router.post("/create", requestController.createRequest); 
+
+// 2. Dashboard & Stats
 router.get("/pending-dashboard", requestController.getPendingDashboard);
+router.get("/stats", requestController.getDashboardStats);
 
-// FIXED: Matching the names in your controller exactly
-router.put("/approve/:transferId", requestController.approveTransfer);
-router.put("/deny/:transferId", requestController.denyTransfer);
+// 3. Approval Actions
+router.put("/approve/:id", requestController.approveRequest);
+router.put("/deny/:id", requestController.denyRequest);
 
-// Stats & Metadata
-router.get("/dashboard-stats", requestController.getDashboardStats);
-
-// Trash Management
+// 4. Trash Management
 router.get("/trash", requestController.getTrashItems);
 router.post("/trash/restore/:id", requestController.restoreFromTrash);
 router.delete("/trash/permanent/:id", requestController.permanentDelete);

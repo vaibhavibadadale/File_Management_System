@@ -4,40 +4,44 @@ const path = require("path");
 const mongoose = require("mongoose");
 const Notification = require("../models/Notification");
 
-// 1. CREATE USER (Logic preserved)
+// 1. CREATE USER
 exports.createUser = async (req, res) => {
     try {
-        const { username, password, role, departmentId } = req.body;
+        const { username, password, role, departmentId, department } = req.body;
 
-        // 1. Create the new user
-        const newUser = new User({ username, password, role, departmentId });
+        // Save both the ID and the string name for backward compatibility
+        const newUser = new User({ 
+            username, 
+            password, 
+            role, 
+            departmentId, 
+            department 
+        });
         await newUser.save();
 
-        // 2. Notify Admins about the new user
-        // Find all SuperAdmins or Admins to notify them
         const admins = await User.find({ 
-            role: { $in: ['Admin', 'SuperAdmin', 'ADMIN', 'SUPERADMIN'] } 
+            role: { $in: ['Admin', 'SuperAdmin', 'ADMIN', 'SUPERADMIN'] },
+            deletedAt: null 
         });
 
         if (admins.length > 0) {
             const notificationEntries = admins.map(admin => ({
                 recipientId: admin._id,
+                targetRoles: ['ADMIN', 'SUPERADMIN'],
                 title: "New User Created",
-                message: `A new user "${username}" has been added to the system.`,
-                type: "USER_CREATED", // This triggers the redirect to /users in Header.jsx
-                isRead: false,
-                createdAt: new Date()
+                message: `User "${username}" has been added to the system.`,
+                type: "USER_CREATED", 
+                isRead: false
             }));
-
             await Notification.insertMany(notificationEntries);
         }
 
         res.status(201).json({ message: "User created successfully", user: newUser });
     } catch (err) {
-        console.error("User Creation Error:", err); // Check your terminal for this!
         res.status(500).json({ error: err.message });
     }
 };
+
 // 2. VERIFY PASSWORD
 exports.verifyPassword = async (req, res) => {
     try {
@@ -52,30 +56,40 @@ exports.verifyPassword = async (req, res) => {
     }
 };
 
-// 3. LOGIN (UPDATED WITH DEPARTMENT CHECK)
+// 3. LOGIN (FIXED: Returns department name so files are visible)
 exports.login = async (req, res) => {
     try {
         const { username, password, department } = req.body;
         
-        const user = await User.findOne({ username, deletedAt: null });
+        // Populate departmentId to get the name
+        const user = await User.findOne({ username, deletedAt: null }).populate("departmentId");
         
         if (!user || user.password !== password) {
             return res.status(401).json({ message: "Invalid username or password" });
         }
 
-        // --- NEW VALIDATION: Validate department for Employee/HOD ---
+        // Get the string name of the department
+        const userDeptName = user.departmentId?.departmentName || user.department;
+
+        // Validate department for Employee/HOD
         const role = (user.role || "").toLowerCase();
         if (role === "employee" || role === "hod") {
-            // Check if user's registered department matches the one chosen at login
-            if (user.department !== department) {
+            if (userDeptName !== department) {
                 return res.status(401).json({ 
-                    message: `Access Denied: You are registered under '${user.department}', not '${department}'.` 
+                    message: `Access Denied: You are registered under '${userDeptName}', not '${department}'.` 
                 });
             }
         }
-        // ------------------------------------------------------------
 
-        res.json({ _id: user._id, username: user.username, role: user.role, name: user.name });
+        // IMPORTANT: Send back 'department' string AND 'departmentId' 
+        // to ensure frontend file filters still work!
+        res.json({ 
+            _id: user._id, 
+            username: user.username, 
+            role: user.role, 
+            department: userDeptName, 
+            departmentId: user.departmentId?._id 
+        });
     } catch (error) { 
         res.status(500).json({ error: error.message }); 
     }
@@ -101,7 +115,6 @@ exports.getUsersByDepartment = async (req, res) => {
             deletedAt: null,
             $or: [
                 { departmentId: mongoId },
-                { departmentId: deptId },
                 { department: deptId }
             ]
         }).lean();
@@ -162,7 +175,24 @@ exports.getUserFiles = async (req, res) => {
 // 9. SOFT DELETE USER
 exports.softDeleteUser = async (req, res) => {
     try {
+        const userToDelete = await User.findById(req.params.id);
+        if (!userToDelete) return res.status(404).json({ message: "User not found" });
+
         await User.findByIdAndUpdate(req.params.id, { deletedAt: new Date() });
+
+        const admins = await User.find({ role: { $in: ['ADMIN', 'SUPERADMIN'] }, deletedAt: null });
+        const notifications = admins.map(admin => ({
+            recipientId: admin._id,
+            title: "User Account Removed",
+            message: `The user account "${userToDelete.username}" has been deactivated.`,
+            type: "USER_DELETED",
+            isRead: false
+        }));
+        
+        if (notifications.length > 0) {
+            await Notification.insertMany(notifications);
+        }
+
         res.json({ message: "Deleted" });
     } catch (error) { res.status(500).json({ error: error.message }); }
 };
