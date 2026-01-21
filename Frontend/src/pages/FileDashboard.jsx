@@ -1,237 +1,154 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import axios from 'axios';
-import { Button, Form, FormControl, Badge, Row, Col, Spinner } from 'react-bootstrap';
-import { 
-    Trash, 
-    Eye, 
-    ClockHistory, 
-    FileEarmarkText, 
-    ArrowClockwise,
-    Filter,
-    Search,
-    X,
-    Star,    
-    StarFill 
-} from 'react-bootstrap-icons'; 
-
-// Import your api service functions
-import { toggleStarApi } from '../services/apiService'; 
+import { Badge, Row, Col, Spinner, Card } from 'react-bootstrap';
+import { Eye, FileEarmarkText, BookmarkStarFill, ArrowLeftRight, Database, Activity } from 'react-bootstrap-icons'; 
+import '../styles/FileDashboard.css';
 
 const BACKEND_URL = "http://localhost:5000"; 
 
 const FileDashboard = ({ user, currentTheme }) => { 
     const [uploadedFiles, setUploadedFiles] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [searchTerm, setSearchTerm] = useState('');
-    const [userFilter, setUserFilter] = useState('All'); 
     
     const isDarkMode = currentTheme === 'dark';
-    const textColor = isDarkMode ? 'text-light' : 'text-dark';
-    const itemBg = isDarkMode ? '#2c2c2c' : '#ffffff';
-    const headerBg = isDarkMode ? '#333' : '#f1f3f4';
 
-    const fetchFiles = useCallback(async () => {
+    const theme = {
+        textMain: isDarkMode ? '#f8f9fa' : '#212529',
+        textMuted: isDarkMode ? '#ced4da' : '#6c757d',
+        cardBg: isDarkMode ? '#2c2c2e' : '#ffffff',
+        border: isDarkMode ? '#444446' : '#f0f0f0',
+        wrapperBg: isDarkMode ? '#1c1c1e' : '#f8f9fa'
+    };
+
+    const fetchData = useCallback(async () => {
+        if (!user?._id) return; 
         try {
             setLoading(true);
-            // Calling the direct API endpoint for files
-            const response = await axios.get(`${BACKEND_URL}/api/files`); 
-            if (response.data.success && Array.isArray(response.data.files)) {
+            const response = await axios.get(`${BACKEND_URL}/api/files?all=true&userId=${user._id}`);
+            if (response.data.success) {
                 setUploadedFiles(response.data.files);
             }
         } catch (err) {
-            console.error(`Failed to load activity logs.`, err);
+            console.error("Fetch error:", err);
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [user?._id]);
 
-    useEffect(() => { fetchFiles(); }, [fetchFiles]);
+    useEffect(() => { fetchData(); }, [fetchData]);
 
-    /**
-     * Handle Star Click with Optimistic UI Update
-     */
-    const handleStarClick = async (file) => {
-        const newStarredStatus = !file.isStarred;
-
-        // 1. Optimistic Update: Update UI immediately
-        setUploadedFiles(prev => prev.map(f => 
-            f._id === file._id ? { ...f, isStarred: newStarredStatus } : f
-        ));
-
+    const handleViewFile = async (file) => {
+        if (!file.path) return;
         try {
-            // 2. Send request to backend via the Service
-            await toggleStarApi(file._id, 'files', newStarredStatus);
+            await axios.post(`${BACKEND_URL}/api/files/track-view`, { 
+                fileId: file._id, 
+                userId: user?._id 
+            });
+            const finalPath = file.path.startsWith('/uploads') ? file.path : `/uploads/${file.path}`;
+            window.open(`${BACKEND_URL}${finalPath.replace(/\\/g, '/')}`, '_blank');
+            fetchData();
         } catch (err) {
-            console.error("Failed to update star status", err);
-            // 3. Revert if server fails
-            fetchFiles(); 
+            console.error("Error opening file:", err);
         }
     };
 
-    const uniqueUsers = useMemo(() => {
-        const users = uploadedFiles.map(f => f.username || 'admin');
-        return ['All', ...new Set(users)];
+    const stats = useMemo(() => {
+        const totalFiles = uploadedFiles.length;
+        const totalSize = uploadedFiles.reduce((acc, f) => acc + (Number(f.size) || 0), 0);
+        const impCount = uploadedFiles.filter(f => f.isStarred).length;
+        
+        return {
+            totalFiles,
+            totalMB: (totalSize / (1024 * 1024)).toFixed(2),
+            impCount
+        };
     }, [uploadedFiles]);
 
-    const filteredFiles = uploadedFiles.filter((file) => {
-        const matchesName = file.originalName?.toLowerCase().includes(searchTerm.toLowerCase());
-        const matchesUser = userFilter === 'All' || (file.username || 'admin') === userFilter;
-        return matchesName && matchesUser;
-    });
-
-    const handleViewFile = (file) => {
-        if (!file.path) return;
-        const finalPath = file.path.startsWith('/uploads') ? file.path : `/uploads/${file.path}`;
-        window.open(`${BACKEND_URL}${finalPath.replace(/\\/g, '/')}`, '_blank'); 
-    };
-
-    const handleDelete = async (fileId, fileName) => {
-        if (window.confirm(`Delete ${fileName}?`)) {
-            try {
-                await axios.delete(`${BACKEND_URL}/api/files/${fileId}`, { data: { userId: user?._id } });
-                fetchFiles();
-            } catch (err) { alert("Delete failed."); }
-        }
-    };
-
-    if (loading) return <div className="p-5 text-center"><Spinner animation="grow" variant="primary" /></div>;
+    if (loading) return <div className="p-5 text-center"><Spinner animation="border" variant="primary" /></div>;
 
     return (
-        <div className="pb-5" style={{ 
-            minHeight: '100vh', 
-            backgroundColor: isDarkMode ? '#1a1a1a' : '#ffffff',
-            fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif'
-        }}> 
-            
-            <div className="container-fluid pt-4 px-4">
+        <div className="dashboard-wrapper pb-5" style={{ backgroundColor: theme.wrapperBg, minHeight: '100vh', color: theme.textMain }}> 
+            <div className="container-fluid px-4 pt-3">
                 
-                {/* --- TOP TITLE --- */}
-                <div className="mb-4">
-                    <h4 className={`fw-bold mb-0 ${textColor}`}>Activity Monitor</h4>
-                </div>
-
-                {/* --- CONTROLS SECTION --- */}
-                <div className="d-flex justify-content-between align-items-end mb-4">
-                    <div>
-                        <h5 className={`${textColor} fw-bold mb-0`}>Recent Activity Logs</h5>
-                        <p className="text-muted small mb-0">Overview of recent system uploads</p>
-                    </div>
-                    
-                    <div className="d-flex align-items-center gap-2">
-                        <div className="position-relative" style={{ width: '240px' }}>
-                            <Search 
-                                className="position-absolute top-50 translate-middle-y ms-3 text-muted" 
-                                style={{ left: '2px', zIndex: 5 }} 
-                                size={13} 
-                            />
-                            <FormControl 
-                                type="text" 
-                                placeholder="Search logs..." 
-                                className="ps-5 pe-4 rounded-pill border shadow-sm" 
-                                value={searchTerm} 
-                                onChange={(e) => setSearchTerm(e.target.value)} 
-                                style={{ 
-                                    fontSize: '0.8rem', 
-                                    height: '35px', 
-                                    backgroundColor: isDarkMode ? '#2c2c2c' : '#fff',
-                                    color: isDarkMode ? '#fff' : '#000'
-                                }} 
-                            />
-                            {searchTerm && (
-                                <X 
-                                    className="position-absolute top-50 translate-middle-y text-muted" 
-                                    style={{ right: '10px', cursor: 'pointer', zIndex: 5 }} 
-                                    size={16} 
-                                    onClick={() => setSearchTerm('')}
-                                />
-                            )}
-                        </div>
-
-                        <div className="d-flex align-items-center bg-light p-1 px-3 rounded-pill border shadow-sm" style={{ height: '35px' }}>
-                           <Filter size={14} className="text-muted me-2" />
-                           <Form.Select 
-                                size="sm" 
-                                className="border-0 bg-transparent shadow-none fw-bold" 
-                                style={{ width: '90px', fontSize: '0.75rem', cursor: 'pointer' }}
-                                value={userFilter}
-                                onChange={(e) => setUserFilter(e.target.value)}
-                            >
-                                {uniqueUsers.map(u => <option key={u} value={u}>{u}</option>)}
-                            </Form.Select>
-                        </div>
-
-                        <Button variant="outline-primary" size="sm" onClick={fetchFiles} className="rounded-pill px-3 shadow-sm border-0 bg-white text-primary fw-bold" style={{ height: '35px', fontSize: '0.8rem' }}>
-                            <ArrowClockwise className="me-1" /> Refresh
-                        </Button>
-                    </div>
-                </div>
-
-                {/* --- TABLE HEADER --- */}
-                <Row className="px-3 py-2 text-uppercase fw-bold text-muted border-bottom mx-0 mb-2 rounded" style={{ fontSize: '0.65rem', backgroundColor: headerBg, letterSpacing: '0.5px' }}>
-                    <Col xs={1}>#</Col>
-                    <Col xs={4}>Files Uploaded By</Col>
-                    <Col xs={2}>Internal Path</Col>
-                    <Col xs={1}>File Size</Col>
-                    <Col xs={2}>Log Date & Time</Col>
-                    <Col xs={1}>User</Col>
-                    <Col xs={1} className="text-center">Action</Col>
+                {/* Metric Cards */}
+                <Row className="mb-4 g-3">
+                    {[
+                        { label: 'My Total Files', val: stats.totalFiles, icon: <Database/>, color: 'primary' },
+                        { label: 'My Storage', val: `${stats.totalMB} MB`, icon: <Activity/>, color: 'success' },
+                        { label: 'Important', val: stats.impCount, icon: <BookmarkStarFill/>, color: 'warning' }
+                    ].map((card, i) => (
+                        <Col key={i} md={4}>
+                            <Card className="border-0 shadow-sm p-3" style={{ backgroundColor: theme.cardBg }}>
+                                <div className="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <div className="small fw-bold text-uppercase" style={{ color: theme.textMuted }}>{card.label}</div>
+                                        <h3 className="fw-bold mb-0">{card.val}</h3>
+                                    </div>
+                                    <div className={`icon-circle bg-${card.color}-soft text-${card.color}`}>{card.icon}</div>
+                                </div>
+                            </Card>
+                        </Col>
+                    ))}
                 </Row>
 
-                {/* --- DATA ROWS --- */}
-                <div className="activity-list">
-                    {filteredFiles.length > 0 ? (
-                        filteredFiles.map((file, index) => (
-                            <Row 
-                                key={file._id} 
-                                className="align-items-center px-3 py-3 mx-0 border-bottom mb-1 rounded" 
-                                style={{ 
-                                    backgroundColor: itemBg, 
-                                    fontSize: '0.85rem',
-                                    border: isDarkMode ? '1px solid #333' : '1px solid #eee'
-                                }}
-                            >
-                                <Col xs={1} className="text-muted small">{index + 1}</Col>
-                                
-                                <Col xs={4} className="d-flex align-items-center overflow-hidden">
+                {/* Main Content Area */}
+                <Row className="g-4 align-items-stretch">
+                    {/* LEFT COLUMN: RECENTLY VIEWED */}
+                    <Col lg={8} className="d-flex">
+                        <Card className="border-0 shadow-sm w-100" style={{ backgroundColor: theme.cardBg }}>
+                            <Card.Header className="bg-transparent border-0 pt-3">
+                                <h6 className="fw-bold" style={{ color: theme.textMain }}><Eye className="me-2 text-primary" /> My Recently Viewed</h6>
+                            </Card.Header>
+                            <Card.Body className="px-0 pt-0">
+                                {uploadedFiles.length > 0 ? uploadedFiles.slice(0, 8).map(file => (
                                     <div 
-                                        className="me-2" 
-                                        onClick={() => handleStarClick(file)} 
-                                        style={{ cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+                                        key={file._id} 
+                                        className="d-flex justify-content-between px-3 py-3 border-bottom hover-row" 
+                                        style={{ borderColor: theme.border, cursor: 'pointer' }}
+                                        onClick={() => handleViewFile(file)}
                                     >
-                                        {file.isStarred ? (
-                                            <StarFill size={14} color="#FFD700" />
-                                        ) : (
-                                            <Star size={14} className="text-muted" />
-                                        )}
+                                        <div className="d-flex align-items-center">
+                                            <FileEarmarkText className="me-3 text-primary" size={20} />
+                                            <div>
+                                                {/* Consistent Font: fw-semibold small */}
+                                                <div className="fw-semibold small" style={{ color: theme.textMain }}>{file.originalName}</div>
+                                                <div style={{ fontSize: '0.7rem', color: theme.textMuted }}>
+                                                    Accessed: {new Date(file.lastViewedAt || file.updatedAt).toLocaleString()}
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div className="small" style={{ color: theme.textMuted }}>{(file.size / 1024).toFixed(0)} KB</div>
                                     </div>
+                                )) : <div className="p-4 text-center" style={{ color: theme.textMuted }}>No activity found.</div>}
+                            </Card.Body>
+                        </Card>
+                    </Col>
 
-                                    <FileEarmarkText className="me-2 text-primary" size={18} />
-                                    <span className={`text-truncate fw-semibold ${textColor}`}>{file.originalName}</span>
-                                </Col>
-
-                                <Col xs={2} className="text-muted text-truncate small">{file.path || '/uploads/root'}</Col>
-                                <Col xs={1} className="text-muted small">{(file.size / 1024).toFixed(1)} KB</Col>
-                                <Col xs={2} className="text-muted" style={{ fontSize: '0.75rem' }}>
-                                    <ClockHistory size={12} className="me-1" />
-                                    {new Date(file.createdAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
-                                </Col>
-                                <Col xs={1}>
-                                    <Badge style={{ backgroundColor: '#0d6efd', color: 'white', padding: '5px 12px', borderRadius: '15px', fontWeight: '500', fontSize: '0.7rem' }}>
-                                        {file.username || 'admin'}
-                                    </Badge>
-                                </Col>
-                                <Col xs={1} className="text-center">
-                                    <div className="d-flex justify-content-center gap-2">
-                                        <Eye size={16} className="text-primary" style={{ cursor: 'pointer' }} onClick={() => handleViewFile(file)} />
-                                        <Trash size={16} className="text-danger" style={{ cursor: 'pointer' }} onClick={() => handleDelete(file._id, file.originalName)} />
+                    {/* RIGHT COLUMN: RECENT TRANSFERS */}
+                    <Col lg={4} className="d-flex">
+                        <Card className="border-0 shadow-sm w-100" style={{ backgroundColor: theme.cardBg }}>
+                            <Card.Header className="bg-transparent border-0 pt-3">
+                                <h6 className="fw-bold text-success"><ArrowLeftRight className="me-2" /> Recent My Transfers</h6>
+                            </Card.Header>
+                            <Card.Body className="pt-0">
+                                {uploadedFiles.length > 0 ? uploadedFiles.slice(0, 8).map(file => (
+                                    <div key={file._id} className="mb-3 p-2 rounded border" style={{ borderColor: theme.border }}>
+                                        <div className="d-flex justify-content-between align-items-center">
+                                            {/* Font Matched to Recently Viewed: fw-semibold small */}
+                                            <span className="fw-semibold small text-truncate" style={{ color: theme.textMain, maxWidth: '75%' }}>
+                                                {file.originalName}
+                                            </span>
+                                            <Badge bg="success" style={{ fontSize: '0.6rem' }}>DONE</Badge>
+                                        </div>
+                                        <div className="mt-1" style={{ fontSize: '0.65rem', color: theme.textMuted }}>
+                                            {new Date(file.createdAt).toLocaleDateString()} • {(file.size / 1024).toFixed(0)} KB
+                                        </div>
                                     </div>
-                                </Col>
-                            </Row>
-                        ))
-                    ) : (
-                        <div className={`text-center py-5 text-muted ${isDarkMode ? 'bg-dark' : 'bg-white'} border rounded`}>No matching logs found.</div>
-                    )}
-                </div>
+                                )) : <div className="text-center py-5 small" style={{ color: theme.textMuted }}>No transfers found.</div>}
+                            </Card.Body>
+                        </Card>
+                    </Col>
+                </Row>
             </div>
         </div>
     );
