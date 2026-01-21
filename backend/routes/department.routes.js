@@ -1,17 +1,12 @@
 const express = require("express");
 const router = express.Router();
-// const { protect } = require("../middleware/authMiddleware"); // Optional: if you have auth
+const departmentController = require("../controllers/department.controller");
 
-const {
-    createDepartment,
-    getAllDepartments,
-    toggleDepartmentStatus
-} = require("../controllers/department.controller");
+// Now we access functions through the departmentController object
+router.post("/", departmentController.createDepartment);
+router.get("/", departmentController.getAllDepartments);
 
-router.post("/", createDepartment);
-router.get("/", getAllDepartments);
-
-// PATCH: Requires Auth middleware to identify the user
-router.patch("/toggle-status/:id", toggleDepartmentStatus);
+// PATCH: Toggle status
+router.patch("/toggle-status/:id", departmentController.toggleDepartmentStatus);
 
 module.exports = router;

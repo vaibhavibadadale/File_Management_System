@@ -1,11 +1,11 @@
-import Transfer from "../models/Transfer.js";
-import DeleteRequest from "../models/DeleteRequest.js";
-import File from "../models/File.js";
-import User from "../models/User.js";
-import Department from "../models/Department.js";
-import Notification from "../models/Notification.js";
-import Trash from "../models/Trash.js";
-import mongoose from "mongoose";
+const Transfer = require("../models/Transfer");
+const DeleteRequest = require("../models/DeleteRequest");
+const File = require("../models/File");
+const User = require("../models/User");
+const Department = require("../models/Department");
+const Notification = require("../models/Notification");
+const Trash = require("../models/Trash");
+const mongoose = require("mongoose");
 
 // --- HELPERS ---
 async function handleMoveToTrash(files, sender, approver, deptId) {
@@ -31,7 +31,7 @@ async function handleMoveToTrash(files, sender, approver, deptId) {
 
 // --- CONTROLLERS ---
 
-export const createRequest = async (req, res) => {
+exports.createRequest = async (req, res) => {
     try {
         const { senderUsername, recipientId, fileIds, reason, requestType } = req.body;
 
@@ -78,63 +78,57 @@ export const createRequest = async (req, res) => {
 
         await newRequest.save();
 
-if (isAutoApprove) {
-    if (requestType === "delete") {
-        await handleMoveToTrash(fileIds, senderUsername, `AUTO-${sRole}`, finalDeptId);
-    } else if (newRequest.recipientId) {
-        await File.updateMany({ _id: { $in: fileIds } }, { $addToSet: { sharedWith: newRequest.recipientId } });
-    }
-} else {
-    // PASTE THE NOTIFICATION ENGINE HERE
-    try {
-        const hodeDeptId = finalDeptId ? new mongoose.Types.ObjectId(finalDeptId) : null;
+        if (isAutoApprove) {
+            if (requestType === "delete") {
+                await handleMoveToTrash(fileIds, senderUsername, `AUTO-${sRole}`, finalDeptId);
+            } else if (newRequest.recipientId) {
+                await File.updateMany({ _id: { $in: fileIds } }, { $addToSet: { sharedWith: newRequest.recipientId } });
+            }
+        } else {
+            try {
+                const hodeDeptId = finalDeptId ? new mongoose.Types.ObjectId(finalDeptId) : null;
+                const staffToNotify = await User.find({
+                    $or: [
+                        { role: { $in: ['ADMIN', 'SUPERADMIN'] } },
+                        { role: 'HOD', departmentId: hodeDeptId }
+                    ],
+                    deletedAt: null
+                });
 
-        const staffToNotify = await User.find({
-            $or: [
-                { role: { $in: ['ADMIN', 'SUPERADMIN'] } },
-                { role: 'HOD', departmentId: hodeDeptId }
-            ],
-            deletedAt: null
-        });
+                // --- FIX: Filter for unique User IDs only ---
+                const uniqueStaff = Array.from(
+                    new Map(staffToNotify.map(user => [user._id.toString(), user])).values()
+                );
 
-        const notificationEntries = staffToNotify
-            .filter(u => u.username !== senderUsername)
-            .map(u => ({
-                recipientId: u._id,
-                targetRoles: ['ADMIN', 'SUPERADMIN', 'HOD'],
-                department: sDeptName, // Match the string filtering in your Notification Controller
-                departmentId: finalDeptId, 
-                title: `New ${requestType.toUpperCase()} Request`,
-                message: `${senderUsername} (${sDeptName}) requested a ${requestType}.`,
-                type: requestType === 'delete' ? 'DELETE_REQUEST' : 'TRANSFER_REQUEST',
-                isRead: false
-            }));
+                const notificationEntries = uniqueStaff
+                    .filter(u => u.username !== senderUsername)
+                    .map(u => ({
+                        recipientId: u._id,
+                        targetRoles: ['ADMIN', 'SUPERADMIN', 'HOD'],
+                        department: sDeptName,
+                        departmentId: finalDeptId, 
+                        title: `New ${requestType.toUpperCase()} Request`,
+                        message: `${senderUsername} (${sDeptName}) requested a ${requestType}.`,
+                        type: requestType === 'delete' ? 'DELETE_REQUEST' : 'TRANSFER_REQUEST',
+                        isRead: false
+                    }));
 
-        if (notificationEntries.length > 0) {
-            await Notification.insertMany(notificationEntries);
-            console.log(`✅ Notifications sent to ${notificationEntries.length} staff members.`);
+                if (notificationEntries.length > 0) {
+                    await Notification.insertMany(notificationEntries);
+                }
+            } catch (nErr) { console.error("❌ Notification Engine Error:", nErr); }
         }
-    } catch (nErr) { 
-        console.error("❌ Notification Engine Error:", nErr); 
-    }
-}
-
-// Final response at the very end of the function
-res.status(201).json({ message: "Success", data: newRequest });
-    } catch (err) { 
-        res.status(500).json({ error: err.message }); 
-    }
+        res.status(201).json({ message: "Success", data: newRequest });
+    } catch (err) { res.status(500).json({ error: err.message }); }
 };
-// 2. GET DASHBOARD
-export const getPendingDashboard = async (req, res) => {
+
+exports.getPendingDashboard = async (req, res) => {
     try {
         const { role, username, departmentId, search = "", pPage = 1, hPage = 1, limit = 5 } = req.query;
         const roleUpper = role?.toUpperCase();
         const searchRegex = new RegExp(search, "i");
-
         let filter = {};
 
-        // 1. ROLE-BASED FILTERING
         if (roleUpper === "SUPERADMIN" || roleUpper === "ADMIN") {
             filter = {}; 
         } else if (roleUpper === "HOD" && departmentId) {
@@ -149,7 +143,6 @@ export const getPendingDashboard = async (req, res) => {
             filter = { senderUsername: username };
         }
 
-        // 2. SEARCH LOGIC
         if (search) {
             filter = { 
                 ...filter, 
@@ -161,57 +154,31 @@ export const getPendingDashboard = async (req, res) => {
             };
         }
 
-        // 3. FETCH DATA (Fetch everything to filter by status)
         const [transfers, deletes] = await Promise.all([
             Transfer.find(filter).populate("fileIds").lean(),
             DeleteRequest.find(filter).populate("fileIds").lean()
         ]);
 
         const combined = [...transfers, ...deletes];
+        const mainRequests = combined.filter(r => r.status === "pending").sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+        const logs = combined.filter(r => r.status !== "pending").sort((a, b) => new Date(b.updatedAt || b.createdAt) - new Date(a.updatedAt || a.createdAt));
 
-        // 4. SEPARATE BY STATUS
-        const mainRequests = combined
-            .filter(r => r.status === "pending")
-            .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-
-        const logs = combined
-            .filter(r => r.status !== "pending")
-            .sort((a, b) => new Date(b.updatedAt || b.createdAt) - new Date(a.updatedAt || a.createdAt));
-
-        // 5. PAGINATION CALCULATIONS
         const pLimit = parseInt(limit);
-        const currentPageP = parseInt(pPage);
-        const currentPageH = parseInt(hPage);
+        const pStart = (parseInt(pPage) - 1) * pLimit;
+        const hStart = (parseInt(hPage) - 1) * pLimit;
 
-        const pStart = (currentPageP - 1) * pLimit;
-        const hStart = (currentPageH - 1) * pLimit;
-
-        // 6. FINAL RESPONSE
         res.json({
-            // Slice the data for the current page
-            mainRequests: mainRequests.slice(pStart, pStart + pLimit).map(r => ({
-                ...r, 
-                isActionable: r.senderUsername !== username
-             })),
+            mainRequests: mainRequests.slice(pStart, pStart + pLimit).map(r => ({ ...r, isActionable: r.senderUsername !== username })),
             logs: logs.slice(hStart, hStart + pLimit),
-
-            // Total counts for labels
             totalPending: mainRequests.length,
             totalHistory: logs.length,
-
-            // CALCULATE TOTAL PAGES (Crucial for fixing the NaN issue)
             pendingTotalPages: Math.ceil(mainRequests.length / pLimit) || 1,
             historyTotalPages: Math.ceil(logs.length / pLimit) || 1
         });
-
-    } catch (err) { 
-        console.error("Dashboard Error:", err);
-        res.status(500).json({ error: err.message }); 
-    }
+    } catch (err) { res.status(500).json({ error: err.message }); }
 };
 
-// 3. APPROVE REQUEST
-export const approveRequest = async (req, res) => {
+exports.approveRequest = async (req, res) => {
     try {
         const { id } = req.params;
         const { approverUsername } = req.body;
@@ -225,15 +192,13 @@ export const approveRequest = async (req, res) => {
             await handleMoveToTrash(request.fileIds, request.senderUsername, approverUsername, request.departmentId);
         } else {
             const idsOnly = request.fileIds.map(f => f._id);
-            await File.updateMany(
-                { _id: { $in: idsOnly } }, 
-                { $addToSet: { sharedWith: request.recipientId } }
-            );
+            await File.updateMany({ _id: { $in: idsOnly } }, { $addToSet: { sharedWith: request.recipientId } });
         }
 
         request.status = "completed";
         await request.save();
 
+        // 1. Notify Sender
         const sender = await User.findOne({ username: request.senderUsername });
         if (sender) {
             await Notification.create({
@@ -245,21 +210,35 @@ export const approveRequest = async (req, res) => {
             });
         }
 
+        // 2. Notify Admins
+        const admins = await User.find({ role: { $in: ['ADMIN', 'SUPERADMIN'] }, deletedAt: null });
+        const adminNotifications = admins
+            .filter(admin => admin.username !== approverUsername)
+            .map(admin => ({
+                recipientId: admin._id,
+                targetRoles: ['ADMIN', 'SUPERADMIN'],
+                title: 'Request Approved',
+                message: `${approverUsername} approved a ${request.requestType} request from ${request.senderUsername}.`,
+                type: 'ADMIN_ACTION_ALERT',
+                isRead: false
+            }));
+        if (adminNotifications.length > 0) await Notification.insertMany(adminNotifications);
+
         res.json({ message: "Approved successfully" });
     } catch (err) { res.status(500).json({ error: err.message }); }
 };
 
-// 4. DENY REQUEST
-export const denyRequest = async (req, res) => {
+exports.denyRequest = async (req, res) => {
     try {
         const { id } = req.params;
-        const { denialComment } = req.body;
+        const { denialComment, approverUsername } = req.body;
 
         const request = await Transfer.findByIdAndUpdate(id, { status: "denied", denialComment }, { new: true }) || 
                         await DeleteRequest.findByIdAndUpdate(id, { status: "denied", denialComment }, { new: true });
 
         if (!request) return res.status(404).json({ message: "Request not found" });
 
+        // 1. Notify Sender
         const sender = await User.findOne({ username: request.senderUsername });
         if (sender) {
             await Notification.create({
@@ -270,12 +249,26 @@ export const denyRequest = async (req, res) => {
                 isRead: false
             });
         }
+
+        // 2. Notify Admins
+        const admins = await User.find({ role: { $in: ['ADMIN', 'SUPERADMIN'] }, deletedAt: null });
+        const adminNotifications = admins
+            .filter(admin => admin.username !== approverUsername)
+            .map(admin => ({
+                recipientId: admin._id,
+                targetRoles: ['ADMIN', 'SUPERADMIN'],
+                title: 'Request Denied',
+                message: `${approverUsername} denied a request from ${request.senderUsername}. Reason: ${denialComment}`,
+                type: 'ADMIN_ACTION_ALERT',
+                isRead: false
+            }));
+        if (adminNotifications.length > 0) await Notification.insertMany(adminNotifications);
+
         res.json({ message: "Denied successfully" });
     } catch (err) { res.status(500).json({ error: err.message }); }
 };
 
-// 5. TRASH ITEMS
-export const getTrashItems = async (req, res) => {
+exports.getTrashItems = async (req, res) => {
     try {
         const { role, departmentId } = req.query;
         let query = {};
@@ -287,46 +280,33 @@ export const getTrashItems = async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 };
 
-// 6. RESTORE
-export const restoreFromTrash = async (req, res) => {
+exports.restoreFromTrash = async (req, res) => {
     try {
         const item = await Trash.findById(req.params.id);
         if (!item) return res.status(404).json({ message: "Trash item not found" });
-
         const data = item.toObject();
         const originalId = data.originalFileId;
-
-        delete data._id;
-        delete data.deletedAt;
-        delete data.originalFileId;
-        delete data.departmentName;
-        delete data.approvedBy;
-        delete data.deletedBy;
-
+        delete data._id; delete data.deletedAt; delete data.originalFileId; delete data.departmentName; delete data.approvedBy; delete data.deletedBy;
         await File.create({ ...data, _id: originalId });
         await Trash.findByIdAndDelete(req.params.id);
-
         res.json({ message: "File restored successfully" });
     } catch (err) { res.status(500).json({ error: err.message }); }
 };
 
-// 7. PERMANENT DELETE
-export const permanentDelete = async (req, res) => {
+exports.permanentDelete = async (req, res) => {
     try {
         await Trash.findByIdAndDelete(req.params.id);
         res.json({ message: "File permanently deleted" });
     } catch (err) { res.status(500).json({ error: err.message }); }
 };
 
-// 8. STATS
-export const getDashboardStats = async (req, res) => {
+exports.getDashboardStats = async (req, res) => {
     try {
         const { role, departmentId } = req.query;
         let query = {};
         if (role?.toUpperCase() === "HOD" && departmentId) {
             query = { departmentId: new mongoose.Types.ObjectId(departmentId) };
         }
-        
         const [pending, completed, denied] = await Promise.all([
             Transfer.countDocuments({ ...query, status: "pending" }),
             Transfer.countDocuments({ ...query, status: "completed" }),
