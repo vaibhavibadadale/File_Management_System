@@ -5,9 +5,9 @@ const mongoose = require("mongoose");
 const Notification = require("../models/Notification");
 
 // 1. CREATE USER
+// 1. CREATE USER
 exports.createUser = async (req, res) => {
     try {
-        // 1. Destructure ALL required fields from req.body
         const { 
             username, 
             password, 
@@ -16,10 +16,10 @@ exports.createUser = async (req, res) => {
             department, 
             name, 
             email, 
-            employeeId 
+            employeeId,
+            createdByUsername // Make sure frontend sends this in the req.body
         } = req.body;
 
-        // 2. Check for existing user to prevent E11000 duplicate error
         const existingUser = await User.findOne({ 
             $or: [{ email }, { employeeId }, { username }] 
         });
@@ -30,7 +30,6 @@ exports.createUser = async (req, res) => {
             });
         }
 
-        // 3. Create the new user object
         const newUser = new User({ 
             username, 
             password, 
@@ -44,18 +43,23 @@ exports.createUser = async (req, res) => {
 
         await newUser.save();
 
-        // 4. Notification Logic
+        // Fetch potential administrators to notify
         const admins = await User.find({ 
             role: { $in: ['Admin', 'SuperAdmin', 'ADMIN', 'SUPERADMIN'] },
             deletedAt: null 
         });
 
-        if (admins.length > 0) {
-            const notificationEntries = admins.map(admin => ({
+        // FIX: Use a Map to ensure unique recipient IDs and filter out the creator
+        const uniqueAdmins = Array.from(
+            new Map(admins.map(admin => [admin._id.toString(), admin])).values()
+        ).filter(admin => admin.username !== createdByUsername);
+
+        if (uniqueAdmins.length > 0) {
+            const notificationEntries = uniqueAdmins.map(admin => ({
                 recipientId: admin._id,
                 targetRoles: ['ADMIN', 'SUPERADMIN'],
                 title: "New User Created",
-                message: `User "${username}" has been added by the system.`,
+                message: `User "${username}" has been added to the system.`,
                 type: "USER_CREATED", 
                 isRead: false
             }));
@@ -63,12 +67,12 @@ exports.createUser = async (req, res) => {
         }
 
         res.status(201).json({ message: "User created successfully", user: newUser });
-
     } catch (err) {
         console.error("Registration Error:", err);
         res.status(500).json({ error: err.message });
     }
 };
+
 // 2. VERIFY PASSWORD
 exports.verifyPassword = async (req, res) => {
     try {
@@ -83,23 +87,19 @@ exports.verifyPassword = async (req, res) => {
     }
 };
 
-// 3. LOGIN (FIXED: Returns department name so files are visible)
+// 3. LOGIN
 exports.login = async (req, res) => {
     try {
         const { username, password, department } = req.body;
-        
-        // Populate departmentId to get the name
         const user = await User.findOne({ username, deletedAt: null }).populate("departmentId");
         
         if (!user || user.password !== password) {
             return res.status(401).json({ message: "Invalid username or password" });
         }
 
-        // Get the string name of the department
         const userDeptName = user.departmentId?.departmentName || user.department;
-
-        // Validate department for Employee/HOD
         const role = (user.role || "").toLowerCase();
+
         if (role === "employee" || role === "hod") {
             if (userDeptName !== department) {
                 return res.status(401).json({ 
@@ -108,8 +108,6 @@ exports.login = async (req, res) => {
             }
         }
 
-        // IMPORTANT: Send back 'department' string AND 'departmentId' 
-        // to ensure frontend file filters still work!
         res.json({ 
             _id: user._id, 
             username: user.username, 
@@ -146,10 +144,10 @@ exports.getUsersByDepartment = async (req, res) => {
             ]
         }).lean();
 
-        const hodsOnly = allUsers.filter(u => u.role?.toUpperCase() === "HOD");
-        const employeesOnly = allUsers.filter(u => u.role?.toUpperCase() === "EMPLOYEE");
-
-        res.json({ hods: hodsOnly, employees: employeesOnly });
+        res.json({ 
+            hods: allUsers.filter(u => u.role?.toUpperCase() === "HOD"), 
+            employees: allUsers.filter(u => u.role?.toUpperCase() === "EMPLOYEE") 
+        });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -173,15 +171,13 @@ exports.toggleUserStatus = async (req, res) => {
     } catch (error) { res.status(500).json({ error: error.message }); }
 };
 
-// 8. GET USER FILES
+// 8. GET USER FILES (FS Logic)
 exports.getUserFiles = async (req, res) => {
     try {
         const { username } = req.params;
         const folderPath = path.join(__dirname, "..", "uploads", username);
         
-        if (!fs.existsSync(folderPath)) {
-            return res.status(200).json([]); 
-        }
+        if (!fs.existsSync(folderPath)) return res.status(200).json([]); 
 
         const filenames = fs.readdirSync(folderPath);
         const filesWithMetadata = filenames.map(file => {
@@ -210,15 +206,14 @@ exports.softDeleteUser = async (req, res) => {
         const admins = await User.find({ role: { $in: ['ADMIN', 'SUPERADMIN'] }, deletedAt: null });
         const notifications = admins.map(admin => ({
             recipientId: admin._id,
+            targetRoles: ['ADMIN', 'SUPERADMIN'],
             title: "User Account Removed",
             message: `The user account "${userToDelete.username}" has been deactivated.`,
             type: "USER_DELETED",
             isRead: false
         }));
         
-        if (notifications.length > 0) {
-            await Notification.insertMany(notifications);
-        }
+        if (notifications.length > 0) await Notification.insertMany(notifications);
 
         res.json({ message: "Deleted" });
     } catch (error) { res.status(500).json({ error: error.message }); }

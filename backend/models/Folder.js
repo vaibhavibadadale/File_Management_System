@@ -8,7 +8,6 @@ const FolderSchema = new mongoose.Schema(
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
     parentFolderId: { type: mongoose.Schema.Types.ObjectId, ref: "Folder", default: null },
     path: { type: String },
-    // Array of User IDs who have been granted access via transfer
     sharedWith: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }], 
     isStarred: { type: Boolean, default: false },
     deletedAt: { type: Date, default: null }

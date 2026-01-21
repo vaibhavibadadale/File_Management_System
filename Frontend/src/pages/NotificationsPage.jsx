@@ -83,11 +83,12 @@ const NotificationsPage = ({ user, currentTheme }) => {
 };
 
   // DELETE ALL (Clears list and stays on current page)
+  // DELETE ALL (Permanently removes from DB)
   const handleDeleteAll = async () => {
     const result = await Swal.fire({
       ...swalConfig,
       title: 'Delete all notifications?',
-      text: "This will clear your current notification list.",
+      text: "This will permanently clear your notification history.",
       icon: 'warning',
       showCancelButton: true,
       confirmButtonColor: '#d33',
@@ -97,14 +98,20 @@ const NotificationsPage = ({ user, currentTheme }) => {
 
     if (result.isConfirmed) {
       try {
-        await axios.post("http://localhost:5000/api/notifications/mark-all-read", {
-          userId: user?._id,
-          role: user?.role
+        // Change from .post to .delete and use the new endpoint
+        await axios.delete(`http://localhost:5000/api/notifications/delete-all`, {
+          params: { 
+            userId: user?._id, 
+            role: user?.role,
+            department: user?.department // Important for HOD filtering
+          }
         });
+        
         setNotifications([]); // UI clears instantly
         Swal.fire({ ...swalConfig, title: 'Deleted!', icon: 'success', timer: 1500, showConfirmButton: false });
       } catch (err) {
         console.error("Delete error:", err);
+        Swal.fire({ ...swalConfig, title: 'Error', text: 'Could not delete notifications.', icon: 'error' });
       }
     }
   };

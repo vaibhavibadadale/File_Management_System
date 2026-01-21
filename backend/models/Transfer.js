@@ -30,4 +30,4 @@ const transferSchema = new mongoose.Schema(
 );
 
 // Forces connection to the specific collection 'transferrequests'
-module.exports = mongoose.model("Transfer", transferSchema, "transferrequests");
+module.exports = mongoose.models.Transfer || mongoose.model("Transfer", transferSchema, "transferrequests");
