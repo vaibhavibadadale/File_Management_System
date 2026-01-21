@@ -1,6 +1,7 @@
 const Transfer = require("../models/Transfer");
 const DeleteRequest = require("../models/DeleteRequest");
 const File = require("../models/File");
+const Folder = require("../models/Folder");
 const User = require("../models/User");
 const Department = require("../models/Department");
 const Notification = require("../models/Notification");
@@ -8,28 +9,70 @@ const Trash = require("../models/Trash");
 const mongoose = require("mongoose");
 
 // --- HELPERS ---
+
+/**
+ * Moves files to Trash collection and removes from File collection
+ */
 async function handleMoveToTrash(files, sender, approver, deptId) {
-    for (const file of files) {
-        let fileData = typeof file === 'string' ? await File.findById(file) : file;
+    for (const fileId of files) {
+        let fileData = await File.findById(fileId);
         if (!fileData) continue;
+
         const dept = await Department.findById(deptId);
+        
         await Trash.create({
-            originalName: fileData.originalName || "Unnamed File",
+            originalName: fileData.originalName || fileData.name || "Unnamed File",
             path: fileData.path,
             size: fileData.size,
-            mimetype: fileData.mimetype,
+            mimetype: fileData.mimetype || fileData.mimeType,
             originalFileId: fileData._id,
             deletedBy: sender,
             approvedBy: approver,
             departmentId: deptId,
-            departmentName: dept?.departmentName || "General",
-            deletedAt: new Date()
+            departmentName: dept?.departmentName || dept?.name || "General",
+            deletedAt: new Date(),
+            reason: "Approved Request"
         });
+        
         await File.findByIdAndDelete(fileData._id);
     }
 }
 
+/**
+ * UPDATED: Changes owner to recipient but keeps sender in shared list
+ * This ensures BOTH can see the file.
+ */
+async function handleOwnershipTransfer(fileIds, recipientId, senderUsername) {
+    if (!recipientId) return;
+    const idsOnly = fileIds.map(f => (f._id ? f._id : f));
+    
+    // Find the sender user object to get their ID
+    const senderUser = await User.findOne({ username: senderUsername });
+    const senderId = senderUser ? senderUser._id : null;
+
+    // Update Files: 
+    // 1. Set Recipient as the main owner (uploadedBy/userId)
+    // 2. Add BOTH recipient and sender to sharedWith array to ensure mutual visibility
+    const updateOps = {
+        $set: { userId: recipientId, uploadedBy: recipientId },
+        $addToSet: { sharedWith: recipientId }
+    };
+
+    if (senderId) {
+        updateOps.$addToSet.sharedWith = { $each: [recipientId, senderId] };
+    }
+
+    await File.updateMany({ _id: { $in: idsOnly } }, updateOps);
+
+    // Update Folders similarly
+    await Folder.updateMany(
+        { _id: { $in: idsOnly } },
+        updateOps
+    );
+}
+
 // --- CONTROLLERS ---
+
 exports.createRequest = async (req, res) => {
     try {
         const { senderUsername, recipientId, fileIds, reason, requestType } = req.body;
@@ -41,8 +84,8 @@ exports.createRequest = async (req, res) => {
         const sUser = await User.findOne({ username: senderUsername }).populate('departmentId');
         if (!sUser) return res.status(404).json({ error: "Sender user not found." });
 
-        const finalDeptId = sUser.departmentId?._id || null;
-        const sDeptName = sUser.departmentId?.departmentName || "General";
+        const finalDeptId = sUser.departmentId?._id || sUser.departmentId;
+        const sDeptName = sUser.departmentId?.departmentName || sUser.departmentId?.name || "General";
         const sRole = sUser.role?.toUpperCase() || "USER";
 
         const isAutoApprove = (sRole === "SUPERADMIN" || sRole === "ADMIN");
@@ -53,7 +96,7 @@ exports.createRequest = async (req, res) => {
             if (rUser) {
                 rName = rUser.username;
                 rRole = rUser.role || "USER";
-                rDeptName = rUser.departmentId?.departmentName || "General";
+                rDeptName = rUser.departmentId?.departmentName || rUser.departmentId?.name || "General";
             }
         }
 
@@ -71,9 +114,15 @@ exports.createRequest = async (req, res) => {
             status: isAutoApprove ? "completed" : "pending"
         };
 
-        let newRequest = (requestType === "delete") 
-            ? new DeleteRequest(commonData) 
-            : new Transfer({ ...commonData, recipientId: mongoose.Types.ObjectId.isValid(recipientId) ? recipientId : null });
+        let newRequest;
+        if (requestType === "delete") {
+            newRequest = new DeleteRequest(commonData);
+        } else {
+            newRequest = new Transfer({ 
+                ...commonData, 
+                recipientId: mongoose.Types.ObjectId.isValid(recipientId) ? recipientId : null 
+            });
+        }
 
         await newRequest.save();
 
@@ -81,39 +130,31 @@ exports.createRequest = async (req, res) => {
             if (requestType === "delete") {
                 await handleMoveToTrash(fileIds, senderUsername, `AUTO-${sRole}`, finalDeptId);
             } else if (newRequest.recipientId) {
-                await File.updateMany({ _id: { $in: fileIds } }, { $addToSet: { sharedWith: newRequest.recipientId } });
+                // Pass senderUsername to helper to maintain visibility
+                await handleOwnershipTransfer(fileIds, newRequest.recipientId, senderUsername);
             }
         } else {
             try {
-                const hodeDeptId = finalDeptId ? new mongoose.Types.ObjectId(finalDeptId) : null;
                 const staffToNotify = await User.find({
                     $or: [
                         { role: { $in: ['ADMIN', 'SUPERADMIN', 'Admin', 'SuperAdmin'] } },
-                        { role: 'HOD', departmentId: hodeDeptId }
+                        { role: 'HOD', departmentId: finalDeptId }
                     ],
                     deletedAt: null
                 });
 
-                // FIX: Unique Staff AND STRICTLY FILTER OUT the sender (Stops HOD getting own request)
-                const uniqueStaff = Array.from(
-                    new Map(staffToNotify.map(user => [user._id.toString(), user])).values()
-                ).filter(u => u.username !== senderUsername); // Stops self-notification
+                const notificationEntries = staffToNotify
+                    .filter(u => u.username !== senderUsername)
+                    .map(u => ({
+                        recipientId: u._id,
+                        title: `New ${requestType.toUpperCase()} Request`,
+                        message: `${senderUsername} (${sDeptName}) requested a ${requestType}.`,
+                        type: requestType === 'delete' ? 'DELETE_REQUEST' : 'TRANSFER_REQUEST',
+                        isRead: false
+                    }));
 
-                const notificationEntries = uniqueStaff.map(u => ({
-                    recipientId: u._id,
-                    targetRoles: ['ADMIN', 'SUPERADMIN', 'HOD'],
-                    department: sDeptName,
-                    departmentId: finalDeptId, 
-                    title: `New ${requestType.toUpperCase()} Request`,
-                    message: `${senderUsername} (${sDeptName}) requested a ${requestType}.`,
-                    type: requestType === 'delete' ? 'DELETE_REQUEST' : 'TRANSFER_REQUEST',
-                    isRead: false
-                }));
-
-                if (notificationEntries.length > 0) {
-                    await Notification.insertMany(notificationEntries);
-                }
-            } catch (nErr) { console.error("❌ Notification Engine Error:", nErr); }
+                if (notificationEntries.length > 0) await Notification.insertMany(notificationEntries);
+            } catch (nErr) { console.error("Notification Error:", nErr); }
         }
         res.status(201).json({ message: "Success", data: newRequest });
     } catch (err) { res.status(500).json({ error: err.message }); }
@@ -121,38 +162,28 @@ exports.createRequest = async (req, res) => {
 
 exports.getPendingDashboard = async (req, res) => {
     try {
-        const { role, username, departmentId, search = "", pPage = 1, hPage = 1, limit = 5 } = req.query;
+        const { role, username, departmentId, search = "", pPage = 1, hPage = 1, limit = 10 } = req.query;
         const roleUpper = role?.toUpperCase();
         const searchRegex = new RegExp(search, "i");
+        
         let filter = {};
-
-        if (roleUpper === "SUPERADMIN" || roleUpper === "ADMIN") {
-            filter = {}; 
-        } else if (roleUpper === "HOD" && departmentId) {
-            const deptObjectId = new mongoose.Types.ObjectId(departmentId);
+        if (roleUpper === "HOD" && departmentId) {
             filter = { 
                 $or: [
-                    { departmentId: deptObjectId, senderRole: { $in: ["EMPLOYEE", "USER"] } }, 
+                    { departmentId: departmentId, senderRole: { $in: ["EMPLOYEE", "USER"] } }, 
                     { senderUsername: username }
                 ] 
             };
-        } else {
+        } else if (roleUpper !== "SUPERADMIN" && roleUpper !== "ADMIN") {
             filter = { senderUsername: username };
         }
 
         if (search) {
-            filter = { 
-                ...filter, 
-                $or: [
-                    { senderUsername: searchRegex }, 
-                    { reason: searchRegex }, 
-                    { receiverName: searchRegex }
-                ] 
-            };
+            filter.reason = searchRegex;
         }
 
         const [transfers, deletes] = await Promise.all([
-            Transfer.find(filter).populate("fileIds").lean(),
+            Transfer.find(filter).populate("fileIds").populate("recipientId", "username").lean(),
             DeleteRequest.find(filter).populate("fileIds").lean()
         ]);
 
@@ -180,22 +211,19 @@ exports.approveRequest = async (req, res) => {
         const { id } = req.params;
         const { approverUsername } = req.body;
 
-        const request = await Transfer.findById(id).populate("fileIds") || 
-                        await DeleteRequest.findById(id).populate("fileIds");
-        
+        const request = await Transfer.findById(id) || await DeleteRequest.findById(id);
         if (!request) return res.status(404).json({ message: "Request not found" });
 
         if (request.requestType === "delete") {
             await handleMoveToTrash(request.fileIds, request.senderUsername, approverUsername, request.departmentId);
         } else {
-            const idsOnly = request.fileIds.map(f => f._id);
-            await File.updateMany({ _id: { $in: idsOnly } }, { $addToSet: { sharedWith: request.recipientId } });
+            // Update: Ensuring both sender and receiver have access
+            await handleOwnershipTransfer(request.fileIds, request.recipientId, request.senderUsername);
         }
 
         request.status = "completed";
         await request.save();
 
-        // 1. Notify Sender
         const sender = await User.findOne({ username: request.senderUsername });
         if (sender) {
             await Notification.create({
@@ -207,19 +235,15 @@ exports.approveRequest = async (req, res) => {
             });
         }
 
-        // 2. Notify Admins
-        const admins = await User.find({ role: { $in: ['ADMIN', 'SUPERADMIN'] }, deletedAt: null });
-        const adminNotifications = admins
-            .filter(admin => admin.username !== approverUsername)
-            .map(admin => ({
-                recipientId: admin._id,
-                targetRoles: ['ADMIN', 'SUPERADMIN'],
-                title: 'Request Approved',
-                message: `${approverUsername} approved a ${request.requestType} request from ${request.senderUsername}.`,
-                type: 'ADMIN_ACTION_ALERT',
+        if (request.recipientId) {
+            await Notification.create({
+                recipientId: request.recipientId,
+                title: 'Files Received',
+                message: `You have received new files from ${request.senderUsername}.`,
+                type: 'FILES_RECEIVED',
                 isRead: false
-            }));
-        if (adminNotifications.length > 0) await Notification.insertMany(adminNotifications);
+            });
+        }
 
         res.json({ message: "Approved successfully" });
     } catch (err) { res.status(500).json({ error: err.message }); }
@@ -235,7 +259,6 @@ exports.denyRequest = async (req, res) => {
 
         if (!request) return res.status(404).json({ message: "Request not found" });
 
-        // 1. Notify Sender
         const sender = await User.findOne({ username: request.senderUsername });
         if (sender) {
             await Notification.create({
@@ -246,22 +269,33 @@ exports.denyRequest = async (req, res) => {
                 isRead: false
             });
         }
-
-        // 2. Notify Admins
-        const admins = await User.find({ role: { $in: ['ADMIN', 'SUPERADMIN'] }, deletedAt: null });
-        const adminNotifications = admins
-            .filter(admin => admin.username !== approverUsername)
-            .map(admin => ({
-                recipientId: admin._id,
-                targetRoles: ['ADMIN', 'SUPERADMIN'],
-                title: 'Request Denied',
-                message: `${approverUsername} denied a request from ${request.senderUsername}. Reason: ${denialComment}`,
-                type: 'ADMIN_ACTION_ALERT',
-                isRead: false
-            }));
-        if (adminNotifications.length > 0) await Notification.insertMany(adminNotifications);
-
         res.json({ message: "Denied successfully" });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+};
+
+/**
+ * UPDATED: Fetches files where user is either the owner OR in the shared list.
+ * This makes transferred files stay visible for the sender.
+ */
+exports.getReceivedFiles = async (req, res) => {
+    try {
+        const { userId } = req.query;
+        if (!userId) return res.status(400).json({ error: "User ID is required" });
+
+        const filter = {
+            $or: [
+                { userId: userId },
+                { uploadedBy: userId },
+                { sharedWith: userId } // Visibility for both sender/receiver
+            ]
+        };
+
+        const [files, folders] = await Promise.all([
+            File.find(filter).lean(),
+            Folder.find(filter).lean()
+        ]);
+
+        res.json({ files, folders });
     } catch (err) { res.status(500).json({ error: err.message }); }
 };
 
@@ -270,7 +304,7 @@ exports.getTrashItems = async (req, res) => {
         const { role, departmentId } = req.query;
         let query = {};
         if (role?.toUpperCase() === "HOD" || role?.toUpperCase() === "EMPLOYEE") {
-            query = { departmentId: new mongoose.Types.ObjectId(departmentId) };
+            query = { departmentId: departmentId };
         }
         const items = await Trash.find(query).sort({ deletedAt: -1 });
         res.json(items);
@@ -283,7 +317,10 @@ exports.restoreFromTrash = async (req, res) => {
         if (!item) return res.status(404).json({ message: "Trash item not found" });
         const data = item.toObject();
         const originalId = data.originalFileId;
-        delete data._id; delete data.deletedAt; delete data.originalFileId; delete data.departmentName; delete data.approvedBy; delete data.deletedBy;
+        
+        delete data._id; delete data.deletedAt; delete data.originalFileId; 
+        delete data.departmentName; delete data.approvedBy; delete data.deletedBy;
+        
         await File.create({ ...data, _id: originalId });
         await Trash.findByIdAndDelete(req.params.id);
         res.json({ message: "File restored successfully" });
@@ -302,7 +339,7 @@ exports.getDashboardStats = async (req, res) => {
         const { role, departmentId } = req.query;
         let query = {};
         if (role?.toUpperCase() === "HOD" && departmentId) {
-            query = { departmentId: new mongoose.Types.ObjectId(departmentId) };
+            query = { departmentId: departmentId };
         }
         const [pending, completed, denied] = await Promise.all([
             Transfer.countDocuments({ ...query, status: "pending" }),

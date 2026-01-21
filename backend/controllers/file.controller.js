@@ -17,7 +17,6 @@ exports.uploadFile = async (req, res) => {
             }
         }
 
-        // Generate the URL path for the database
         const finalDbPath = `/uploads/${targetUserFolder}/${nestedPath}${req.file.filename}`;
 
         const newFile = await File.create({
@@ -25,14 +24,13 @@ exports.uploadFile = async (req, res) => {
             filename: req.file.filename,
             folder: targetFolderId,
             uploadedBy: uploadedBy,
-            username: targetUserFolder, // NEW: Saving username for Activity Logs
+            username: targetUserFolder,
             departmentId: departmentId,
             size: req.file.size,
             mimeType: req.file.mimetype,
             path: finalDbPath 
         });
 
-        // Log the upload action
         await Log.create({
             userId: uploadedBy,
             action: "FILE_UPLOADED",
@@ -46,23 +44,15 @@ exports.uploadFile = async (req, res) => {
     }
 };
 
-/* ================= OTHER FILE OPERATIONS ================= */
-
-/**
- * Fetches ALL files for the Dashboard Activity Log.
- * If no folderId is provided, it returns everything (useful for the Log view).
- */
-// backend/controllers/file.controller
 exports.getFilesByFolder = async (req, res) => {
     try {
         const { folderId, userId, departmentId } = req.query; 
         let query = { deletedAt: null };
         
-        // 1. Filter by User OR Shared Access
         if (userId) {
             query.$or = [
                 { uploadedBy: userId },
-                { sharedWith: userId } // Now checks if the user has received this file
+                { sharedWith: userId } 
             ];
         }
 
@@ -85,14 +75,12 @@ exports.getFilesByFolder = async (req, res) => {
         res.status(500).json({ error: error.message, success: false });
     }
 };
-    
 
 exports.trackView = async (req, res) => {
     try {
         const { fileId, userId } = req.body;
         if (!fileId || !userId) return res.status(400).json({ success: false, message: "Missing data" });
 
-        // Update last viewed time and add user to the history list
         await File.findByIdAndUpdate(fileId, {
             $set: { lastViewedAt: new Date() },
             $addToSet: { viewedBy: userId } 
@@ -103,20 +91,13 @@ exports.trackView = async (req, res) => {
     }
 };
 
-
-
-/**
- * Marks a file as deleted without removing it from the disk (Soft Delete).
- */
 exports.softDeleteFile = async (req, res) => {
     try {
         const { userId } = req.body;
-
         const file = await File.findByIdAndUpdate(req.params.id, {
             deletedAt: new Date()
         });
 
-        // Log the deletion action
         await Log.create({
             userId: userId,
             action: "FILE_DELETED",

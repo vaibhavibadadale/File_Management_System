@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import Swal from 'sweetalert2';
 import { Modal, Button, ListGroup, Form, InputGroup, Spinner, Alert, Badge } from 'react-bootstrap';
-import { Search, ShieldLock, Person, ArrowRightCircle } from 'react-bootstrap-icons';
+import { Search, ShieldLock, Person, ArrowRightCircle, Files, XCircle } from 'react-bootstrap-icons';
 import { transferFilesApi } from '../services/apiService';
 
 const TransferModal = ({ selectedIds, senderUsername, user, onClose, onSuccess, currentTheme }) => {
@@ -51,7 +51,6 @@ const TransferModal = ({ selectedIds, senderUsername, user, onClose, onSuccess, 
                 senderUsername: senderUsername, 
                 senderRole: user?.role || "USER", 
                 recipientId: selectedUser?._id, 
-                // Adding these ensures the Pending page shows info immediately
                 receiverName: selectedUser?.username,
                 receiverDeptName: selectedUser?.departmentId?.departmentName || "General",
                 receiverRole: selectedUser?.role || "USER",
@@ -91,11 +90,22 @@ const TransferModal = ({ selectedIds, senderUsername, user, onClose, onSuccess, 
         }
     };
 
+    const filteredUsers = users.filter(u => 
+        (u.username || "").toLowerCase().includes(searchTerm.toLowerCase())
+    );
+
     return (
         <Modal show={true} onHide={onClose} centered backdrop="static" size="md">
-            <Modal.Header closeButton className={`border-0 pb-0 ${isDark ? 'bg-dark text-white border-secondary' : ''}`}>
-                <Modal.Title className="fw-bold fs-5">
-                    {step === 1 ? `Transferring ${selectedIds.length} Item(s)` : "Security Verification"}
+            <Modal.Header closeButton className={`border-0 pb-0 ${isDark ? 'bg-dark text-white' : ''}`}>
+                <Modal.Title className="fw-bold fs-5 d-flex align-items-center">
+                    {step === 1 ? (
+                        <>
+                            <Files className="me-2 text-primary" size={20} />
+                            Transfer {selectedIds.length} Item(s)
+                        </>
+                    ) : (
+                        "Security Verification"
+                    )}
                 </Modal.Title>
             </Modal.Header>
 
@@ -106,50 +116,56 @@ const TransferModal = ({ selectedIds, senderUsername, user, onClose, onSuccess, 
                     <div className="mt-2">
                         <Form.Label className={`small fw-bold mb-2 ${isDark ? 'text-light' : 'text-muted'}`}>SELECT RECIPIENT</Form.Label>
                         <InputGroup className="mb-3">
-                            <InputGroup.Text className={isDark ? 'bg-secondary border-secondary text-white' : 'bg-white'}>
+                            <InputGroup.Text className={isDark ? 'bg-secondary border-secondary text-white' : 'bg-white border-end-0'}>
                                 <Search size={14}/>
                             </InputGroup.Text>
                             <Form.Control 
                                 placeholder="Search by name..." 
                                 onChange={(e) => setSearchTerm(e.target.value)} 
-                                className={isDark ? 'bg-secondary border-secondary text-white placeholder-light' : ''}
+                                className={isDark ? 'bg-secondary border-secondary text-white placeholder-light' : 'border-start-0'}
+                                autoFocus
                             />
                         </InputGroup>
 
-                        <ListGroup className={`shadow-sm border-0 ${isDark ? 'bg-dark' : ''}`} style={{maxHeight: '280px', overflowY: 'auto'}}>
-                           {users
-                            .filter(u => (u.username || "").toLowerCase().includes(searchTerm.toLowerCase()))
-                            .map(u => {
-                                const isSelected = selectedUser?._id === u._id;
-                                return (
-                                    <ListGroup.Item 
-                                        key={u._id} 
-                                        active={isSelected} 
-                                        onClick={() => setSelectedUser(u)} 
-                                        action
-                                        className={`d-flex justify-content-between align-items-center py-3 ${
-                                            isDark && !isSelected ? 'bg-dark text-white border-secondary' : ''
-                                        }`}
-                                    >
-                                        <div className="d-flex align-items-center">
-                                            <div className={`p-2 rounded-circle me-3 ${
-                                                isSelected ? 'bg-white text-primary' : (isDark ? 'bg-secondary text-light' : 'bg-light text-secondary')
-                                            }`}>
-                                                <Person size={20} />
+                        <ListGroup className={`shadow-sm border-0 ${isDark ? 'bg-dark' : ''}`} style={{maxHeight: '300px', overflowY: 'auto'}}>
+                            {filteredUsers.length > 0 ? (
+                                filteredUsers.map(u => {
+                                    const isSelected = selectedUser?._id === u._id;
+                                    return (
+                                        <ListGroup.Item 
+                                            key={u._id} 
+                                            active={isSelected} 
+                                            onClick={() => setSelectedUser(u)} 
+                                            action
+                                            className={`d-flex justify-content-between align-items-center py-3 mb-1 rounded border-0 ${
+                                                isDark && !isSelected ? 'bg-secondary bg-opacity-10 text-white' : ''
+                                            }`}
+                                        >
+                                            <div className="d-flex align-items-center">
+                                                <div className={`p-2 rounded-circle me-3 ${
+                                                    isSelected ? 'bg-white text-primary' : (isDark ? 'bg-secondary text-light' : 'bg-light text-secondary')
+                                                }`}>
+                                                    <Person size={20} />
+                                                </div>
+                                                <div>
+                                                    <div className="fw-bold">{u.username}</div>
+                                                    <small className={isSelected ? "text-white-50" : (isDark ? "text-info" : "text-muted")}>
+                                                        {u.departmentId?.departmentName || 'General'}
+                                                    </small>
+                                                </div>
                                             </div>
-                                            <div>
-                                                <div className="fw-bold">{u.username}</div>
-                                                <small className={isSelected ? "text-white" : (isDark ? "text-info" : "text-muted")}>
-                                                    {u.departmentId?.departmentName || 'General'}
-                                                </small>
-                                            </div>
-                                        </div>
-                                        <Badge bg={isSelected ? "light" : "primary"} text={isSelected ? "primary" : "white"}>
-                                            {u.role}
-                                        </Badge>
-                                    </ListGroup.Item>
-                                );
-                            })}
+                                            <Badge bg={isSelected ? "light" : "primary"} text={isSelected ? "primary" : "white"} className="px-2 py-1">
+                                                {u.role}
+                                            </Badge>
+                                        </ListGroup.Item>
+                                    );
+                                })
+                            ) : (
+                                <div className="text-center py-5 opacity-50">
+                                    <XCircle size={30} className="mb-2" />
+                                    <p>No users found matching "{searchTerm}"</p>
+                                </div>
+                            )}
                         </ListGroup>
                     </div>
                 ) : (
@@ -157,8 +173,10 @@ const TransferModal = ({ selectedIds, senderUsername, user, onClose, onSuccess, 
                         <div className="bg-primary bg-opacity-10 p-3 rounded-circle d-inline-block mb-3">
                             <ShieldLock size={40} className="text-primary" />
                         </div>
-                        <h6 className="fw-bold mb-1">Confirm Transfer</h6>
-                        <p className="small text-muted mb-4">You are sending files to <strong>{selectedUser?.username}</strong></p>
+                        <h6 className="fw-bold mb-1">Confirm Identity</h6>
+                        <p className="small text-muted mb-4">
+                            Transferring {selectedIds.length} items to <strong>{selectedUser?.username}</strong>
+                        </p>
                         
                         <Form.Group className="mb-3 text-start">
                             <Form.Label className={`small fw-bold ${isDark ? 'text-info' : 'text-secondary'}`}>REASON FOR TRANSFER</Form.Label>
@@ -167,7 +185,7 @@ const TransferModal = ({ selectedIds, senderUsername, user, onClose, onSuccess, 
                                 rows={2}
                                 value={reason}
                                 onChange={(e) => setReason(e.target.value)}
-                                placeholder="Purpose of this transfer..."
+                                placeholder="Why are you transferring these files?"
                                 className={isDark ? 'bg-secondary border-secondary text-white' : ''}
                             />
                         </Form.Group>
@@ -178,7 +196,7 @@ const TransferModal = ({ selectedIds, senderUsername, user, onClose, onSuccess, 
                                 type="password" 
                                 value={password}
                                 onChange={(e) => setPassword(e.target.value)} 
-                                placeholder="Enter password to verify identity"
+                                placeholder="Enter password to confirm"
                                 className={isDark ? 'bg-secondary border-secondary text-white' : ''}
                             />
                         </Form.Group>
@@ -188,8 +206,13 @@ const TransferModal = ({ selectedIds, senderUsername, user, onClose, onSuccess, 
 
             <Modal.Footer className={`border-0 pt-0 pb-4 px-4 ${isDark ? 'bg-dark' : ''}`}>
                 {step === 1 ? (
-                    <Button variant="primary" onClick={() => setStep(2)} disabled={!selectedUser} className="w-100 py-2 fw-bold shadow-sm">
-                        Continue to Verify <ArrowRightCircle className="ms-2" />
+                    <Button 
+                        variant="primary" 
+                        onClick={() => setStep(2)} 
+                        disabled={!selectedUser} 
+                        className="w-100 py-2 fw-bold shadow-sm d-flex align-items-center justify-content-center"
+                    >
+                        Review Transfer <ArrowRightCircle className="ms-2" />
                     </Button>
                 ) : (
                     <div className="d-flex w-100 gap-2">
@@ -201,8 +224,18 @@ const TransferModal = ({ selectedIds, senderUsername, user, onClose, onSuccess, 
                         >
                             Back
                         </Button>
-                        <Button variant="success" className="w-50 py-2 fw-bold shadow-sm" onClick={handleTransfer} disabled={isSubmitting}>
-                            {isSubmitting ? <Spinner size="sm" animation="border" /> : "Send Request"}
+                        <Button 
+                            variant="success" 
+                            className="w-50 py-2 fw-bold shadow-sm" 
+                            onClick={handleTransfer} 
+                            disabled={isSubmitting}
+                        >
+                            {isSubmitting ? (
+                                <>
+                                    <Spinner size="sm" animation="border" className="me-2" />
+                                    Processing...
+                                </>
+                            ) : "Confirm & Send"}
                         </Button>
                     </div>
                 )}

@@ -14,6 +14,8 @@ router.put("/approve/:transferId", transferController.approveTransfer);
 
 // Deny transfer
 router.put("/deny/:transferId", transferController.denyTransfer);
+// Make sure this exact line exists
+router.get("/received", transferController.getReceivedFiles);
 
 // (Optional) Received files endpoint if needed
 // router.get("/received", transferController.getReceivedFiles);

@@ -15,7 +15,7 @@ const PendingRequestsPage = ({ user, currentTheme }) => {
     mainRequests: [],
     logs: [],
     pendingTotalPages: 1,
-    historyTotalPages: 1,
+    historyTotalPages: 1,  
     totalPending: 0,
     totalHistory: 0,
   });
