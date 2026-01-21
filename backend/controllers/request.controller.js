@@ -30,7 +30,6 @@ async function handleMoveToTrash(files, sender, approver, deptId) {
 }
 
 // --- CONTROLLERS ---
-
 exports.createRequest = async (req, res) => {
     try {
         const { senderUsername, recipientId, fileIds, reason, requestType } = req.body;
@@ -89,29 +88,27 @@ exports.createRequest = async (req, res) => {
                 const hodeDeptId = finalDeptId ? new mongoose.Types.ObjectId(finalDeptId) : null;
                 const staffToNotify = await User.find({
                     $or: [
-                        { role: { $in: ['ADMIN', 'SUPERADMIN'] } },
+                        { role: { $in: ['ADMIN', 'SUPERADMIN', 'Admin', 'SuperAdmin'] } },
                         { role: 'HOD', departmentId: hodeDeptId }
                     ],
                     deletedAt: null
                 });
 
-                // --- FIX: Filter for unique User IDs only ---
+                // FIX: Unique Staff AND STRICTLY FILTER OUT the sender (Stops HOD getting own request)
                 const uniqueStaff = Array.from(
                     new Map(staffToNotify.map(user => [user._id.toString(), user])).values()
-                );
+                ).filter(u => u.username !== senderUsername); // Stops self-notification
 
-                const notificationEntries = uniqueStaff
-                    .filter(u => u.username !== senderUsername)
-                    .map(u => ({
-                        recipientId: u._id,
-                        targetRoles: ['ADMIN', 'SUPERADMIN', 'HOD'],
-                        department: sDeptName,
-                        departmentId: finalDeptId, 
-                        title: `New ${requestType.toUpperCase()} Request`,
-                        message: `${senderUsername} (${sDeptName}) requested a ${requestType}.`,
-                        type: requestType === 'delete' ? 'DELETE_REQUEST' : 'TRANSFER_REQUEST',
-                        isRead: false
-                    }));
+                const notificationEntries = uniqueStaff.map(u => ({
+                    recipientId: u._id,
+                    targetRoles: ['ADMIN', 'SUPERADMIN', 'HOD'],
+                    department: sDeptName,
+                    departmentId: finalDeptId, 
+                    title: `New ${requestType.toUpperCase()} Request`,
+                    message: `${senderUsername} (${sDeptName}) requested a ${requestType}.`,
+                    type: requestType === 'delete' ? 'DELETE_REQUEST' : 'TRANSFER_REQUEST',
+                    isRead: false
+                }));
 
                 if (notificationEntries.length > 0) {
                     await Notification.insertMany(notificationEntries);
