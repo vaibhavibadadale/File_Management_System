@@ -13,7 +13,6 @@ const UPLOADS_DIR = path.join(__dirname, "uploads");
 const MONGO_URI = process.env.MONGO_URI || "mongodb://127.0.0.1:27017/aaryans_file_managementDB";
 
 // ================= ENSURE UPLOADS DIR =================
-// In CommonJS, __dirname is available globally. No extra helper code needed.
 if (!fs.existsSync(UPLOADS_DIR)) {
   fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 }
@@ -33,8 +32,7 @@ app.use(
 // ================= STATIC FILES =================
 app.use("/uploads", express.static(UPLOADS_DIR));
 
-// ================= ROUTES (CommonJS Style) =================
-// Note: We remove the .js extensions from requires as they are not needed here.
+// ================= ROUTES =================
 const userRoutes = require("./routes/user.routes");
 const departmentRoutes = require("./routes/department.routes");
 const folderRoutes = require("./routes/folder.routes");
@@ -51,7 +49,7 @@ app.use("/api/files", fileRoutes);
 app.use("/api/logs", logRoutes);
 app.use("/api/transfer", transferRoutes);
 app.use("/api/notifications", notificationRoutes);
-app.use("/api/requests", requestRoutes);
+app.use("/api/requests", requestRoutes); // Points to routes/request.routes.js
 
 // ================= DATABASE =================
 const connectWithRetry = () => {

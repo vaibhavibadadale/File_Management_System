@@ -120,7 +120,9 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
 
     const handleDeleteItem = async (item) => {
         const isFolder = item.type === 'Folder' || item.isFolder;
-        if (!window.confirm(`Delete ${isFolder ? 'folder' : 'file'}: "${item.displayName || item.originalName || item.folderName}"?`)) return;
+        const displayName = item.displayName || item.originalName || item.folderName || item.name;
+        
+        if (!window.confirm(`Delete ${isFolder ? 'folder' : 'file'}: "${displayName}"?`)) return;
 
         try {
             const endpoint = isFolder 
@@ -128,9 +130,16 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
                 : `${BACKEND_URL}/api/files/${item._id}`;
 
             await axios.delete(endpoint, { data: { userId: user?._id || USER_ID } });
+            
             await loadContent(currentFolderId);
-            if (isReceivedModalOpen) fetchReceivedFiles();
-        } catch (err) { alert("Delete failed."); }
+            
+            if (isReceivedModalOpen) {
+                fetchReceivedFiles();
+            }
+        } catch (err) { 
+            console.error(err);
+            alert("Delete failed."); 
+        }
     };
 
     const handleBulkDelete = async () => {
@@ -152,17 +161,50 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
         }
     };
 
+    /**
+     * fetchReceivedFiles
+     * UPDATED: Fetches files and folders specifically transferred to the user
+     * using the backend route that looks at the 'Transfer' collection.
+     */
     const fetchReceivedFiles = async () => {
         try {
-            const res = await axios.get(`${BACKEND_URL}/api/transfer/received`, {
-                params: { recipientId: user?._id || USER_ID }
+            const currentUserId = user?._id || USER_ID;
+            
+            // This endpoint now specifically triggers the logic to find files 
+            // where uploadedBy matches currentUserId (post-approval ownership)
+            const response = await axios.get(`${BACKEND_URL}/api/requests/received`, {
+                params: { userId: currentUserId } 
             });
-            setReceivedItems(res.data.transferredFiles || []);
+            
+            const receivedFiles = response.data.files || [];
+            const receivedFolders = response.data.folders || [];
+
+            // Combine files and folders, ensuring metadata is preserved
+            const items = [
+                ...receivedFolders.map(f => ({ 
+                    ...f, 
+                    isFolder: true, 
+                    displayName: f.folderName || f.name,
+                    sender: f.senderUsername || "Shared Folder" 
+                })),
+                ...receivedFiles.map(f => ({ 
+                    ...f, 
+                    isFolder: false, 
+                    displayName: f.originalName || f.filename,
+                    sender: f.senderUsername || f.username || "Shared File"
+                }))
+            ];
+
+            setReceivedItems(items);
             setIsReceivedModalOpen(true);
-        } catch (err) { alert("Could not load received files."); }
+        } catch (err) {
+            console.error("Fetch Received Error:", err);
+            alert("Could not load received files. Ensure the backend route /api/requests/received is configured correctly.");
+        }
     };
 
     const handleViewFile = (file) => {
+        // Logic to determine folder name in the /uploads/ directory
         const folderName = file.username || file.uploadedByUsername || file.senderUsername || "Admin"; 
         const fileUrl = `${BACKEND_URL}/uploads/${folderName}/${encodeURIComponent(file.filename)}`;
         window.open(fileUrl, '_blank');
@@ -243,22 +285,19 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
     };
 
     let combinedItems = [];
-    
     const foldersMapped = foldersInCurrentView.map(f => ({ ...f, type: 'Folder', displayName: f.folderName || f.name }));
     const filesMapped = filesInCurrentView.map(f => ({ ...f, type: f.mimeType || 'File', displayName: f.originalName || "Unnamed File" }));
 
     if (viewMode === "important") {
         combinedItems = [...foldersMapped, ...filesMapped];
     } else {
-        if (currentFolderId === null) {
-            combinedItems = [...foldersMapped];
-        } else {
-            combinedItems = [...foldersMapped, ...filesMapped];
-        }
+        combinedItems = currentFolderId === null ? [...foldersMapped] : [...foldersMapped, ...filesMapped];
     }
 
     if (searchQuery) {
-        combinedItems = combinedItems.filter(item => item.displayName.toLowerCase().includes(searchQuery.toLowerCase()));
+        combinedItems = combinedItems.filter(item => 
+            item.displayName.toLowerCase().includes(searchQuery.toLowerCase())
+        );
     }
 
     const selectedCount = Object.values(itemsToTransfer).filter(Boolean).length;
@@ -303,7 +342,6 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
                                 <button onClick={handleCreateFolder} className="create-btn">Create</button>
                             </div>
 
-                            {/* SMALLER ADD FILE BUTTON LOGIC */}
                             {currentFolderId !== null && (
                                 <div className="action-group upload-group d-flex align-items-center ms-2">
                                     <label className="upload-label-main btn btn-sm btn-outline-primary mb-0 d-flex align-items-center py-1 px-2" htmlFor="file-input" style={{ fontSize: '0.85rem', cursor: 'pointer' }}>
@@ -324,7 +362,6 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
                     ) : (
                         <div className="action-group d-flex align-items-center">
                             <i className="fas fa-star text-warning me-2"></i>
-                            {/* UPDATED: Dark mode aware visibility for the message */}
                             <span className={isDark ? "text-light-50 small" : "text-muted small"} style={{ opacity: isDark ? 0.7 : 1 }}>
                                 Starred items from all folders.
                             </span>
@@ -470,21 +507,22 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
                 </div>
             </main>
 
-            {/* Modal Components */}
+            {/* Received Files Modal */}
             {isReceivedModalOpen && (
                 <div className="modal-overlay">
-                    <div className="received-files-modal shadow-lg" style={{ maxWidth: '850px', width: '90%', borderRadius: '12px' }}>
+                    <div className="received-files-modal shadow-lg" style={{ maxWidth: '850px', width: '90%', borderRadius: '12px', background: isDark ? '#2d2d2d' : 'white' }}>
                         <div className="modal-header d-flex justify-content-between align-items-center p-3 border-bottom">
                             <h4 className="mb-0 fw-bold"><i className="fas fa-inbox me-2 text-primary"></i>Received Files</h4>
                             <button className={`btn-close ${isDark ? 'btn-close-white' : ''}`} onClick={() => setIsReceivedModalOpen(false)}></button>
                         </div>
                         <div className="modal-body p-0">
                             <div className="file-table-container">
-                                <table className="file-table mb-0">
-                                    <thead className="bg-light">
+                                <table className={`file-table mb-0 ${isDark ? 'table-dark' : ''}`}>
+                                    <thead className={isDark ? 'bg-dark' : 'bg-light'}>
                                         <tr>
                                             <th>Name</th>
                                             <th>Size</th>
+                                            <th>Sender</th>
                                             <th className="text-end">Actions</th>
                                         </tr>
                                     </thead>
@@ -492,24 +530,25 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
                                         {receivedItems.length > 0 ? receivedItems.map((item) => (
                                             <tr key={item._id}>
                                                 <td>
-                                                    <i className={`${item.isFolder ? 'fas fa-folder text-warning' : getFileIcon(item.mimeType)} me-2`}></i>
-                                                    {item.originalName || item.folderName}
+                                                    <i className={`${item.isFolder ? 'fas fa-folder text-warning' : getFileIcon(item.mimeType || item.type)} me-2`}></i>
+                                                    {item.displayName}
                                                 </td>
                                                 <td>{item.isFolder ? '—' : formatBytes(item.size)}</td>
+                                                <td className="small text-muted">{item.sender}</td>
                                                 <td>
                                                     <div className="d-flex gap-3 justify-content-end">
                                                         {!item.isFolder && (
                                                             <>
-                                                                <i className="fas fa-eye text-primary action-icon" onClick={() => handleViewFile(item)}></i>
-                                                                <i className="fas fa-download text-success action-icon" onClick={() => handleDownload(item)}></i>
+                                                                <i className="fas fa-eye text-primary action-icon" style={{cursor:'pointer'}} title="View" onClick={() => handleViewFile(item)}></i>
+                                                                <i className="fas fa-download text-success action-icon" style={{cursor:'pointer'}} title="Download" onClick={() => handleDownload(item)}></i>
                                                             </>
                                                         )}
-                                                        <i className="fas fa-trash-alt text-danger action-icon" onClick={() => handleDeleteItem({...item, type: item.isFolder ? 'Folder' : 'File'})}></i>
+                                                        <i className="fas fa-trash-alt text-danger action-icon" style={{cursor:'pointer'}} title="Delete" onClick={() => handleDeleteItem({...item, type: item.isFolder ? 'Folder' : 'File'})}></i>
                                                     </div>
                                                 </td>
                                             </tr>
                                         )) : (
-                                            <tr><td colSpan="3" className="text-center py-5 text-muted">No files received yet.</td></tr>
+                                            <tr><td colSpan="4" className="text-center py-5 text-muted">No files received yet.</td></tr>
                                         )}
                                     </tbody>
                                 </table>
