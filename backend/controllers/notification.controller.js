@@ -1,7 +1,6 @@
 const Notification = require("../models/Notification");
 const mongoose = require("mongoose");
 
-// Helper to determine if the user should see all departments
 const checkIsAdmin = (role) => ["ADMIN", "SUPERADMIN"].includes(role?.toUpperCase());
 
 exports.getNotifications = async (req, res) => {
@@ -10,20 +9,20 @@ exports.getNotifications = async (req, res) => {
         const roleUpper = role?.toUpperCase();
         const isAdmin = checkIsAdmin(roleUpper);
         
-        // 1. Base conditions (Directly to User)
+        // 1. We primarily look for notifications assigned to this specific USER ID
+        // This covers the Admins, SuperAdmins, and HODs we targeted in the other controllers.
         let conditions = [
             { recipientId: userId && userId !== "undefined" ? userId : null }
         ];
 
-        // 2. Role-based logic
+        // 2. Fallback: Role-based broadcast (for any general alerts not tied to an ID)
         if (isAdmin) {
-            // Admins see everything meant for Admin/Superadmin
-            conditions.push({ targetRoles: { $in: ['ADMIN', 'SUPERADMIN'] } });
+            conditions.push({ targetRoles: { $in: ['ADMIN', 'SUPERADMIN'] }, recipientId: null });
         } else if (roleUpper === 'HOD') {
-            // HODs see things for HOD role matching their department
             conditions.push({ 
                 targetRoles: 'HOD', 
-                department: department 
+                department: department,
+                recipientId: null
             });
         }
 

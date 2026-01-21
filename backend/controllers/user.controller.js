@@ -5,19 +5,11 @@ const mongoose = require("mongoose");
 const Notification = require("../models/Notification");
 
 // 1. CREATE USER
-// 1. CREATE USER
 exports.createUser = async (req, res) => {
     try {
         const { 
-            username, 
-            password, 
-            role, 
-            departmentId, 
-            department, 
-            name, 
-            email, 
-            employeeId,
-            createdByUsername // Make sure frontend sends this in the req.body
+            username, password, role, departmentId, department, 
+            name, email, employeeId, createdByUsername 
         } = req.body;
 
         const existingUser = await User.findOne({ 
@@ -31,14 +23,7 @@ exports.createUser = async (req, res) => {
         }
 
         const newUser = new User({ 
-            username, 
-            password, 
-            role, 
-            departmentId, 
-            department,
-            name,
-            email,
-            employeeId
+            username, password, role, departmentId, department, name, email, employeeId
         });
 
         await newUser.save();
@@ -49,17 +34,17 @@ exports.createUser = async (req, res) => {
             deletedAt: null 
         });
 
-        // FIX: Use a Map to ensure unique recipient IDs and filter out the creator
+        // FIX: Ensure unique recipient IDs and STRICTLY FILTER OUT the person who created the user
         const uniqueAdmins = Array.from(
-            new Map(admins.map(admin => [admin._id.toString(), admin])).values()
-        ).filter(admin => admin.username !== createdByUsername);
+            new Map(admins.map(a => [a._id.toString(), a])).values()
+        ).filter(a => a.username !== createdByUsername); // Stops self-notification
 
         if (uniqueAdmins.length > 0) {
             const notificationEntries = uniqueAdmins.map(admin => ({
                 recipientId: admin._id,
                 targetRoles: ['ADMIN', 'SUPERADMIN'],
                 title: "New User Created",
-                message: `User "${username}" has been added to the system.`,
+                message: `User "${username}" has been added by ${createdByUsername || 'Admin'}.`,
                 type: "USER_CREATED", 
                 isRead: false
             }));
@@ -72,7 +57,6 @@ exports.createUser = async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 };
-
 // 2. VERIFY PASSWORD
 exports.verifyPassword = async (req, res) => {
     try {
