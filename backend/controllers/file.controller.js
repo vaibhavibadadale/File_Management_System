@@ -46,24 +46,25 @@ exports.uploadFile = async (req, res) => {
 
 exports.getFilesByFolder = async (req, res) => {
     try {
-        const { folderId, userId, departmentId } = req.query; 
-        let query = { deletedAt: null };
+        const { folderId, userId, all } = req.query; 
         
-        if (userId) {
-            query.$or = [
-                { uploadedBy: userId },
-                { sharedWith: userId } 
-            ];
+        // SECURITY GATE: Every request must specify which user's data to retrieve
+        if (!userId) {
+            return res.status(400).json({ success: false, message: "User context missing." });
         }
 
-        if (departmentId) {
-            query.departmentId = departmentId;
-        }
+        let query = { 
+            deletedAt: null,
+            // Filter: User must be the owner OR the file must be shared with them
+            $or: [
+                { uploadedBy: userId },
+                { sharedWith: userId }
+            ]
+        };
         
-        if (folderId === undefined || folderId === "null" || folderId === null || folderId === "undefined") {
-            query.folder = null; 
-        } else {
-            query.folder = folderId;
+        // If not in 'all' (dashboard) mode, filter by the current folder level
+        if (all !== "true") {
+            query.folder = (!folderId || folderId === "null") ? null : folderId;
         }
 
         const files = await File.find(query)
@@ -78,16 +79,12 @@ exports.getFilesByFolder = async (req, res) => {
 
 exports.trackView = async (req, res) => {
     try {
-        const { fileId, userId } = req.body;
-        if (!fileId || !userId) return res.status(400).json({ success: false, message: "Missing data" });
-
-        await File.findByIdAndUpdate(fileId, {
-            $set: { lastViewedAt: new Date() },
-            $addToSet: { viewedBy: userId } 
-        });
+        const { fileId } = req.body;
+        // Updates lastViewedAt for the individual "Recently Viewed" section
+        await File.findByIdAndUpdate(fileId, { lastViewedAt: new Date() });
         res.status(200).json({ success: true });
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        res.status(500).json({ success: false });
     }
 };
 
