@@ -34,10 +34,10 @@ exports.createUser = async (req, res) => {
             deletedAt: null 
         });
 
-        // FIX: Ensure unique recipient IDs and STRICTLY FILTER OUT the person who created the user
+        // Unique recipient IDs and filter out the creator
         const uniqueAdmins = Array.from(
             new Map(admins.map(a => [a._id.toString(), a])).values()
-        ).filter(a => a.username !== createdByUsername); // Stops self-notification
+        ).filter(a => a.username !== createdByUsername);
 
         if (uniqueAdmins.length > 0) {
             const notificationEntries = uniqueAdmins.map(admin => ({
@@ -57,17 +57,29 @@ exports.createUser = async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 };
-// 2. VERIFY PASSWORD
+
+// 2. VERIFY PASSWORD (ID-Based)
 exports.verifyPassword = async (req, res) => {
     try {
-        const { username, password } = req.body;
-        const user = await User.findOne({ username });
-        if (!user || user.password !== password) {
-            return res.status(401).json({ success: false, message: "Invalid credentials" });
+        const { userId, password } = req.body; 
+
+        if (!userId || !password) {
+            return res.status(400).json({ success: false, message: "User ID and password are required" });
         }
-        res.json({ success: true });
+
+        const user = await User.findById(userId); 
+
+        if (!user || user.deletedAt) {
+            return res.status(404).json({ success: false, message: "User not found" });
+        }
+
+        if (user.password !== password) {
+            return res.status(401).json({ success: false, message: "Incorrect password" });
+        }
+
+        res.status(200).json({ success: true });
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        res.status(500).json({ success: false, error: error.message });
     }
 };
 
@@ -155,7 +167,7 @@ exports.toggleUserStatus = async (req, res) => {
     } catch (error) { res.status(500).json({ error: error.message }); }
 };
 
-// 8. GET USER FILES (FS Logic)
+// 8. GET USER FILES
 exports.getUserFiles = async (req, res) => {
     try {
         const { username } = req.params;

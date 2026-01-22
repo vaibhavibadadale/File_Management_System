@@ -16,6 +16,7 @@ import UsersPage from "./pages/UsersPage";
 import UserFilesView from "./pages/UserFilesView"; 
 import PendingRequestsPage from "./pages/PendingRequestsPage"; 
 import NotificationsPage from "./pages/NotificationsPage";
+import TrashPage from "./pages/TrashPage"; // ADDED: Import the TrashPage component
 
 function App() {
     const [themeMode, setThemeMode] = useState("light");
@@ -95,7 +96,10 @@ function App() {
                             <Route path="/pending" element={<PendingRequestsPage user={user} currentTheme={themeMode} />} />
                             <Route path="/notifications" element={<NotificationsPage user={user} currentTheme={themeMode} />} />
                             <Route path="/important" element={<UploadFilePage user={user} viewMode="important" currentTheme={themeMode} />} />
-                            <Route path="/trash" element={<div className="p-4"><h3>Trash Bin</h3></div>} />
+                            
+                            {/* UPDATED: Replaced placeholder with actual TrashPage component */}
+                            <Route path="/trash" element={<TrashPage user={user} currentTheme={themeMode} />} />
+                            
                             <Route path="/login" element={<Navigate to="/" />} />
                             <Route path="*" element={<Navigate to="/" />} />
                         </Routes>

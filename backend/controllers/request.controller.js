@@ -1,60 +1,60 @@
-const Transfer = require("../models/Transfer");
-const DeleteRequest = require("../models/DeleteRequest");
+const Request = require("../models/Request");
 const File = require("../models/File");
 const Folder = require("../models/Folder");
 const User = require("../models/User");
 const Department = require("../models/Department");
 const Notification = require("../models/Notification");
 const Trash = require("../models/Trash");
+const DeleteRequest = require("../models/DeleteRequest");
+const Transfer = require("../models/Transfer");
 const mongoose = require("mongoose");
 
 // --- HELPERS ---
 
-/**
- * Moves files to Trash collection and removes from File collection
- */
 async function handleMoveToTrash(files, sender, approver, deptId) {
     for (const fileId of files) {
-        let fileData = await File.findById(fileId);
+        const actualId = fileId._id || fileId;
+        if (!mongoose.Types.ObjectId.isValid(actualId)) continue;
+
+        let fileData = await File.findById(actualId);
         if (!fileData) continue;
 
         const dept = await Department.findById(deptId);
-        
+        const senderUser = await User.findOne({ username: sender.toLowerCase() });
+
         await Trash.create({
             originalName: fileData.originalName || fileData.name || "Unnamed File",
+            filename: fileData.filename,
             path: fileData.path,
             size: fileData.size,
-            mimetype: fileData.mimetype || fileData.mimeType,
+            mimeType: fileData.mimeType || fileData.mimetype,
             originalFileId: fileData._id,
+            uploadedBy: fileData.uploadedBy,
+            sharedWith: fileData.sharedWith,
+            folder: fileData.folder, // Keep track of folder location
+            username: fileData.username, // Keep track of original owner string
             deletedBy: sender,
+            senderRole: senderUser?.role?.toUpperCase() || "EMPLOYEE", 
             approvedBy: approver,
             departmentId: deptId,
             departmentName: dept?.departmentName || dept?.name || "General",
             deletedAt: new Date(),
             reason: "Approved Request"
         });
-        
+
         await File.findByIdAndDelete(fileData._id);
     }
 }
 
-/**
- * UPDATED: Changes owner to recipient but keeps sender in shared list
- * This ensures BOTH can see the file.
- */
 async function handleOwnershipTransfer(fileIds, recipientId, senderUsername) {
-    if (!recipientId) return;
+    if (!recipientId || !fileIds.length) return;
+
     const idsOnly = fileIds.map(f => (f._id ? f._id : f));
-    
-    // Find the sender user object to get their ID
     const senderUser = await User.findOne({ username: senderUsername });
     const senderId = senderUser ? senderUser._id : null;
 
-    // Update Files: 
-    // 1. Set Recipient as the main owner (uploadedBy/userId)
-    // 2. Add BOTH recipient and sender to sharedWith array to ensure mutual visibility
     const updateOps = {
-        $set: { userId: recipientId, uploadedBy: recipientId },
+        $set: { uploadedBy: recipientId },
         $addToSet: { sharedWith: recipientId }
     };
 
@@ -62,13 +62,10 @@ async function handleOwnershipTransfer(fileIds, recipientId, senderUsername) {
         updateOps.$addToSet.sharedWith = { $each: [recipientId, senderId] };
     }
 
-    await File.updateMany({ _id: { $in: idsOnly } }, updateOps);
-
-    // Update Folders similarly
-    await Folder.updateMany(
-        { _id: { $in: idsOnly } },
-        updateOps
-    );
+    await Promise.all([
+        File.updateMany({ _id: { $in: idsOnly } }, updateOps),
+        Folder.updateMany({ _id: { $in: idsOnly } }, updateOps)
+    ]);
 }
 
 // --- CONTROLLERS ---
@@ -77,133 +74,130 @@ exports.createRequest = async (req, res) => {
     try {
         const { senderUsername, recipientId, fileIds, reason, requestType } = req.body;
 
-        if (!senderUsername || !fileIds || fileIds.length === 0) {
-            return res.status(400).json({ error: "Sender and files are required." });
-        }
+        const senderUser = await User.findOne({ username: senderUsername.toLowerCase() }).populate('departmentId');
+        if (!senderUser) return res.status(404).json({ message: "User not found" });
 
-        const sUser = await User.findOne({ username: senderUsername }).populate('departmentId');
-        if (!sUser) return res.status(404).json({ error: "Sender user not found." });
+        const sRole = (senderUser.role || "USER").toUpperCase();
+        const finalDeptId = senderUser.departmentId?._id || senderUser.departmentId;
+        const sDeptName = senderUser.departmentId?.departmentName || "General";
 
-        const finalDeptId = sUser.departmentId?._id || sUser.departmentId;
-        const sDeptName = sUser.departmentId?.departmentName || sUser.departmentId?.name || "General";
-        const sRole = sUser.role?.toUpperCase() || "USER";
-
-        const isAutoApprove = (sRole === "SUPERADMIN" || sRole === "ADMIN");
-
-        let rName = "SYSTEM", rDeptName = "TRASH", rRole = "SYSTEM";
-        if (requestType !== "delete" && recipientId && recipientId !== "null") {
-            const rUser = await User.findById(recipientId).populate('departmentId');
-            if (rUser) {
-                rName = rUser.username;
-                rRole = rUser.role || "USER";
-                rDeptName = rUser.departmentId?.departmentName || rUser.departmentId?.name || "General";
-            }
-        }
+        const isAutoApprove = (sRole === "SUPERADMIN");
 
         const commonData = {
-            senderUsername,
-            senderRole: sRole,
-            fileIds,
-            reason: reason || "No reason provided",
             requestType: requestType || "transfer",
-            departmentId: finalDeptId,
+            fileIds,
+            senderUsername: senderUser.username,
+            senderRole: sRole,
             senderDeptName: sDeptName,
-            receiverName: rName,
-            receiverDeptName: rDeptName,
-            receiverRole: rRole,
+            departmentId: finalDeptId,
+            reason: reason || "No reason provided",
             status: isAutoApprove ? "completed" : "pending"
         };
-
-        let newRequest;
-        if (requestType === "delete") {
-            newRequest = new DeleteRequest(commonData);
-        } else {
-            newRequest = new Transfer({ 
-                ...commonData, 
-                recipientId: mongoose.Types.ObjectId.isValid(recipientId) ? recipientId : null 
-            });
-        }
-
-        await newRequest.save();
 
         if (isAutoApprove) {
             if (requestType === "delete") {
                 await handleMoveToTrash(fileIds, senderUsername, `AUTO-${sRole}`, finalDeptId);
-            } else if (newRequest.recipientId) {
-                // Pass senderUsername to helper to maintain visibility
-                await handleOwnershipTransfer(fileIds, newRequest.recipientId, senderUsername);
+            } else if (recipientId) {
+                await handleOwnershipTransfer(fileIds, recipientId, senderUsername);
             }
         } else {
-            try {
-                const staffToNotify = await User.find({
-                    $or: [
-                        { role: { $in: ['ADMIN', 'SUPERADMIN', 'Admin', 'SuperAdmin'] } },
-                        { role: 'HOD', departmentId: finalDeptId }
-                    ],
-                    deletedAt: null
-                });
+            let query = [];
+            if (["USER", "EMPLOYEE"].includes(sRole)) {
+                query = [
+                    { role: { $in: ['ADMIN', 'SUPERADMIN'] } },
+                    { role: 'HOD', departmentId: finalDeptId }
+                ];
+            } else if (sRole === "HOD") {
+                query = [{ role: { $in: ['ADMIN', 'SUPERADMIN'] } }];
+            } else if (sRole === "ADMIN") {
+                query = [{ role: 'SUPERADMIN' }];
+            }
 
-                const notificationEntries = staffToNotify
-                    .filter(u => u.username !== senderUsername)
-                    .map(u => ({
-                        recipientId: u._id,
-                        title: `New ${requestType.toUpperCase()} Request`,
-                        message: `${senderUsername} (${sDeptName}) requested a ${requestType}.`,
-                        type: requestType === 'delete' ? 'DELETE_REQUEST' : 'TRANSFER_REQUEST',
-                        isRead: false
-                    }));
+            const staffToNotify = await User.find({ $or: query, deletedAt: null });
+            const notifications = staffToNotify
+                .filter(u => u.username !== senderUsername)
+                .map(u => ({
+                    recipientId: u._id,
+                    title: `New ${requestType.toUpperCase()} Request`,
+                    message: `${senderUsername} (${sDeptName}) requested a ${requestType}.`,
+                    type: requestType === 'delete' ? 'DELETE_REQUEST' : 'TRANSFER_REQUEST'
+                }));
 
-                if (notificationEntries.length > 0) await Notification.insertMany(notificationEntries);
-            } catch (nErr) { console.error("Notification Error:", nErr); }
+            if (notifications.length > 0) await Notification.insertMany(notifications);
         }
-        res.status(201).json({ message: "Success", data: newRequest });
-    } catch (err) { res.status(500).json({ error: err.message }); }
+
+        if (requestType === "delete") {
+            await new DeleteRequest(commonData).save();
+        } else {
+            await new Transfer({ ...commonData, recipientId }).save();
+        }
+
+        const mainReq = new Request({ ...commonData, recipientId });
+        await mainReq.save();
+
+        res.status(201).json({
+            message: isAutoApprove ? "Action completed instantly" : "Request sent for approval",
+            data: mainReq
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
 };
 
 exports.getPendingDashboard = async (req, res) => {
     try {
-        const { role, username, departmentId, search = "", pPage = 1, hPage = 1, limit = 10 } = req.query;
+        const { role, username, departmentId, search = "", pPage = 1, hPage = 1, limit = 5 } = req.query;
         const roleUpper = role?.toUpperCase();
-        const searchRegex = new RegExp(search, "i");
-        
         let filter = {};
-        if (roleUpper === "HOD" && departmentId) {
+
+        if (roleUpper === "SUPERADMIN") {
+            filter = {};
+        } else if (roleUpper === "ADMIN") {
             filter = { 
                 $or: [
-                    { departmentId: departmentId, senderRole: { $in: ["EMPLOYEE", "USER"] } }, 
+                    { senderRole: { $in: ["HOD", "EMPLOYEE", "USER"] } }, 
                     { senderUsername: username }
                 ] 
             };
-        } else if (roleUpper !== "SUPERADMIN" && roleUpper !== "ADMIN") {
+        } else if (roleUpper === "HOD") {
+            const deptSearch = mongoose.Types.ObjectId.isValid(departmentId) 
+                ? new mongoose.Types.ObjectId(departmentId) 
+                : departmentId;
+
+            filter = {
+                $or: [
+                    { departmentId: deptSearch, senderRole: { $in: ["EMPLOYEE", "USER"] } },
+                    { senderUsername: username }
+                ]
+            };
+        } else {
             filter = { senderUsername: username };
         }
 
-        if (search) {
-            filter.reason = searchRegex;
-        }
+        if (search) filter.reason = new RegExp(search, "i");
 
-        const [transfers, deletes] = await Promise.all([
-            Transfer.find(filter).populate("fileIds").populate("recipientId", "username").lean(),
-            DeleteRequest.find(filter).populate("fileIds").lean()
-        ]);
+        const allRequests = await Request.find(filter)
+            .populate("fileIds")
+            .populate("recipientId", "username")
+            .sort({ createdAt: -1 })
+            .lean();
 
-        const combined = [...transfers, ...deletes];
-        const mainRequests = combined.filter(r => r.status === "pending").sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-        const logs = combined.filter(r => r.status !== "pending").sort((a, b) => new Date(b.updatedAt || b.createdAt) - new Date(a.updatedAt || a.createdAt));
+        const mainRequests = allRequests.filter(r => r.status?.toLowerCase() === "pending");
+        const logs = allRequests.filter(r => r.status?.toLowerCase() !== "pending");
 
         const pLimit = parseInt(limit);
-        const pStart = (parseInt(pPage) - 1) * pLimit;
-        const hStart = (parseInt(hPage) - 1) * pLimit;
 
         res.json({
-            mainRequests: mainRequests.slice(pStart, pStart + pLimit).map(r => ({ ...r, isActionable: r.senderUsername !== username })),
-            logs: logs.slice(hStart, hStart + pLimit),
+            mainRequests: mainRequests.slice((pPage - 1) * pLimit, pPage * pLimit),
+            logs: logs.slice((hPage - 1) * pLimit, hPage * pLimit),
             totalPending: mainRequests.length,
             totalHistory: logs.length,
             pendingTotalPages: Math.ceil(mainRequests.length / pLimit) || 1,
             historyTotalPages: Math.ceil(logs.length / pLimit) || 1
         });
-    } catch (err) { res.status(500).json({ error: err.message }); }
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 };
 
 exports.approveRequest = async (req, res) => {
@@ -211,17 +205,27 @@ exports.approveRequest = async (req, res) => {
         const { id } = req.params;
         const { approverUsername } = req.body;
 
-        const request = await Transfer.findById(id) || await DeleteRequest.findById(id);
-        if (!request) return res.status(404).json({ message: "Request not found" });
+        const request = await Request.findById(id).populate('fileIds');
+        if (!request || request.status?.toLowerCase() !== "pending") {
+            return res.status(404).json({ message: "Request not found or already processed" });
+        }
 
         if (request.requestType === "delete") {
             await handleMoveToTrash(request.fileIds, request.senderUsername, approverUsername, request.departmentId);
+            await DeleteRequest.findOneAndUpdate(
+                { senderUsername: request.senderUsername, createdAt: request.createdAt },
+                { status: "completed", updatedAt: new Date() }
+            );
         } else {
-            // Update: Ensuring both sender and receiver have access
             await handleOwnershipTransfer(request.fileIds, request.recipientId, request.senderUsername);
+            await Transfer.findOneAndUpdate(
+                { senderUsername: request.senderUsername, createdAt: request.createdAt },
+                { status: "completed", updatedAt: new Date() }
+            );
         }
 
         request.status = "completed";
+        request.updatedAt = new Date();
         await request.save();
 
         const sender = await User.findOne({ username: request.senderUsername });
@@ -230,21 +234,9 @@ exports.approveRequest = async (req, res) => {
                 recipientId: sender._id,
                 title: 'Request Approved',
                 message: `Your ${request.requestType} request was approved by ${approverUsername}.`,
-                type: 'REQUEST_APPROVED',
-                isRead: false
+                type: 'REQUEST_APPROVED'
             });
         }
-
-        if (request.recipientId) {
-            await Notification.create({
-                recipientId: request.recipientId,
-                title: 'Files Received',
-                message: `You have received new files from ${request.senderUsername}.`,
-                type: 'FILES_RECEIVED',
-                isRead: false
-            });
-        }
-
         res.json({ message: "Approved successfully" });
     } catch (err) { res.status(500).json({ error: err.message }); }
 };
@@ -254,58 +246,61 @@ exports.denyRequest = async (req, res) => {
         const { id } = req.params;
         const { denialComment, approverUsername } = req.body;
 
-        const request = await Transfer.findByIdAndUpdate(id, { status: "denied", denialComment }, { new: true }) || 
-                        await DeleteRequest.findByIdAndUpdate(id, { status: "denied", denialComment }, { new: true });
+        const request = await Request.findByIdAndUpdate(id, {
+            status: "denied",
+            denialComment,
+            updatedAt: new Date()
+        }, { new: true });
 
-        if (!request) return res.status(404).json({ message: "Request not found" });
+        if (request.requestType === "delete") {
+            await DeleteRequest.findOneAndUpdate(
+                { senderUsername: request.senderUsername, createdAt: request.createdAt },
+                { status: "denied", denialComment, updatedAt: new Date() }
+            );
+        } else {
+            await Transfer.findOneAndUpdate(
+                { senderUsername: request.senderUsername, createdAt: request.createdAt },
+                { status: "denied", denialComment, updatedAt: new Date() }
+            );
+        }
 
         const sender = await User.findOne({ username: request.senderUsername });
         if (sender) {
             await Notification.create({
                 recipientId: sender._id,
                 title: 'Request Denied',
-                message: `Your request was denied. Reason: ${denialComment}`,
-                type: 'REQUEST_DENIED',
-                isRead: false
+                message: `Your request was denied by ${approverUsername}. Reason: ${denialComment}`,
+                type: 'REQUEST_DENIED'
             });
         }
         res.json({ message: "Denied successfully" });
     } catch (err) { res.status(500).json({ error: err.message }); }
 };
 
-/**
- * UPDATED: Fetches files where user is either the owner OR in the shared list.
- * This makes transferred files stay visible for the sender.
- */
-exports.getReceivedFiles = async (req, res) => {
-    try {
-        const { userId } = req.query;
-        if (!userId) return res.status(400).json({ error: "User ID is required" });
-
-        const filter = {
-            $or: [
-                { userId: userId },
-                { uploadedBy: userId },
-                { sharedWith: userId } // Visibility for both sender/receiver
-            ]
-        };
-
-        const [files, folders] = await Promise.all([
-            File.find(filter).lean(),
-            Folder.find(filter).lean()
-        ]);
-
-        res.json({ files, folders });
-    } catch (err) { res.status(500).json({ error: err.message }); }
-};
-
 exports.getTrashItems = async (req, res) => {
     try {
-        const { role, departmentId } = req.query;
+        const { role, departmentId, username } = req.query;
+        const roleUpper = role?.toUpperCase();
         let query = {};
-        if (role?.toUpperCase() === "HOD" || role?.toUpperCase() === "EMPLOYEE") {
-            query = { departmentId: departmentId };
+
+        if (roleUpper === "SUPERADMIN") {
+            query = {}; 
+        } else if (roleUpper === "ADMIN") {
+            query = { 
+                $or: [
+                    { senderRole: { $in: ["HOD", "EMPLOYEE", "USER"] } },
+                    { deletedBy: username }
+                ] 
+            };
+        } else if (roleUpper === "HOD") {
+            query = { 
+                departmentId: departmentId, 
+                senderRole: { $in: ["EMPLOYEE", "USER"] } 
+            };
+        } else {
+            query = { deletedBy: username };
         }
+
         const items = await Trash.find(query).sort({ deletedAt: -1 });
         res.json(items);
     } catch (err) { res.status(500).json({ error: err.message }); }
@@ -315,22 +310,50 @@ exports.restoreFromTrash = async (req, res) => {
     try {
         const item = await Trash.findById(req.params.id);
         if (!item) return res.status(404).json({ message: "Trash item not found" });
+
         const data = item.toObject();
         const originalId = data.originalFileId;
+
+        // Clean up metadata that shouldn't go back into the File collection
+        const trashMetadata = [
+            '_id', 'deletedAt', 'originalFileId', 'departmentName', 
+            'approvedBy', 'deletedBy', 'reason', 'senderRole', 
+            '__v', 'createdAt', 'updatedAt'
+        ];
         
-        delete data._id; delete data.deletedAt; delete data.originalFileId; 
-        delete data.departmentName; delete data.approvedBy; delete data.deletedBy;
-        
-        await File.create({ ...data, _id: originalId });
+        trashMetadata.forEach(key => delete data[key]);
+
+        // RE-CREATION STEP:
+        // By including 'folder' and 'username' in 'data', File.create puts them back
+        await File.create({ 
+            ...data, 
+            _id: originalId,
+            deletedAt: null 
+        });
+
         await Trash.findByIdAndDelete(req.params.id);
-        res.json({ message: "File restored successfully" });
-    } catch (err) { res.status(500).json({ error: err.message }); }
+
+        res.json({ message: "File restored successfully to original location" });
+    } catch (err) { 
+        res.status(500).json({ error: err.message }); 
+    }
 };
 
 exports.permanentDelete = async (req, res) => {
     try {
-        await Trash.findByIdAndDelete(req.params.id);
+        const deletedItem = await Trash.findByIdAndDelete(req.params.id);
+        if (!deletedItem) return res.status(404).json({ message: "Item not found" });
         res.json({ message: "File permanently deleted" });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+};
+
+exports.getReceivedFiles = async (req, res) => {
+    try {
+        const { userId } = req.query;
+        if (!userId || !mongoose.Types.ObjectId.isValid(userId)) return res.status(400).json({ error: "Valid User ID is required" });
+        const filter = { $or: [{ userId: userId }, { uploadedBy: userId }, { sharedWith: userId }] };
+        const [files, folders] = await Promise.all([File.find(filter).lean(), Folder.find(filter).lean()]);
+        res.json({ files, folders });
     } catch (err) { res.status(500).json({ error: err.message }); }
 };
 
@@ -339,13 +362,59 @@ exports.getDashboardStats = async (req, res) => {
         const { role, departmentId } = req.query;
         let query = {};
         if (role?.toUpperCase() === "HOD" && departmentId) {
-            query = { departmentId: departmentId };
+            const deptSearch = mongoose.Types.ObjectId.isValid(departmentId) ? new mongoose.Types.ObjectId(departmentId) : departmentId;
+            query = { departmentId: deptSearch };
         }
-        const [pending, completed, denied] = await Promise.all([
-            Transfer.countDocuments({ ...query, status: "pending" }),
-            Transfer.countDocuments({ ...query, status: "completed" }),
-            Transfer.countDocuments({ ...query, status: "denied" })
+        const stats = await Request.aggregate([
+            { $match: query },
+            { $group: { _id: { $toLower: "$status" }, count: { $sum: 1 } } }
         ]);
-        res.json({ pending, completed, denied });
+        const formatted = { pending: 0, completed: 0, denied: 0 };
+        stats.forEach(s => { if (s._id && formatted.hasOwnProperty(s._id)) formatted[s._id] = s.count; });
+        res.json(formatted);
+    } catch (err) { res.status(500).json({ error: err.message }); }
+};
+
+exports.restoreAllTrash = async (req, res) => {
+    try {
+        const { role, departmentId, username } = req.query;
+        const roleUpper = role?.toUpperCase();
+        let query = {};
+
+        if (roleUpper === "SUPERADMIN") query = {};
+        else if (roleUpper === "ADMIN") query = { $or: [{ senderRole: { $in: ["HOD", "EMPLOYEE", "USER"] } }, { deletedBy: username }] };
+        else if (roleUpper === "HOD") query = { departmentId: departmentId, senderRole: { $in: ["EMPLOYEE", "USER"] } };
+        else query = { deletedBy: username };
+
+        const items = await Trash.find(query);
+        if (items.length === 0) return res.status(404).json({ message: "No items to restore" });
+
+        for (const item of items) {
+            const data = item.toObject();
+            const originalId = data.originalFileId;
+            const trashMetadata = ['_id', 'deletedAt', 'originalFileId', 'departmentName', 'approvedBy', 'deletedBy', 'reason', 'senderRole', '__v', 'createdAt', 'updatedAt'];
+            trashMetadata.forEach(key => delete data[key]);
+
+            await File.create({ ...data, _id: originalId, deletedAt: null });
+            await Trash.findByIdAndDelete(item._id);
+        }
+
+        res.json({ message: `Successfully restored ${items.length} files.` });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+};
+
+exports.emptyTrash = async (req, res) => {
+    try {
+        const { role, departmentId, username } = req.query;
+        const roleUpper = role?.toUpperCase();
+        let query = {};
+
+        if (roleUpper === "SUPERADMIN") query = {};
+        else if (roleUpper === "ADMIN") query = { $or: [{ senderRole: { $in: ["HOD", "EMPLOYEE", "USER"] } }, { deletedBy: username }] };
+        else if (roleUpper === "HOD") query = { departmentId: departmentId, senderRole: { $in: ["EMPLOYEE", "USER"] } };
+        else query = { deletedBy: username };
+
+        const result = await Trash.deleteMany(query);
+        res.json({ message: `Permanently deleted ${result.deletedCount} items.` });
     } catch (err) { res.status(500).json({ error: err.message }); }
 };
