@@ -4,20 +4,15 @@ const FileSchema = new mongoose.Schema(
   {
     originalName: { type: String, required: true },
     filename: { type: String, required: true, unique: true },
-    mimeType: { type: String },
+    mimeType: { type: String }, 
     size: { type: Number, required: true },
     path: { type: String, required: true },
     username: { type: String, default: "Admin" }, 
     folder: { type: mongoose.Schema.Types.ObjectId, ref: "Folder", default: null },
     uploadedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
-    
-    // --- NEW FIELD FOR MULTIPLE ACCESS ---
     sharedWith: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }], 
-
-    // --- NEW FIELDS FOR DASHBOARD RECENTLY VIEWED ---
-    lastViewedAt: { type: Date, default: null }, // Stores the timestamp of the last click
-    viewedBy: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }], // Array of users who opened this file
-
+    lastViewedAt: { type: Date, default: null }, 
+    viewedBy: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }], 
     uploadedAt: { type: Date, default: Date.now },
     departmentId: { type: mongoose.Schema.Types.ObjectId, ref: "Department" },
     isStarred: { type: Boolean, default: false },
@@ -26,7 +21,8 @@ const FileSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-// This middleware ensures deleted files are hidden from standard queries
+// Middleware to hide deleted files
+// This ensures that when deletedAt is null, the file is visible in original locations
 FileSchema.pre(/^find/, function () {
   this.where({ deletedAt: null });
 });

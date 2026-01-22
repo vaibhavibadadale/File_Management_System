@@ -1,31 +1,30 @@
 const mongoose = require("mongoose");
 
-const TrashSchema = new mongoose.Schema({
-    // Display Info
+const TrashSchema = new mongoose.Schema(
+  {
     originalName: { type: String, required: true },
+    filename: { type: String, required: true },
+    path: { type: String, required: true },
+    size: { type: Number, required: true },
+    mimeType: { type: String },
+    originalFileId: { type: mongoose.Schema.Types.ObjectId, required: true },
     
-    // Technical File Info (Crucial for Restore logic)
-    path: { type: String },         // The physical storage path
-    fileUrl: { type: String },      // The URL if stored on a cloud/server
-    size: { type: Number },
-    mimetype: { type: String },
-    
-    // Ownership & Metadata
-    ownerUsername: { type: String },
-    departmentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Department' },
+    // --- PRESERVATION FIELDS (For original location/owner) ---
+    folder: { type: mongoose.Schema.Types.ObjectId, ref: "Folder", default: null },
+    username: { type: String }, // Original owner's username
+    uploadedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    sharedWith: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+    departmentId: { type: mongoose.Schema.Types.ObjectId, ref: "Department" },
+
+    // --- DELETION METADATA ---
+    deletedBy: { type: String }, // Username of person who initiated delete
+    senderRole: { type: String },
+    approvedBy: { type: String }, // Person who approved the request
     departmentName: { type: String },
-    
-    // Audit Trail (Who did what)
-    deletedBy: { type: String },    // The requester
-    approvedBy: { type: String },   // The Admin/HOD who approved
-    deletedAt: { type: Date, default: Date.now },
-    
-    // Reference to original ID to prevent duplicates on restore
-    originalFileId: { type: mongoose.Schema.Types.ObjectId }
-}, { timestamps: true });
+    reason: { type: String },
+    deletedAt: { type: Date, default: Date.now }
+  },
+  { timestamps: true }
+);
 
-// Indexing for faster lookups in large systems
-TrashSchema.index({ departmentId: 1 });
-TrashSchema.index({ deletedAt: -1 });
-
-module.exports = mongoose.model("Trash", TrashSchema);
+module.exports = mongoose.models.Trash || mongoose.model("Trash", TrashSchema);

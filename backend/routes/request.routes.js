@@ -2,21 +2,24 @@ const express = require("express");
 const router = express.Router();
 const requestController = require("../controllers/request.controller");
 
-// --- Main Request Actions ---
+// Request Creation & Dashboard
 router.post("/create", requestController.createRequest);
 router.get("/pending-dashboard", requestController.getPendingDashboard);
 router.get("/stats", requestController.getDashboardStats);
-
-// --- File Retrieval ---
-// This handles GET /api/requests/received
 router.get("/received", requestController.getReceivedFiles);
 
-// --- HOD/Admin Actions ---
+// Approval & Denial
 router.put("/approve/:id", requestController.approveRequest); 
 router.put("/deny/:id", requestController.denyRequest);
 
-// --- Trash Management ---
+// Trash Management
 router.get("/trash", requestController.getTrashItems);
+
+// NEW: Bulk Trash Actions (Defined before individual ID routes)
+router.post("/trash/restore-all", requestController.restoreAllTrash);
+router.delete("/trash/empty", requestController.emptyTrash);
+
+// Individual Trash Actions
 router.post("/restore/:id", requestController.restoreFromTrash);
 router.delete("/permanent/:id", requestController.permanentDelete);
 
