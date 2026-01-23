@@ -1,19 +1,39 @@
+# # Frontend/node_modules/
+# # backend/node_modeules/
+# # node_modeules
+
+# # Node dependencies (all levels)
+# node_modules/
+
+# # If you want to be explicit (optional)
 # Frontend/node_modules/
-# backend/node_modeules/
-# node_modeules
+# backend/node_modules/
 
-# Node dependencies (all levels)
+# # Backend uploads
+# backend/uploads/
+
+# # Environment files
+# .env
+
+# # Logs
+# *.log
+
+
+
+# dependencies
 node_modules/
-
-# If you want to be explicit (optional)
 Frontend/node_modules/
 backend/node_modules/
 
-# Backend uploads
-backend/uploads/
-
-# Environment files
+# environment files
 .env
+backend/.env
 
-# Logs
-*.log
+# build folders
+build/
+dist/
+
+# OS files
+.DS_Store
+Thumbs.db
+
