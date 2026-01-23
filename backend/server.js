@@ -51,6 +51,24 @@ app.use("/api/transfer", transferRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/requests", requestRoutes); // Points to routes/request.routes.js
 
+// ================= GLOBAL ERROR HANDLER (ADD THIS HERE) =================
+app.use((err, req, res, next) => {
+    console.error("❌ BACKEND CRASH DETECTED:");
+    console.error("Path:", req.path);
+    console.error("Method:", req.method);
+    
+    // This will print the exact file and line number in your VS Code terminal
+    console.error(err.stack); 
+
+    res.status(500).json({
+        success: false,
+        message: "Internal Server Error",
+        error: err.message,
+        // Optional: show stack trace only in development
+        stack: process.env.NODE_ENV === 'development' ? err.stack : undefined 
+    });
+});
+
 // ================= DATABASE =================
 const connectWithRetry = () => {
   mongoose

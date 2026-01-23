@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Modal, Button, Form, Table, Badge, Row, Col } from "react-bootstrap";
-import { Visibility, PersonAdd, RestartAlt } from "@mui/icons-material";
+import { Visibility, PersonAdd, RestartAlt, LockReset } from "@mui/icons-material"; // Added LockReset
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import Swal from "sweetalert2"; 
@@ -63,6 +63,39 @@ const UsersPage = ({ currentTheme, user }) => {
     fetchData();
   }, []);
 
+  // --- NEW: RESET 2FA LOGIC ---
+  const handleReset2FA = async (targetUserId, targetUsername) => {
+    const confirm = await Swal.fire({
+      ...swalConfig,
+      title: 'Reset 2FA?',
+      text: `Are you sure you want to reset 2FA for ${targetUsername}? They will need to scan a new QR code on next login.`,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#d33',
+      confirmButtonText: 'Yes, Reset Key'
+    });
+
+    if (confirm.isConfirmed) {
+      try {
+        const response = await axios.post("http://localhost:5000/api/users/reset-2fa", {
+          targetUserId,
+          adminId: user?._id // The ID of the currently logged-in Admin
+        });
+
+        if (response.data.success) {
+          Swal.fire({ ...swalConfig, icon: 'success', title: 'Reset Successful', text: response.data.message });
+        }
+      } catch (error) {
+        Swal.fire({ 
+          ...swalConfig, 
+          icon: 'error', 
+          title: 'Reset Failed', 
+          text: error.response?.data?.message || "Internal Server Error" 
+        });
+      }
+    }
+  };
+
   const handleReset = () => {
     setSearchTerm("");
     setFilterDept("");
@@ -72,7 +105,6 @@ const UsersPage = ({ currentTheme, user }) => {
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     if (name === "departmentId") {
-      // Logic: Only SuperAdmins can process 'ALL_DEPT'
       if (value === "ALL_DEPT" && myRole === "superadmin") {
         setFormData({ ...formData, departmentId: "ALL_DEPT", department: "All" });
       } else {
@@ -280,9 +312,23 @@ const UsersPage = ({ currentTheme, user }) => {
                     </Badge>
                   </td>
                   <td className="text-center">
-                    <Button variant="outline-primary" size="sm" onClick={() => navigate(`/user-files/${u._id}`)}>
-                      <Visibility fontSize="small" />
-                    </Button>
+                    <div className="d-flex justify-content-center gap-2">
+                      <Button variant="outline-primary" size="sm" onClick={() => navigate(`/user-files/${u._id}`)} title="View Files">
+                        <Visibility fontSize="small" />
+                      </Button>
+
+                      {/* 🛡️ SECURITY: Only show Reset 2FA to Admin/SuperAdmin, NOT HOD */}
+                      {canManageStatus && (
+                        <Button 
+                          variant="outline-danger" 
+                          size="sm" 
+                          onClick={() => handleReset2FA(u._id, u.username)}
+                          title="Reset 2FA Secret"
+                        >
+                          <LockReset fontSize="small" />
+                        </Button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))
@@ -291,6 +337,7 @@ const UsersPage = ({ currentTheme, user }) => {
         </Table>
       </div>
 
+      {/* MODAL SECTION - NO CHANGES TO LOGIC HERE */}
       <Modal show={showModal} onHide={() => setShowModal(false)} centered size="lg">
         <div className={isDark ? "bg-dark text-white" : ""}>
           <Modal.Header closeButton closeVariant={isDark ? "white" : undefined}>
@@ -319,12 +366,9 @@ const UsersPage = ({ currentTheme, user }) => {
                     onChange={handleInputChange}
                   >
                     <option value="">Select Department</option>
-                    
-                    {/* ONLY SHOW "ALL" FOR SUPERADMIN */}
                     {myRole === "superadmin" && (
                       <option value="ALL_DEPT">All (Admin/Super Admin)</option>
                     )}
-                    
                     {deptList.map((d) => (
                       <option key={d._id} value={d._id}>{d.departmentName}</option>
                     ))}

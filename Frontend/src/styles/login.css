@@ -7,18 +7,18 @@
 
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
-  background: #ffffff; /* White globally as per your request */
+  background: #ffffff;
 }
 
 /* --- CENTERED CONTAINER --- */
 .login-container {
   width: 100%;
-  min-height: 100vh; /* Full viewport height */
+  min-height: 100vh;
   display: flex;
-  align-items: center;    /* Vertical center */
-  justify-content: center; /* Horizontal center */
+  align-items: center;
+  justify-content: center;
   background: linear-gradient(355deg, #fff 0%, #ffd87f 100%);
-  padding: 20px; /* Spacing for mobile screens */
+  padding: 20px;
 }
 
 /* --- LOGIN CARD --- */
@@ -28,7 +28,7 @@ body {
   padding: 35px;
   box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
   width: 100%;
-  max-width: 400px; /* Card won't grow past 400px on desktop */
+  max-width: 400px;
 }
 
 /* --- HEADER & ROLE ICONS --- */
@@ -54,12 +54,24 @@ body {
   transition: transform 0.3s ease, color 0.3s ease;
 }
 
-/* Specific Role Colors from your logic */
+/* Specific Role Colors */
 .employee-logo { color: #007bff; }
 .hod-logo { color: #28a745; }
 .admin-logo { color: #ff9800; }
 .superadmin-logo { color: #9c27b0; }
 .default-logo { color: #6c757d; }
+
+/* 2FA Shield Animation */
+.fa-shield-halved {
+  filter: drop-shadow(0 4px 6px rgba(74, 144, 226, 0.2));
+  animation: shieldPulse 2s infinite ease-in-out;
+}
+
+@keyframes shieldPulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+  100% { transform: scale(1); }
+}
 
 .login-header h2 {
   font-size: 1.75rem;
@@ -78,7 +90,7 @@ body {
 }
 
 .input-wrapper {
-  position: relative; /* Essential for floating labels */
+  position: relative;
   width: 100%;
 }
 
@@ -108,7 +120,7 @@ body {
   color: #718096;
   pointer-events: none;
   transition: all 0.2s ease;
-  background-color: white; /* Blocks the border line when moving up */
+  background-color: white;
   padding: 0 5px;
 }
 
@@ -124,17 +136,7 @@ body {
   font-weight: 600;
 }
 
-/* --- ANIMATION FOR DEPARTMENT DROPDOWN --- */
-.animate-fade-in {
-  animation: fadeIn 0.4s ease-out;
-}
-
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(-8px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-/* --- FANCY POPUP MODAL STYLES --- */
+/* --- MODAL OVERLAY --- */
 .modal-overlay {
   position: fixed;
   top: 0;
@@ -142,7 +144,7 @@ body {
   width: 100%;
   height: 100%;
   background: rgba(0, 0, 0, 0.4);
-  backdrop-filter: blur(5px); /* Fancy blur effect */
+  backdrop-filter: blur(5px);
   display: flex;
   justify-content: center;
   align-items: center;
@@ -150,6 +152,7 @@ body {
   animation: overlayFadeIn 0.3s ease;
 }
 
+/* --- FANCY POPUP (General) --- */
 .fancy-popup {
   background: #ffffff;
   padding: 40px 30px;
@@ -189,60 +192,38 @@ body {
   margin-bottom: 25px;
 }
 
-.close-popup-btn {
-  width: 100%;
-  padding: 12px;
-  background: #3b82f6;
-  color: white;
-  border: none;
-  border-radius: 10px;
-  font-size: 1rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: transform 0.2s, background 0.2s;
+/* --- QR SETUP SPECIFIC --- */
+.qr-popup {
+  max-width: 400px;
+  border-top: 5px solid #3b82f6;
 }
 
-.close-popup-btn:hover {
-  background: #2563eb;
-  transform: translateY(-2px);
+.qr-image-wrapper {
+  background: #f8fafc;
+  padding: 20px;
+  border-radius: 15px;
+  display: inline-block;
+  margin: 10px 0 20px;
+  border: 2px dashed #cbd5e1;
 }
 
-@keyframes overlayFadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
+.qr-image-wrapper img {
+  display: block;
+  mix-blend-mode: multiply;
 }
 
-@keyframes popupPop {
-  0% { opacity: 0; transform: scale(0.7) translateY(20px); }
-  100% { opacity: 1; transform: scale(1) translateY(0); }
+.setup-link {
+  color: #64748b;
+  font-weight: 500;
+  transition: color 0.2s ease;
 }
 
-/* --- ADDITIONAL OPTIONS --- */
-.form-options {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 25px;
-  font-size: 0.85rem;
-}
-
-.remember-wrapper {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  cursor: pointer;
-}
-
-.forgot-password {
+.setup-link:hover {
   color: #3b82f6;
-  text-decoration: none;
-}
-
-.forgot-password:hover {
   text-decoration: underline;
 }
 
-/* --- LOGIN BUTTON --- */
+/* --- BUTTONS & LINKS --- */
 .login-btn {
   width: 100%;
   padding: 14px;
@@ -256,22 +237,40 @@ body {
   transition: background 0.3s ease, transform 0.1s ease;
 }
 
-.login-btn:hover {
-  background: #2563eb;
+.login-btn:hover { background: #2563eb; }
+.login-btn:active { transform: scale(0.98); }
+.login-btn:disabled { background: #94a3b8; cursor: not-allowed; }
+
+.close-popup-btn {
+  width: 100%;
+  padding: 12px;
+  background: #3b82f6;
+  color: white;
+  border: none;
+  border-radius: 10px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
 }
 
-.login-btn:active {
-  transform: scale(0.98);
+.forgot-password {
+  color: #3b82f6;
+  text-decoration: none;
+  font-size: 0.85rem;
 }
 
-.login-btn:disabled {
-  background: #94a3b8;
-  cursor: not-allowed;
+/* --- ANIMATIONS --- */
+@keyframes overlayFadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes popupPop {
+  0% { opacity: 0; transform: scale(0.7) translateY(20px); }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
-/* --- RESPONSIVE ADJUSTMENTS --- */
+/* --- RESPONSIVE --- */
 @media (max-width: 480px) {
-  .login-card {
-    padding: 25px 20px;
-  }
+  .login-card { padding: 25px 20px; }
 }
