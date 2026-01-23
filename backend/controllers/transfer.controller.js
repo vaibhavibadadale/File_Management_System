@@ -46,14 +46,17 @@ exports.createRequest = async (req, res) => {
                 await handleMoveToTrash(fileIds, senderUsername, "AUTO-ADMIN", departmentId);
             } else if (requestType === "transfer") {
                 // Change ownership immediately for Auto-Approve
-                // Updated to use 'uploadedBy' to match File Schema
+                // We update 'uploadedBy' and 'updatedAt' so it appears in "Recent Transfers"
                 await File.updateMany(
                     { _id: { $in: fileIds } },
-                    { $set: { uploadedBy: recipientId }, $addToSet: { sharedWith: recipientId } }
+                    { 
+                        $set: { uploadedBy: recipientId, updatedAt: new Date() }, 
+                        $addToSet: { sharedWith: recipientId } 
+                    }
                 );
                 await Folder.updateMany(
                     { _id: { $in: fileIds } },
-                    { $set: { uploadedBy: recipientId } }
+                    { $set: { uploadedBy: recipientId, updatedAt: new Date() } }
                 );
             }
         } else {
@@ -175,15 +178,18 @@ exports.approveTransfer = async (req, res) => {
             await handleMoveToTrash(transfer.fileIds, transfer.senderUsername, approverUsername || "Authorized User", transfer.departmentId);
         } else {
             // CHANGE OWNERSHIP TO RECIPIENT
-            // Updated to use 'uploadedBy' to match File Schema
+            // Explicitly updating updatedAt ensures this appears as a "Recent Transfer" for the recipient
             await File.updateMany(
                 { _id: { $in: transfer.fileIds } },
-                { $set: { uploadedBy: transfer.recipientId }, $addToSet: { sharedWith: transfer.recipientId } }
+                { 
+                    $set: { uploadedBy: transfer.recipientId, updatedAt: new Date() }, 
+                    $addToSet: { sharedWith: transfer.recipientId } 
+                }
             );
 
             await Folder.updateMany(
                 { _id: { $in: transfer.fileIds } },
-                { $set: { uploadedBy: transfer.recipientId } }
+                { $set: { uploadedBy: transfer.recipientId, updatedAt: new Date() } }
             );
         }
 
@@ -271,7 +277,7 @@ async function handleMoveToTrash(files, sender, approver, deptId) {
             originalName: fileData.originalName,
             path: fileData.path,
             size: fileData.size,
-            mimetype: fileData.mimeType, // Matches File schema mimeType
+            mimetype: fileData.mimeType, 
             originalFileId: fileData._id,
             deletedBy: sender,
             approvedBy: approver,

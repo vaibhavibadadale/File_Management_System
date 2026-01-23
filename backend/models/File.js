@@ -21,8 +21,7 @@ const FileSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-// Middleware to hide deleted files
-// This ensures that when deletedAt is null, the file is visible in original locations
+// Middleware to exclude soft-deleted files from queries
 FileSchema.pre(/^find/, function () {
   this.where({ deletedAt: null });
 });

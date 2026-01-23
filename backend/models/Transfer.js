@@ -11,8 +11,6 @@ const transferSchema = new mongoose.Schema(
     departmentId: { type: String }, 
     
     // --- UI/History Fields ---
-    // Storing these ensures the dashboard stays fast and data persists 
-    // even if users/departments are modified later.
     senderDeptName: { type: String, default: "N/A" },
     receiverName: { type: String, default: "N/A" },
     receiverDeptName: { type: String, default: "N/A" },
