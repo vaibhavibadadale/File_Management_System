@@ -117,7 +117,6 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
         }
     };
 
-    // SINGLE ITEM DELETE
     const handleDeleteItemTrigger = async (item) => {
         const { value: formValues } = await Swal.fire({
             title: 'Request Deletion',
@@ -144,19 +143,17 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
 
         if (formValues) {
             try {
-                // Verify Password
                 await axios.post(`${BACKEND_URL}/api/users/verify-password`, {
                     userId: user?._id || USER_ID,
                     password: formValues.password
                 });
 
-                // Submit Request
                 await axios.post(`${BACKEND_URL}/api/requests/create`, {
                     requestType: "delete",
                     senderUsername: user?.username || "Unknown",
                     senderRole: user?.role || "user",
                     departmentId: userDeptId,
-                    fileIds: [item._id], // Sending just the ID string
+                    fileIds: [item._id],
                     reason: formValues.reason
                 });
 
@@ -173,7 +170,6 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
         }
     };
 
-    // BULK DELETE ACTION
     const executeBulkDeleteRequest = async () => {
         const selectedIds = Object.keys(itemsToTransfer).filter(id => itemsToTransfer[id]);
         
@@ -207,19 +203,17 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
         if (formValues) {
             setIsDeleting(true);
             try {
-                // Verify Password - Ensure we send the correct userId
                 await axios.post(`${BACKEND_URL}/api/users/verify-password`, {
                     userId: user?._id || USER_ID,
                     password: formValues.password
                 });
 
-                // Submit Bulk Request - Ensure senderUsername exists
                 await axios.post(`${BACKEND_URL}/api/requests/create`, {
                     requestType: "delete",
                     senderUsername: user?.username || "Admin", 
                     senderRole: user?.role || "user",
                     departmentId: userDeptId, 
-                    fileIds: selectedIds, // Array of ID strings
+                    fileIds: selectedIds, 
                     reason: formValues.reason
                 });
 
@@ -234,7 +228,6 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
                 setItemsToTransfer({});
                 loadContent(currentFolderId);
             } catch (err) {
-                // Capture the specific error message from your backend
                 const errorMsg = err.response?.data?.message || err.response?.data?.error || "Error submitting request.";
                 Swal.fire("Error", errorMsg, "error");
             } finally {
@@ -257,10 +250,29 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
         } catch (err) { alert("Could not load received files."); }
     };
 
-    const handleViewFile = (file) => {
-        const folderName = file.username || file.uploadedByUsername || file.senderUsername || "Admin"; 
-        const fileUrl = `${BACKEND_URL}/uploads/${folderName}/${encodeURIComponent(file.filename)}`;
-        window.open(fileUrl, '_blank');
+    // UPDATED handleViewFile to include tracking logic
+    const handleViewFile = async (file) => {
+        try {
+            // 1. Trigger backend tracking
+            await axios.post(`${BACKEND_URL}/api/files/track-view`, { 
+                fileId: file._id, 
+                userId: user?._id || USER_ID 
+            });
+
+            // 2. Open the file
+            const folderName = file.username || file.uploadedByUsername || file.senderUsername || "Admin"; 
+            const fileUrl = `${BACKEND_URL}/uploads/${folderName}/${encodeURIComponent(file.filename)}`;
+            window.open(fileUrl, '_blank');
+            
+            // 3. Optional: Refresh content if you want to see the update immediately on this page
+            // loadContent(currentFolderId);
+        } catch (err) {
+            console.error("Error opening/tracking file:", err);
+            // Fallback: Still try to open file even if tracking fails
+            const folderName = file.username || file.uploadedByUsername || file.senderUsername || "Admin"; 
+            const fileUrl = `${BACKEND_URL}/uploads/${folderName}/${encodeURIComponent(file.filename)}`;
+            window.open(fileUrl, '_blank');
+        }
     };
 
     const handleDownload = async (file) => {

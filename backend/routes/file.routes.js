@@ -2,14 +2,11 @@ const express = require("express");
 const router = express.Router();
 const upload = require("../middlewares/upload.middleware");
 const File = require("../models/File");
-
-// Import the controllers
 const fileController = require("../controllers/file.controller");
 const transferController = require('../controllers/transfer.controller');
 
 /**
  * 1. POST: File Upload
- * Uses the upload middleware and calls the uploadFile controller.
  */
 router.post("/upload", upload.single("file"), (req, res, next) => {
     if (fileController.uploadFile) {
@@ -19,16 +16,13 @@ router.post("/upload", upload.single("file"), (req, res, next) => {
 });
 
 /**
- * 2. GET: Fetch Files (Merged Logic)
- * Supports ?isStarred=true for the Starred page and standard folder navigation.
+ * 2. GET: Fetch Files (With Starred Support)
  */
 router.get("/", async (req, res, next) => {
     const { isStarred, userId } = req.query;
 
-    // Handle Starred items explicitly if requested
     if (isStarred === "true") {
         try {
-            // Note: deletedAt: null is handled by the model middleware, but we include it for clarity
             let query = { isStarred: true, deletedAt: null };
             
             if (userId) {
@@ -38,14 +32,15 @@ router.get("/", async (req, res, next) => {
                 ];
             }
             
-            const files = await File.find(query).populate("uploadedBy", "name username");
+            const files = await File.find(query)
+                .populate("uploadedBy", "name username")
+                .sort({ updatedAt: -1 });
             return res.json({ files, success: true });
         } catch (err) {
             return res.status(500).json({ message: err.message, success: false });
         }
     }
 
-    // Default to controller logic for folder-based fetching
     if (fileController.getFilesByFolder) {
         return fileController.getFilesByFolder(req, res, next);
     }
@@ -54,13 +49,12 @@ router.get("/", async (req, res, next) => {
 
 /**
  * 3. PATCH: Toggle Star Status
- * Uses the controller logic for consistency with logs and response structure.
  */
 router.patch("/star/:id", (req, res, next) => {
     if (fileController.toggleFileStar) {
         return fileController.toggleFileStar(req, res, next);
     }
-    // Fallback to inline logic if controller is missing
+    // Fallback logic
     return (async () => {
         try {
             const file = await File.findById(req.params.id);
@@ -77,18 +71,16 @@ router.patch("/star/:id", (req, res, next) => {
 
 /**
  * 4. POST: Track File View
- * Records the timestamp and user ID when a file is opened.
  */
 router.post("/track-view", (req, res, next) => {
     if (fileController.trackView) {
         return fileController.trackView(req, res, next);
     }
-    res.status(500).json({ message: "View tracking handler not found" });
+    res.status(500).json({ message: "View tracking handler not found in controller" });
 });
 
 /**
  * 5. DELETE: Soft Delete
- * Marks the file as deleted rather than removing it from disk.
  */
 router.delete("/:id", (req, res, next) => {
     if (fileController.softDeleteFile) {
@@ -98,11 +90,9 @@ router.delete("/:id", (req, res, next) => {
 });
 
 /**
- * 6. POST: Secure Transfer / Create Request
- * Bridges the transfer logic into the file routes for unified file operations.
+ * 6. POST: Secure Transfer
  */
 router.post("/transfer", (req, res, next) => {
-    // Check both potential naming conventions for the transfer method
     const transferMethod = transferController.secureTransfer || transferController.createRequest;
     if (transferMethod) {
         return transferMethod(req, res, next);

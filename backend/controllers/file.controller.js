@@ -48,21 +48,18 @@ exports.getFilesByFolder = async (req, res) => {
     try {
         const { folderId, userId, all } = req.query; 
         
-        // SECURITY GATE: Every request must specify which user's data to retrieve
         if (!userId) {
             return res.status(400).json({ success: false, message: "User context missing." });
         }
 
         let query = { 
             deletedAt: null,
-            // Filter: User must be the owner OR the file must be shared with them
             $or: [
                 { uploadedBy: userId },
                 { sharedWith: userId }
             ]
         };
         
-        // If not in 'all' (dashboard) mode, filter by the current folder level
         if (all !== "true") {
             query.folder = (!folderId || folderId === "null") ? null : folderId;
         }
@@ -77,14 +74,38 @@ exports.getFilesByFolder = async (req, res) => {
     }
 };
 
+/**
+ * UPDATED: Tracks when a file is opened
+ * Updates lastViewedAt timestamp for the Recently Viewed dashboard section
+ */
 exports.trackView = async (req, res) => {
     try {
-        const { fileId } = req.body;
-        // Updates lastViewedAt for the individual "Recently Viewed" section
-        await File.findByIdAndUpdate(fileId, { lastViewedAt: new Date() });
-        res.status(200).json({ success: true });
+        const { fileId, userId } = req.body;
+        
+        if (!fileId) return res.status(400).json({ success: false, message: "File ID required" });
+
+        const updateData = { 
+            $set: { lastViewedAt: new Date() }
+        };
+
+        // If a userId is provided, add it to the viewedBy array if not already present
+        if (userId) {
+            updateData.$addToSet = { viewedBy: userId };
+        }
+
+        const updatedFile = await File.findByIdAndUpdate(
+            fileId, 
+            updateData,
+            { new: true }
+        );
+
+        if (!updatedFile) {
+            return res.status(404).json({ success: false, message: "File not found" });
+        }
+
+        res.status(200).json({ success: true, lastViewedAt: updatedFile.lastViewedAt });
     } catch (err) {
-        res.status(500).json({ success: false });
+        res.status(500).json({ success: false, error: err.message });
     }
 };
 
