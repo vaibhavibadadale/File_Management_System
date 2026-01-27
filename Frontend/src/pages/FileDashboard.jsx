@@ -115,7 +115,7 @@ const FileDashboard = ({ user, currentTheme }) => {
                         <Card className={`border-0 shadow-sm w-100 ${isDarkMode ? 'bg-dark border border-secondary' : ''}`} 
                               style={{ backgroundColor: theme.cardBg }}>
                             <Card.Header className={`bg-transparent border-0 pt-3 ${isDarkMode ? 'border-bottom border-secondary' : ''}`}>
-                                <h6 className="fw-bold" style={{ color: theme.textMain }}><Eye className="me-2 text-primary" /> Recently Viewed</h6>
+                                <h6 className={`fw-bold ${isDarkMode ? 'text-white' : ''}`} style={{ color: !isDarkMode ? theme.textMain : '' }}><Eye className="me-2 text-primary" /> Recently Viewed</h6>
                             </Card.Header>
                             <Card.Body className="px-0 pt-0">
                                 {recentlyViewed.length > 0 ? recentlyViewed.map(file => (
@@ -125,7 +125,8 @@ const FileDashboard = ({ user, currentTheme }) => {
                                         <div className="d-flex align-items-center">
                                             <FileEarmarkText className="me-3 text-primary" size={20} />
                                             <div>
-                                                <div className="fw-semibold small">{file.originalName}</div>
+                                                {/* FIXED: Applied text-white class for dark mode to ensure file name is visible */}
+                                                <div className={`fw-semibold small ${isDarkMode ? 'text-white' : 'text-dark'}`}>{file.originalName}</div>
                                                 <div style={{ fontSize: '0.7rem', color: theme.textMuted }}>
                                                     Viewed: {new Date(file.lastViewedAt).toLocaleString()}
                                                 </div>
@@ -147,11 +148,12 @@ const FileDashboard = ({ user, currentTheme }) => {
                             </Card.Header>
                             <Card.Body className="pt-3">
                                 {recentlyTransferred.length > 0 ? recentlyTransferred.map(file => (
-                                    <div key={file._id} className={`mb-3 p-2 rounded border hover-row ${isDarkMode ? 'border-secondary' : ''}`} 
+                                    <div key={file._id} className={`mb-3 p-2 rounded border hover-row ${isDarkMode ? 'border-secondary bg-dark' : ''}`} 
                                          style={{ cursor: 'pointer' }}
                                          onClick={() => handleViewFile(file)}>
                                         <div className="d-flex justify-content-between align-items-center">
-                                            <span className="fw-semibold small text-truncate" style={{ maxWidth: '70%', color: theme.textMain }}>{file.originalName}</span>
+                                            {/* FIXED: Applied text-white for dark mode here as well */}
+                                            <span className={`fw-semibold small text-truncate ${isDarkMode ? 'text-white' : 'text-dark'}`} style={{ maxWidth: '70%' }}>{file.originalName}</span>
                                             <Badge bg="info" style={{ fontSize: '0.6rem' }}>RECEIVED</Badge>
                                         </div>
                                         <div className="mt-1 d-flex justify-content-between" style={{ fontSize: '0.65rem', color: theme.textMuted }}>
