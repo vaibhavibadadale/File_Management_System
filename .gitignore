@@ -35,3 +35,5 @@ yarn-error.log*
 # Backend uploads or temp files
 # ========================
 backend/uploads/
+backend/backups/
+
