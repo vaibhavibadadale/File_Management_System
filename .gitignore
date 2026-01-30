@@ -31,12 +31,21 @@ yarn-error.log*
 # ========================
 .DS_Store
 
-# ========================
-# Backend uploads or temp files
-# ========================
-backend/uploads/
+# # ========================
+# # Backend uploads or temp files
+# # ========================
+# backend/uploads/
+
+# backend/backups/
+# *.zip
+
+# Ignore uploaded user files
+backend/uploads/*
+!backend/uploads/.gitkeep
 
 backend/backups/
+node_modules/
 *.zip
-
+*.mp4
+*.pdf
 
