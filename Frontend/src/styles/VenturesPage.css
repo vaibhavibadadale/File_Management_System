@@ -1,0 +1,73 @@
+/* --- TOGGLE BADGE LOGIC --- */
+.status-toggle-container {
+    cursor: pointer;
+    display: inline-block;
+    transition: opacity 0.2s;
+    user-select: none;
+}
+
+.status-toggle-container:hover {
+    opacity: 0.85;
+}
+
+.status-badge {
+    padding: 6px 12px !important;
+    border-radius: 6px !important;
+    font-size: 0.85rem !important;
+    font-weight: 500 !important;
+    min-width: 95px;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    transition: background-color 0.3s ease;
+}
+
+.toggle-dot {
+    width: 14px;
+    height: 14px;
+    background-color: white;
+    border-radius: 50%;
+    transition: transform 0.3s ease;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+
+/* ACTIVE STATE (Green) */
+.status-toggle-container.active .status-badge {
+    background-color: #28a745 !important;
+}
+
+.status-toggle-container.active .toggle-dot {
+    transform: translateX(0);
+    order: 2;
+    margin-left: 8px;
+}
+
+/* INACTIVE STATE (Red) */
+.status-toggle-container.inactive .status-badge {
+    background-color: #dc3545 !important;
+}
+
+.status-toggle-container.inactive .toggle-dot {
+    transform: translateX(0);
+    order: -1;
+    margin-right: 8px;
+}
+
+/* --- DARK MODE VISIBILITY FIXES --- */
+
+/* Fix for the placeholder color in dark mode inputs */
+.bg-dark.text-white::placeholder {
+    color: rgba(255, 255, 255, 0.6) !important;
+    opacity: 1; /* Browser override */
+}
+
+/* Ensure cross-browser support for placeholders */
+.bg-dark.text-white::-webkit-input-placeholder { color: rgba(255, 255, 255, 0.6) !important; }
+.bg-dark.text-white::-moz-placeholder { color: rgba(255, 255, 255, 0.6) !important; }
+.bg-dark.text-white:-ms-input-placeholder { color: rgba(255, 255, 255, 0.6) !important; }
+
+/* Optional: Slight border adjustment for visibility */
+.border-secondary {
+    border-color: #495057 !important;
+}

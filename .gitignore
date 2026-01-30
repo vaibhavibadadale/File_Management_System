@@ -1,0 +1,42 @@
+# ========================
+# Node dependencies (all levels)
+# ========================
+node_modules/
+Frontend/node_modules/
+backend/node_modules/
+
+# ========================
+# Environment files
+# ========================
+.env
+backend/.env
+Frontend/.env
+
+# ========================
+# Build and distribution folders
+# ========================
+dist/
+build/
+
+# ========================
+# Logs
+# ========================
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ========================
+# System files
+# ========================
+.DS_Store
+
+# ========================
+# Backend uploads or temp files
+# ========================
+backend/uploads/
+
+backend/backups/
+*.zip
+
+
