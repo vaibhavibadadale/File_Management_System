@@ -10,7 +10,7 @@ const app = express();
 // ================= CONFIG =================
 const PORT = process.env.PORT || 5000;
 const UPLOADS_DIR = path.join(__dirname, "uploads");
-const MONGO_URI = process.env.MONGO_URI || "mongodb://127.0.0.1:27017/aaryans_file_managementDB";
+const MONGO_URI = process.env.MONGO_URI || "mongodb://127.0.0.1:27017/aaryans_file_management_system";
 
 // ================= ENSURE UPLOADS DIR =================
 if (!fs.existsSync(UPLOADS_DIR)) {

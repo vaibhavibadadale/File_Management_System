@@ -7,6 +7,7 @@ import PendingActionsIcon from "@mui/icons-material/PendingActions";
 import StarIcon from "@mui/icons-material/Star"; 
 import PersonAddIcon from "@mui/icons-material/PersonAdd"; 
 import DeleteIcon from "@mui/icons-material/Delete"; 
+import StorageIcon from "@mui/icons-material/Storage"; // ADDED: Icon for Backup
 import "../styles/sidebar.css";
 
 const sidebarItems = [
@@ -51,6 +52,13 @@ const sidebarItems = [
     icon: <DeleteIcon />, 
     path: "/trash", 
     roles: ["HOD", "ADMIN", "SUPERADMIN"] 
+  },
+  { 
+    // ADDED: Backup Menu Item
+    text: "Backup System", 
+    icon: <StorageIcon />, 
+    path: "/backup", 
+    roles: ["ADMIN", "SUPERADMIN"] 
   },
 ];
 

@@ -16,6 +16,7 @@ const FileSchema = new mongoose.Schema(
     uploadedAt: { type: Date, default: Date.now },
     departmentId: { type: mongoose.Schema.Types.ObjectId, ref: "Department" },
     isStarred: { type: Boolean, default: false },
+    isDisabled: { type: Boolean, default: false }, // For toggle functionality
     deletedAt: { type: Date, default: null }
   },
   { timestamps: true }

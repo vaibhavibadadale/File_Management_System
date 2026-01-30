@@ -1,16 +1,16 @@
 import React, { useState, useEffect } from "react";
 import axios from "axios";
-import Swal from "sweetalert2"; 
-import "../styles/UploadFilePage.css"; 
-import TransferModal from "../components/TransferModal"; 
+import Swal from "sweetalert2";
+import "../styles/UploadFilePage.css";
+import TransferModal from "../components/TransferModal";
 
 const DEPARTMENT_ID = "694050d65c12077b1957bc98";
-const USER_ID = "694130dd872795f2641e2621"; 
-const BACKEND_URL = "http://localhost:5000"; 
+const USER_ID = "694130dd872795f2641e2621";
+const BACKEND_URL = "http://localhost:5000";
 
 // --- Utility Functions ---
 const getFileIcon = (mimeType) => {
-    if (!mimeType || typeof mimeType !== 'string') return 'fas fa-file'; 
+    if (!mimeType || typeof mimeType !== 'string') return 'fas fa-file';
     if (mimeType.includes('image')) return 'fas fa-file-image';
     if (mimeType.includes('pdf')) return 'fas fa-file-pdf';
     if (mimeType.includes('sheet') || mimeType.includes('excel')) return 'fas fa-file-excel';
@@ -42,17 +42,19 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
     const [receivedItems, setReceivedItems] = useState([]);
     const [isReceivedModalOpen, setIsReceivedModalOpen] = useState(false);
     const [selectedFile, setSelectedFile] = useState(null);
-    const [folderName, setFolderName] = useState(""); 
-    const [currentFolderId, setCurrentFolderId] = useState(null); 
-    const [currentPath, setCurrentPath] = useState([{ _id: null, name: "Home" }]); 
+    const [folderName, setFolderName] = useState("");
+    const [currentFolderId, setCurrentFolderId] = useState(null);
+    const [currentPath, setCurrentPath] = useState([{ _id: null, name: "Home" }]);
     const [itemsToTransfer, setItemsToTransfer] = useState({});
-    const [searchQuery, setSearchQuery] = useState(""); 
+    const [searchQuery, setSearchQuery] = useState("");
     const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
     const [starredItems, setStarredItems] = useState({});
     const [isDeleting, setIsDeleting] = useState(false);
 
     const isDark = currentTheme === "dark";
-    const userDeptId = user?.departmentId || (user?.role === 'admin' || user?.role === 'superadmin' ? null : DEPARTMENT_ID);
+    const userRole = (user?.role || "").toLowerCase();
+    const isAdmin = userRole === "admin" || userRole === "superadmin";
+    const userDeptId = user?.departmentId || (isAdmin ? null : DEPARTMENT_ID);
 
     useEffect(() => {
         loadContent(currentFolderId);
@@ -60,11 +62,11 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
 
     const loadContent = async (parentId) => {
         setItemsToTransfer({});
-        const activeFolderId = parentId || "null"; 
+        const activeFolderId = parentId || "null";
         const currentUserId = user?._id || USER_ID;
 
         let params = { userId: currentUserId };
-        
+
         if (viewMode === "important") {
             params.isStarred = true;
         } else {
@@ -90,16 +92,17 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
     };
 
     const handleToggleStar = async (e, item) => {
-        e.stopPropagation(); 
+        e.stopPropagation();
+        if (item.isDisabled && !isAdmin) return; // Block interaction if disabled
         const isFolder = item.type === 'Folder' || item.isFolder;
-        if (isFolder) return; 
+        if (isFolder) return;
 
         const newStarredState = !starredItems[item._id];
 
         try {
-            await axios.patch(`${BACKEND_URL}/api/files/star/${item._id}`, { 
+            await axios.patch(`${BACKEND_URL}/api/files/star/${item._id}`, {
                 userId: user?._id || USER_ID,
-                isStarred: newStarredState 
+                isStarred: newStarredState
             });
             setStarredItems(prev => ({ ...prev, [item._id]: newStarredState }));
             if (viewMode === "important") loadContent(currentFolderId);
@@ -172,7 +175,7 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
 
     const executeBulkDeleteRequest = async () => {
         const selectedIds = Object.keys(itemsToTransfer).filter(id => itemsToTransfer[id]);
-        
+
         if (selectedIds.length === 0) {
             return Swal.fire("Info", "No items selected.", "info");
         }
@@ -210,10 +213,10 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
 
                 await axios.post(`${BACKEND_URL}/api/requests/create`, {
                     requestType: "delete",
-                    senderUsername: user?.username || "Admin", 
+                    senderUsername: user?.username || "Admin",
                     senderRole: user?.role || "user",
-                    departmentId: userDeptId, 
-                    fileIds: selectedIds, 
+                    departmentId: userDeptId,
+                    fileIds: selectedIds,
                     reason: formValues.reason
                 });
 
@@ -224,7 +227,7 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
                     background: isDark ? '#2d2d2d' : '#fff',
                     color: isDark ? '#fff' : '#000'
                 });
-                
+
                 setItemsToTransfer({});
                 loadContent(currentFolderId);
             } catch (err) {
@@ -239,7 +242,7 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
     const fetchReceivedFiles = async () => {
         try {
             const response = await axios.get(`${BACKEND_URL}/api/requests/received`, {
-                params: { userId: user?._id || USER_ID, departmentId: userDeptId } 
+                params: { userId: user?._id || USER_ID, departmentId: userDeptId }
             });
             const items = [
                 ...(response.data.folders || []).map(f => ({ ...f, isFolder: true, displayName: f.folderName || f.name, sender: f.senderUsername || "Shared" })),
@@ -250,32 +253,47 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
         } catch (err) { alert("Could not load received files."); }
     };
 
-    // UPDATED handleViewFile to include tracking logic
     const handleViewFile = async (file) => {
+        // GLOBAL DISABLE CHECK
+        if (file.isDisabled && !isAdmin) {
+            return Swal.fire({
+                icon: 'error',
+                title: 'File Restricted',
+                text: 'This file has been disabled by an administrator and cannot be viewed.',
+                background: isDark ? '#2d2d2d' : '#fff',
+                color: isDark ? '#fff' : '#000'
+            });
+        }
+
         try {
-            // 1. Trigger backend tracking
-            await axios.post(`${BACKEND_URL}/api/files/track-view`, { 
-                fileId: file._id, 
-                userId: user?._id || USER_ID 
+            await axios.post(`${BACKEND_URL}/api/files/track-view`, {
+                fileId: file._id,
+                userId: user?._id || USER_ID
             });
 
-            // 2. Open the file
-            const folderName = file.username || file.uploadedByUsername || file.senderUsername || "Admin"; 
+            const folderName = file.username || file.uploadedByUsername || file.senderUsername || "Admin";
             const fileUrl = `${BACKEND_URL}/uploads/${folderName}/${encodeURIComponent(file.filename)}`;
             window.open(fileUrl, '_blank');
-            
-            // 3. Optional: Refresh content if you want to see the update immediately on this page
-            // loadContent(currentFolderId);
         } catch (err) {
             console.error("Error opening/tracking file:", err);
-            // Fallback: Still try to open file even if tracking fails
-            const folderName = file.username || file.uploadedByUsername || file.senderUsername || "Admin"; 
+            const folderName = file.username || file.uploadedByUsername || file.senderUsername || "Admin";
             const fileUrl = `${BACKEND_URL}/uploads/${folderName}/${encodeURIComponent(file.filename)}`;
             window.open(fileUrl, '_blank');
         }
     };
 
     const handleDownload = async (file) => {
+        // GLOBAL DISABLE CHECK
+        if (file.isDisabled && !isAdmin) {
+            return Swal.fire({
+                icon: 'error',
+                title: 'Download Restricted',
+                text: 'This file is currently disabled.',
+                background: isDark ? '#2d2d2d' : '#fff',
+                color: isDark ? '#fff' : '#000'
+            });
+        }
+
         try {
             const response = await axios({
                 url: `${BACKEND_URL}/api/files/download/${file._id}`,
@@ -293,16 +311,16 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
     const handleFileUpload = async () => {
         if (!selectedFile) return alert("Select a file.");
         const formData = new FormData();
-        formData.append("username", user?.username || "Admin"); 
+        formData.append("username", user?.username || "Admin");
         formData.append("folderId", currentFolderId || "null");
         formData.append("uploadedBy", user?._id || USER_ID);
-        formData.append("departmentId", userDeptId || ""); 
+        formData.append("departmentId", userDeptId || "");
         formData.append("file", selectedFile);
 
         try {
             await axios.post(`${BACKEND_URL}/api/files/upload`, formData);
             setSelectedFile(null);
-            loadContent(currentFolderId); 
+            loadContent(currentFolderId);
             alert(`Uploaded!`);
         } catch (err) { alert("Upload failed."); }
     };
@@ -311,7 +329,7 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
         if (!folderName) return alert("Enter name");
         try {
             await axios.post(`${BACKEND_URL}/api/folders/create`, {
-                name: folderName, parent: currentFolderId || null, 
+                name: folderName, parent: currentFolderId || null,
                 createdBy: user?._id || USER_ID, departmentId: userDeptId || null,
             });
             setFolderName(""); loadContent(currentFolderId);
@@ -334,7 +352,7 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
     const handleGoBack = () => {
         if (currentPath.length > 1) {
             const newPath = [...currentPath];
-            newPath.pop(); 
+            newPath.pop();
             setCurrentPath(newPath);
             setCurrentFolderId(newPath[newPath.length - 1]._id);
         }
@@ -370,7 +388,7 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
                         )}
                     </div>
                 </header>
-                
+
                 <div className={`main-actions-toolbar ${isDark ? 'dark-toolbar' : ''}`}>
                     {viewMode !== "important" ? (
                         <>
@@ -409,7 +427,7 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
                         <nav aria-label="breadcrumb">
                             <ol className="breadcrumb mb-0">
                                 {currentPath.map((item, index) => (
-                                    <li key={item._id || index} className={`breadcrumb-item ${index === currentPath.length-1 ? 'active' : ''}`} onClick={() => handlePathClick(item)} style={{ cursor: 'pointer' }}>
+                                    <li key={item._id || index} className={`breadcrumb-item ${index === currentPath.length - 1 ? 'active' : ''}`} onClick={() => handlePathClick(item)} style={{ cursor: 'pointer' }}>
                                         {item.name}
                                     </li>
                                 ))}
@@ -436,23 +454,35 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
                     <table className="file-table">
                         <thead>
                             <tr>
-                                <th style={{width: '40px'}}>{viewMode !== "important" && <input type="checkbox" onChange={handleSelectAll} checked={isAllSelected} className="form-check-input" />}</th>
+                                <th style={{ width: '40px' }}>{viewMode !== "important" && <input type="checkbox" onChange={handleSelectAll} checked={isAllSelected} className="form-check-input" />}</th>
                                 <th>Name</th>
                                 <th>Type</th>
                                 <th>Modified</th>
                                 <th>Size</th>
-                                <th style={{textAlign: 'right'}}>Action</th>
+                                <th style={{ textAlign: 'right' }}>Action</th>
                             </tr>
                         </thead>
                         <tbody>
                             {combinedItems.length > 0 ? combinedItems.map((item) => (
-                                <tr key={item._id} onDoubleClick={item.type === 'Folder' ? () => handleFolderClick(item) : null} className={itemsToTransfer[item._id] ? 'table-active' : ''}>
+                                <tr 
+                                    key={item._id} 
+                                    onDoubleClick={item.type === 'Folder' ? () => handleFolderClick(item) : null} 
+                                    className={`${itemsToTransfer[item._id] ? 'table-active' : ''} ${item.isDisabled ? 'opacity-50' : ''}`}
+                                >
                                     <td>{viewMode !== "important" && <input type="checkbox" checked={!!itemsToTransfer[item._id]} onChange={() => handleSelectItem(item._id)} className="form-check-input" />}</td>
                                     <td className={item.type === 'Folder' ? 'folder-row' : ''}>
                                         <div className="d-flex align-items-center">
                                             <i className={`${item.type === 'Folder' ? 'fas fa-folder text-warning' : getFileIcon(item.type)} file-icon me-3 fs-5`}></i>
-                                            <span className="text-truncate" style={{maxWidth: '250px'}}>{item.displayName}</span>
-                                            {item.type !== 'Folder' && <i className={`${starredItems[item._id] ? 'fas fa-star text-warning' : 'far fa-star text-muted'} ms-3`} style={{ cursor: 'pointer', fontSize: '0.9rem' }} onClick={(e) => handleToggleStar(e, item)}></i>}
+                                            <span 
+                                                className={`text-truncate ${item.isDisabled ? 'text-decoration-line-through text-muted' : ''}`} 
+                                                style={{ maxWidth: '250px' }}
+                                            >
+                                                {item.displayName}
+                                            </span>
+                                            {item.isDisabled && <span className="badge bg-danger ms-2" style={{ fontSize: '0.65rem' }}>Disabled</span>}
+                                            {item.type !== 'Folder' && !item.isDisabled && (
+                                                <i className={`${starredItems[item._id] ? 'fas fa-star text-warning' : 'far fa-star text-muted'} ms-3`} style={{ cursor: 'pointer', fontSize: '0.9rem' }} onClick={(e) => handleToggleStar(e, item)}></i>
+                                            )}
                                         </div>
                                     </td>
                                     <td><span className="badge bg-light text-dark border">{formatMimeType(item.type)}</span></td>
@@ -460,13 +490,21 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
                                     <td className="text-muted small">{item.type === 'Folder' ? '—' : formatBytes(item.size)}</td>
                                     <td className="text-end">
                                         <div className="d-flex gap-3 justify-content-end align-items-center">
-                                            {item.type !== 'Folder' && <button className="btn btn-link btn-sm p-0" onClick={() => handleViewFile(item)}><i className="fas fa-eye text-primary"></i></button>}
+                                            {item.type !== 'Folder' && (
+                                                <button 
+                                                    className="btn btn-link btn-sm p-0" 
+                                                    onClick={() => handleViewFile(item)}
+                                                    style={{ cursor: item.isDisabled && !isAdmin ? 'not-allowed' : 'pointer' }}
+                                                >
+                                                    <i className={`fas fa-eye ${item.isDisabled ? 'text-muted' : 'text-primary'}`}></i>
+                                                </button>
+                                            )}
                                             <button className="btn btn-link btn-sm p-0" onClick={() => handleDeleteItemTrigger(item)}><i className="fas fa-trash text-danger"></i></button>
                                         </div>
                                     </td>
                                 </tr>
                             )) : (
-                                <tr><td colSpan="6" className="empty-message py-5 text-center text-muted"><i className="fas fa-folder-open d-block mb-3" style={{fontSize: '3rem'}}></i>No items found.</td></tr>
+                                <tr><td colSpan="6" className="empty-message py-5 text-center text-muted"><i className="fas fa-folder-open d-block mb-3" style={{ fontSize: '3rem' }}></i>No items found.</td></tr>
                             )}
                         </tbody>
                     </table>
@@ -488,19 +526,31 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
                                 </thead>
                                 <tbody>
                                     {receivedItems.length > 0 ? receivedItems.map((item) => (
-                                        <tr key={item._id}>
-                                            <td className={isDark ? 'text-white' : ''}><i className={`${item.isFolder ? 'fas fa-folder text-warning' : getFileIcon(item.mimeType || item.type)} me-2`}></i>{item.displayName}</td>
+                                        <tr key={item._id} className={item.isDisabled ? 'opacity-50' : ''}>
+                                            <td className={isDark ? 'text-white' : ''}>
+                                                <i className={`${item.isFolder ? 'fas fa-folder text-warning' : getFileIcon(item.mimeType || item.type)} me-2`}></i>
+                                                <span className={item.isDisabled ? 'text-decoration-line-through' : ''}>{item.displayName}</span>
+                                                {item.isDisabled && <span className="badge bg-danger ms-2" style={{ fontSize: '0.6rem' }}>Disabled</span>}
+                                            </td>
                                             <td className={isDark ? 'text-white-50' : ''}>{item.isFolder ? '—' : formatBytes(item.size)}</td>
                                             <td className="small text-muted">{item.sender}</td>
                                             <td className="text-end">
                                                 <div className="d-flex gap-3 justify-content-end">
                                                     {!item.isFolder && (
                                                         <>
-                                                            <i className="fas fa-eye text-primary action-icon" style={{cursor:'pointer'}} onClick={() => handleViewFile(item)}></i>
-                                                            <i className="fas fa-download text-success action-icon" style={{cursor:'pointer'}} onClick={() => handleDownload(item)}></i>
+                                                            <i 
+                                                                className={`fas fa-eye action-icon ${item.isDisabled ? 'text-muted' : 'text-primary'}`} 
+                                                                style={{ cursor: item.isDisabled && !isAdmin ? 'not-allowed' : 'pointer' }} 
+                                                                onClick={() => handleViewFile(item)}
+                                                            ></i>
+                                                            <i 
+                                                                className={`fas fa-download action-icon ${item.isDisabled ? 'text-muted' : 'text-success'}`} 
+                                                                style={{ cursor: item.isDisabled && !isAdmin ? 'not-allowed' : 'pointer' }} 
+                                                                onClick={() => handleDownload(item)}
+                                                            ></i>
                                                         </>
                                                     )}
-                                                    <i className="fas fa-trash text-danger action-icon" style={{cursor:'pointer'}} onClick={() => handleDeleteItemTrigger(item)}></i>
+                                                    <i className="fas fa-trash text-danger action-icon" style={{ cursor: 'pointer' }} onClick={() => handleDeleteItemTrigger(item)}></i>
                                                 </div>
                                             </td>
                                         </tr>
@@ -516,22 +566,22 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
             )}
 
             {isTransferModalOpen && (
-                <TransferModal 
+                <TransferModal
                     selectedIds={Object.keys(itemsToTransfer).filter(id => itemsToTransfer[id])}
-                    senderUsername={user?.username || "Admin"} 
-                    user={user} 
+                    senderUsername={user?.username || "Admin"}
+                    user={user}
                     departmentId={userDeptId}
                     onClose={() => setIsTransferModalOpen(false)}
                     currentTheme={currentTheme}
-                    onSuccess={async () => { 
-                        setItemsToTransfer({}); 
-                        setIsTransferModalOpen(false); 
-                        await loadContent(currentFolderId); 
+                    onSuccess={async () => {
+                        setItemsToTransfer({});
+                        setIsTransferModalOpen(false);
+                        await loadContent(currentFolderId);
                     }}
                 />
             )}
         </div>
     );
-} 
+}
 
 export default UploadFilePage;

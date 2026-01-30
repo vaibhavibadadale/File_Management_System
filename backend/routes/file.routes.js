@@ -1,9 +1,9 @@
 const express = require("express");
 const router = express.Router();
 const upload = require("../middlewares/upload.middleware");
-const File = require("../models/File");
 const fileController = require("../controllers/file.controller");
 const transferController = require('../controllers/transfer.controller');
+const backupController = require('../controllers/backup.controller');
 
 /**
  * 1. POST: File Upload
@@ -20,18 +20,13 @@ router.post("/upload", upload.single("file"), (req, res, next) => {
  */
 router.get("/", async (req, res, next) => {
     const { isStarred, userId } = req.query;
-
     if (isStarred === "true") {
         try {
             let query = { isStarred: true, deletedAt: null };
-            
             if (userId) {
-                query.$or = [
-                    { uploadedBy: userId },
-                    { sharedWith: userId }
-                ];
+                query.$or = [{ uploadedBy: userId }, { sharedWith: userId }];
             }
-            
+            const File = require("../models/File"); // Ensure File model is loaded
             const files = await File.find(query)
                 .populate("uploadedBy", "name username")
                 .sort({ updatedAt: -1 });
@@ -54,23 +49,21 @@ router.patch("/star/:id", (req, res, next) => {
     if (fileController.toggleFileStar) {
         return fileController.toggleFileStar(req, res, next);
     }
-    // Fallback logic
-    return (async () => {
-        try {
-            const file = await File.findById(req.params.id);
-            if (!file) return res.status(404).json({ message: "File not found" });
-            
-            file.isStarred = req.body.isStarred;
-            await file.save();
-            res.json({ success: true, message: "Star status updated", isStarred: file.isStarred });
-        } catch (err) {
-            res.status(500).json({ message: err.message });
-        }
-    })();
+    return res.status(500).json({ message: "Star handler not found" });
 });
 
 /**
- * 4. POST: Track File View
+ * 4. NEW: PUT Toggle File Disable Status
+ */
+router.put("/toggle-status/:id", (req, res, next) => {
+    if (fileController.toggleFileStatus) {
+        return fileController.toggleFileStatus(req, res, next);
+    }
+    res.status(500).json({ message: "Toggle status handler not found in controller" });
+});
+
+/**
+ * 5. POST: Track File View
  */
 router.post("/track-view", (req, res, next) => {
     if (fileController.trackView) {
@@ -80,7 +73,7 @@ router.post("/track-view", (req, res, next) => {
 });
 
 /**
- * 5. DELETE: Soft Delete
+ * 6. DELETE: Soft Delete
  */
 router.delete("/:id", (req, res, next) => {
     if (fileController.softDeleteFile) {
@@ -90,7 +83,7 @@ router.delete("/:id", (req, res, next) => {
 });
 
 /**
- * 6. POST: Secure Transfer
+ * 7. POST: Secure Transfer
  */
 router.post("/transfer", (req, res, next) => {
     const transferMethod = transferController.secureTransfer || transferController.createRequest;
@@ -99,5 +92,7 @@ router.post("/transfer", (req, res, next) => {
     }
     res.status(500).json({ message: "Transfer handler not found in controller" });
 });
+
+router.get('/system-backup', backupController.generateSystemBackup);
 
 module.exports = router;
