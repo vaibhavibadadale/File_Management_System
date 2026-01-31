@@ -7,6 +7,7 @@ import Header from "./components/Header";
 import Footer from "./components/Footer"; 
 
 // Pages
+import RequestActionPage from "./pages/RequestActionPage";
 import FileDashboard from "./pages/FileDashboard";  
 import UploadFilePage from "./pages/UploadFilePage";
 import LoginPage from "./pages/LoginPage";
@@ -64,14 +65,18 @@ function App() {
     }
 
     if (!isAuthenticated) {
-        return (
-            <Routes>
-                <Route path="/login" element={<LoginPage onLogin={handleLoginSuccess} />} />
-                <Route path="*" element={<Navigate to="/login" />} />
-            </Routes>
-        );
-    }
-
+    return (
+        <Routes>
+            <Route path="/login" element={<LoginPage onLogin={handleLoginSuccess} />} />
+            
+            {/* ADD THIS LINE: Allow public access to this specific page */}
+            <Route path="/request-action" element={<RequestActionPage />} />
+            
+            {/* Catch-all redirect to login for everything else */}
+            <Route path="*" element={<Navigate to="/login" />} />
+        </Routes>
+    );
+}
     return (
         <div className={`theme-container ${themeMode} min-vh-100 ${themeMode === "dark" ? "bg-dark text-light" : "bg-light text-dark"}`}> 
             <div className="d-flex align-items-stretch">

@@ -1,84 +1,81 @@
-/**
- * Email Templates for File Management System
- */
-
-const style = `
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    line-height: 1.6;
-    color: #333;
-    max-width: 600px;
-    margin: 0 auto;
-    border: 1px solid #eee;
-    border-radius: 10px;
-    overflow: hidden;
-`;
-
-const headerStyle = (color) => `
-    background-color: ${color};
-    color: white;
-    padding: 20px;
-    text-align: center;
-    margin: 0;
-`;
-
+const style = `font-family: 'Segoe UI', sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #eee; border-radius: 10px; overflow: hidden;`;
+const headerStyle = (color) => `background-color: ${color}; color: white; padding: 20px; text-align: center; margin: 0;`;
 const bodyStyle = `padding: 20px;`;
-const footerStyle = `
-    background-color: #f9f9f9;
-    padding: 15px;
-    text-align: center;
-    font-size: 12px;
-    color: #777;
-`;
+const footerStyle = `background-color: #f9f9f9; padding: 15px; text-align: center; font-size: 12px; color: #777;`;
 
 module.exports = {
-    // 1. Template for Supervisors (HOD/Admin) when a new request is made
-    newRequestTemplate: (data) => `
-        <div style="${style}">
-            <h2 style="${headerStyle('#007bff')}">New Action Required</h2>
-            <div style="${bodyStyle}">
-                <p>Hello,</p>
-                <p>A new <strong>${data.requestType.toUpperCase()}</strong> request has been submitted that requires your review.</p>
-                <table style="width: 100%; border-collapse: collapse;">
-                    <tr><td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Sender:</strong></td><td style="padding: 8px; border-bottom: 1px solid #eee;">${data.senderUsername}</td></tr>
-                    <tr><td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Role:</strong></td><td style="padding: 8px; border-bottom: 1px solid #eee;">${data.sRole}</td></tr>
-                    <tr><td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Department:</strong></td><td style="padding: 8px; border-bottom: 1px solid #eee;">${data.sDeptName}</td></tr>
-                    <tr><td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Reason:</strong></td><td style="padding: 8px; border-bottom: 1px solid #eee;">${data.reason}</td></tr>
-                </table>
-                <p style="margin-top: 20px; text-align: center;">
-                    <a href="${process.env.FRONTEND_URL}/dashboard" style="background-color: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">View Dashboard</a>
-                </p>
-            </div>
-            <div style="${footerStyle}">Aaryan File Management System &copy; 2026</div>
-        </div>
-    `,
+newRequestTemplate: (data) => {
+        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+        
+        // Use the dynamic email passed from the controller
+        const userEmail = data.recipientEmail || 'missing@system.com';
+        
+        // ENCRYPTION STEP: Convert ID and Email to Base64 to hide them from the URL bar
+        const t = Buffer.from(data.requestId.toString()).toString('base64');
+        const i = Buffer.from(userEmail).toString('base64');
+        
+        // Links now use obfuscated 't' and 'i' parameters
+        const approveLink = `${frontendUrl}/request-action?action=approve&t=${t}&i=${i}`;
+        const denyLink = `${frontendUrl}/request-action?action=deny&t=${t}&i=${i}`;
 
-    // 2. Template for the Sender when their request is APPROVED
-    approvalTemplate: (data) => `
+        return `
         <div style="${style}">
-            <h2 style="${headerStyle('#28a745')}">Request Approved</h2>
+            <h2 style="${headerStyle('#007bff')}">Action Required</h2>
             <div style="${bodyStyle}">
-                <p>Hello <strong>${data.username}</strong>,</p>
-                <p>Great news! Your request for <strong>${data.requestType}</strong> has been approved by <strong>${data.approverUsername}</strong>.</p>
-                <p>Your files have been processed successfully.</p>
-            </div>
-            <div style="${footerStyle}">Aaryan File Management System &copy; 2026</div>
-        </div>
-    `,
-
-    // 3. Template for the Sender when their request is DENIED
-    denialTemplate: (data) => `
-        <div style="${style}">
-            <h2 style="${headerStyle('#dc3545')}">Request Denied</h2>
-            <div style="${bodyStyle}">
-                <p>Hello <strong>${data.username}</strong>,</p>
-                <p>Your request for <strong>${data.requestType}</strong> was unfortunately denied by <strong>${data.approverUsername}</strong>.</p>
-                <div style="background-color: #fff5f5; border-left: 4px solid #dc3545; padding: 10px; margin: 15px 0;">
-                    <strong>Reason for Denial:</strong><br/>
-                    ${data.denialComment || "No specific reason provided."}
+                <p><strong>${data.senderUsername}</strong> has requested a <strong>${data.requestType}</strong>.</p>
+                <p><strong>Reason:</strong> ${data.reason}</p>
+                
+                <div style="text-align: center; margin: 30px 0;">
+                    <a href="${approveLink}" 
+                       style="background-color: #111827; color: white; padding: 12px 25px; text-decoration: none; border-radius: 6px; margin-right: 10px; display: inline-block; font-weight: bold;">
+                       Approve Request
+                    </a>
+                    <a href="${denyLink}" 
+                       style="background-color: #f3f4f6; color: #111827; border: 1px solid #e5e7eb; padding: 12px 25px; text-decoration: none; border-radius: 6px; display: inline-block; font-weight: bold;">
+                       Deny Request
+                    </a>
                 </div>
-                <p>If you have questions, please contact your department HOD.</p>
+                <p style="font-size: 12px; color: #999; text-align: center;">Identity verification required. Verifying as: ${userEmail}</p>
             </div>
-            <div style="${footerStyle}">Aaryan File Management System &copy; 2026</div>
+            <div style="${footerStyle}">Aaryan File System &copy; 2026</div>
+        </div>`;
+    },
+
+    actionUpdateTemplate: (data) => `
+    <div style="${style}">
+        <h2 style="${headerStyle(data.status === 'completed' ? '#28a745' : '#dc3545')}">
+            Request ${data.status === 'completed' ? 'Approved' : 'Denied'}
+        </h2>
+        <div style="${bodyStyle}">
+            <p>This is an automated update regarding the <strong>${data.requestType}</strong> request from <strong>${data.senderUsername}</strong>.</p>
+            <p><strong>Action Taken By:</strong> ${data.actionedBy}</p>
+            <p><strong>New Status:</strong> ${data.status === 'completed' ? 'Approved & Processed' : 'Denied'}</p>
+            ${data.denialReason ? `<p><strong>Reason:</strong> ${data.denialReason}</p>` : ''}
+            <p style="font-size: 13px; color: #666; border-top: 1px solid #eee; margin-top: 10px; padding-top: 10px;">
+                No further action is required from your side.
+            </p>
         </div>
-    `
+        <div style="${footerStyle}">Aaryan File System &copy; 2026</div>
+    </div>`,
+
+    fileReceivedTemplate: (data) => `
+        <div style="${style}">
+            <h2 style="${headerStyle('#17a2b8')}">File Received</h2>
+            <div style="${bodyStyle}">
+                <p>Hello ${data.receiverName},</p>
+                <p><strong>${data.senderName}</strong> is transferring files to you. Once approved by a manager, they will appear in your dashboard.</p>
+            </div>
+        </div>`,
+
+    newUserTemplate: (data) => `
+        <div style="${style}">
+            <h2 style="${headerStyle('#6f42c1')}">Welcome to the Team</h2>
+            <div style="${bodyStyle}">
+                <p>Hello <strong>${data.username}</strong>,</p>
+                <p>An account has been created for you in the Aaryan File Management System.</p>
+                <p><strong>Your Role:</strong> ${data.role}</p>
+                <p>Please login to set your password and start managing files.</p>
+                <p style="text-align: center;"><a href="${process.env.FRONTEND_URL}/login" style="background-color: #6f42c1; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Login Now</a></p>
+            </div>
+        </div>`
 };

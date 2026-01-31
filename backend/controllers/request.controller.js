@@ -1,7 +1,8 @@
 const Request = require("../models/Request");
+const User = require("../models/User"); 
+const bcrypt = require("bcryptjs");
 const File = require("../models/File");
 const Folder = require("../models/Folder");
-const User = require("../models/User");
 const Department = require("../models/Department");
 const Notification = require("../models/Notification");
 const Trash = require("../models/Trash");
@@ -10,12 +11,10 @@ const Transfer = require("../models/Transfer");
 const EmailLog = require("../models/EmailLog");
 const mongoose = require("mongoose");
 
-// CORRECT PATHS: Use ../ to go up one level from controllers to utils
-const { getRecipientsForRequest, sendEmail } = require("../utils/emailHelper");
-const templates = require("../utils/emailTemplates"); 
+const { getRecipientsForRequest, notifyApprovers, sendEmail } = require("../utils/emailHelper");
+const templates = require("../utils/emailTemplates");
 
 // --- HELPERS ---
-
 async function handleMoveToTrash(files, sender, approver, deptId) {
     for (const fileId of files) {
         const actualId = fileId._id || fileId;
@@ -74,7 +73,6 @@ async function handleOwnershipTransfer(fileIds, recipientId, senderUsername) {
 }
 
 // --- CONTROLLERS ---
-
 exports.createRequest = async (req, res) => {
     try {
         const { senderUsername, recipientId, fileIds, reason, requestType } = req.body;
@@ -84,97 +82,204 @@ exports.createRequest = async (req, res) => {
 
         const sRole = (senderUser.role || "USER").toUpperCase();
         const finalDeptId = senderUser.departmentId?._id || senderUser.departmentId;
-        const sDeptName = senderUser.departmentId?.departmentName || "General";
+        
+        // Check for Auto-Approval (Superadmins don't need permission)
+        const isAutoApprove = ["SUPERADMIN", "SUPER_ADMIN"].includes(sRole);
 
-        const isAutoApprove = (sRole === "SUPERADMIN" || sRole === "SUPER_ADMIN");
-
-        const commonData = {
+        const mainReq = await new Request({
             requestType: requestType || "transfer",
             fileIds,
             senderUsername: senderUser.username,
             senderRole: sRole,
-            senderDeptName: sDeptName,
+            senderDeptName: senderUser.departmentId?.departmentName || "General",
             departmentId: finalDeptId,
+            recipientId,
             reason: reason || "No reason provided",
             status: isAutoApprove ? "completed" : "pending"
-        };
+        }).save();
 
+        // CASE 1: AUTO-APPROVE (Execute file logic immediately)
         if (isAutoApprove) {
             if (requestType === "delete") {
-                await handleMoveToTrash(fileIds, senderUsername, `AUTO-${sRole}`, finalDeptId);
-            } else if (recipientId) {
-                await handleOwnershipTransfer(fileIds, recipientId, senderUsername);
+                await handleMoveToTrash(fileIds, senderUser.username, "SYSTEM_AUTO", finalDeptId);
+            } else {
+                await handleOwnershipTransfer(fileIds, recipientId, senderUser.username);
             }
-        } else {
-            // --- INTERNAL NOTIFICATION LOGIC ---
-            let query = [];
-            if (["USER", "EMPLOYEE"].includes(sRole)) {
-                query = [
-                    { role: { $in: ['ADMIN', 'SUPERADMIN', 'SUPER_ADMIN'] } },
-                    { role: 'HOD', departmentId: finalDeptId }
-                ];
-            } else if (sRole === "HOD") {
-                query = [{ role: { $in: ['ADMIN', 'SUPERADMIN', 'SUPER_ADMIN'] } }];
-            } else if (sRole === "ADMIN") {
-                query = [{ role: { $in: ['SUPERADMIN', 'SUPER_ADMIN'] } }];
-            }
+        } 
+        
+        // CASE 2: PENDING APPROVAL (Notify Admins/HODs)
+        else {
+            const recipients = await getRecipientsForRequest(sRole, finalDeptId, senderUser.username);
 
-            const staffToNotify = await User.find({ $or: query, deletedAt: null });
-            
-            const notifications = staffToNotify
-                .filter(u => u.username !== senderUsername)
-                .map(u => ({
-                    recipientId: u._id,
-                    title: `New ${requestType.toUpperCase()} Request`,
-                    message: `${senderUsername} (${sDeptName}) requested a ${requestType}.`,
-                    type: requestType === 'delete' ? 'DELETE_REQUEST' : 'TRANSFER_REQUEST'
-                }));
+            if (recipients && recipients.length > 0) {
+                // Fetch the request and POPULATE the file metadata
+                const populatedReq = await Request.findById(mainReq._id).populate('fileIds');
 
-            if (notifications.length > 0) await Notification.insertMany(notifications);
+                // Extract real names for the email template
+                const fileNamesStr = populatedReq.fileIds
+                    .map(f => f.fileName || f.originalName || f.name || "Unnamed File")
+                    .join(", ");
 
-            // --- EMAIL NOTIFICATION LOGIC (Hierarchy Based) ---
-            const emailRecipients = await getRecipientsForRequest(sRole, finalDeptId);
-            if (emailRecipients.length > 0) {
-                const emailHtml = templates.newRequestTemplate({
-                    requestType,
+                await notifyApprovers(recipients, {
                     senderUsername: senderUser.username,
-                    sRole,
-                    sDeptName,
-                    reason: reason || "No reason provided"
+                    requestType: requestType || "transfer",
+                    reason: mainReq.reason,
+                    requestId: mainReq._id,
+                    fileNames: fileNamesStr 
                 });
-
-                await sendEmail(
-                    emailRecipients, 
-                    `Action Required: New ${requestType} Request from ${senderUsername}`, 
-                    emailHtml, 
-                    "NEW_REQUEST", 
-                    senderUsername
-                );
             }
         }
 
-        if (requestType === "delete") {
-            await new DeleteRequest(commonData).save();
-        } else {
-            await new Transfer({ ...commonData, recipientId }).save();
-        }
-
-        const mainReq = new Request({ ...commonData, recipientId });
-        await mainReq.save();
-
-        res.status(201).json({
-            message: isAutoApprove ? "Action completed instantly" : "Request sent for approval",
-            data: mainReq
+        res.status(201).json({ 
+            message: isAutoApprove ? "Request auto-approved and executed" : "Request created and pending approval", 
+            data: mainReq 
         });
-    } catch (error) {
-        res.status(500).json({ error: error.message });
+
+    } catch (err) {
+        console.error("Create Request Error:", err);
+        res.status(500).json({ error: err.message });
     }
 };
 
+exports.approveFromEmail = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const request = await Request.findById(id);
+
+        if (!request || request.status !== 'pending') {
+            return res.status(400).json({ message: "Already processed or not found." });
+        }
+
+        if (request.requestType === "delete") {
+            await handleMoveToTrash(request.fileIds, request.senderUsername, "Admin (via Email)", request.departmentId);
+        } else {
+            await handleOwnershipTransfer(request.fileIds, request.recipientId, request.senderUsername);
+        }
+
+        request.status = "completed";
+        request.actionedBy = "Admin (Email)";
+        request.actionedAt = new Date();
+        await request.save();
+
+        const recipients = await getRecipientsForRequest(request.senderRole, request.departmentId);
+        const updateHtml = `<h3>Request Approved</h3>
+                           <p>The ${request.requestType} request from <b>${request.senderUsername}</b> has been approved via email link.</p>`;
+
+        await sendEmail(recipients, `Update: Request Approved`, updateHtml, "FOLLOW_UP");
+
+        res.status(200).json({ message: "Approved" });
+    } catch (err) { res.status(500).json({ message: err.message }); }
+};
+
+exports.denyFromEmail = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { denialComment } = req.body; 
+
+        const request = await Request.findById(id);
+        if (!request) return res.status(404).json({ message: "Request not found" });
+        if (request.status !== "pending") return res.status(400).json({ message: "Already processed" });
+
+        request.status = "denied";
+        request.denialReason = denialComment || "Denied via Email quick-link.";
+        request.actionedBy = "Admin (Email)";
+        request.actionedAt = new Date();
+        await request.save();
+
+        const recipients = await getRecipientsForRequest(request.senderRole, request.departmentId);
+        const updateHtml = `<h3>Request Denied</h3>
+                           <p>The ${request.requestType} request from <b>${request.senderUsername}</b> was denied.</p>
+                           <p><b>Reason:</b> ${request.denialReason}</p>`;
+
+        await sendEmail(recipients, `Update: Request Denied`, updateHtml, "FOLLOW_UP");
+
+        res.status(200).json({ message: "Success" });
+    } catch (err) { res.status(500).json({ message: err.message }); }
+};
+exports.secureAction = async (req, res) => {
+    try {
+        const { requestId } = req.params;
+        const { action, password, userId, comment } = req.body;
+
+        // DEBUG LOGS - Check your terminal to see if these appear
+        console.log("SECURE ACTION ATTEMPT:", { requestId, userId, action });
+
+        // 1. Validation
+        if (!password || !userId) {
+            return res.status(400).json({ message: "Password and User ID are required." });
+        }
+
+        const approver = await User.findById(userId).select("+password username email");
+        if (!approver) return res.status(404).json({ message: "Approver user not found." });
+
+        const isMatch = await bcrypt.compare(password, approver.password);
+        if (!isMatch) return res.status(401).json({ message: "Incorrect password." });
+
+        const request = await Request.findById(requestId).populate('fileIds');
+        if (!request) return res.status(404).json({ message: "Request no longer exists." });
+        
+        // This is likely what caused your 400 error
+        if (request.status !== 'pending') {
+            return res.status(400).json({ message: `This request is already ${request.status}.` });
+        }
+
+        const isApproved = action === 'approve' || action === 'confirm';
+        
+        // 2. Update Request State
+        request.status = isApproved ? 'completed' : 'rejected';
+        request.actionedBy = approver.username;
+        request.actionedAt = new Date();
+        
+        // Save comment as adminComment for the Frontend "Red Box"
+        if (!isApproved) {
+            request.adminComment = comment || "No reason provided by admin."; 
+        }
+        
+        await request.save();
+
+        // 3. Execute File Operations (Move to Trash or Transfer Ownership)
+        if (isApproved) {
+            if (request.requestType === "delete") {
+                await handleMoveToTrash(request.fileIds, request.senderUsername, approver.username, request.departmentId);
+            } else {
+                await handleOwnershipTransfer(request.fileIds, request.recipientId, request.senderUsername);
+            }
+        }
+
+        // 4. Notify Sender (Fixing the previous crash)
+        const senderUser = await User.findOne({ username: request.senderUsername });
+        if (senderUser) {
+            await Notification.create({
+                recipientId: senderUser._id,
+                title: isApproved ? 'Request Approved' : 'Request Rejected',
+                message: `Your ${request.requestType} request was ${request.status} by ${approver.username}.`,
+                type: isApproved ? 'REQUEST_APPROVED' : 'REQUEST_DENIED'
+            });
+
+            // Using standard sendEmail helper to avoid "notifyUserOfAction is not defined" error
+            if (senderUser.email && templates.actionUpdateTemplate) {
+                const emailHtml = templates.actionUpdateTemplate({
+                    senderUsername: senderUser.username,
+                    requestType: request.requestType,
+                    actionedBy: approver.username,
+                    status: request.status,
+                    denialReason: comment 
+                });
+                await sendEmail(senderUser.email, `Request ${request.status.toUpperCase()}`, emailHtml);
+            }
+        }
+
+        res.status(200).json({ message: `Request ${request.status} successfully.` });
+
+    } catch (err) {
+        console.error("CRITICAL ERROR IN SECURE ACTION:", err);
+        res.status(500).json({ message: "Server error during processing", error: err.message });
+    }
+};
 exports.approveRequest = async (req, res) => {
     try {
         const { id } = req.params;
-        const { approverUsername } = req.body;
+        const { approverUsername = "Admin" } = req.body;
 
         const request = await Request.findById(id).populate('fileIds');
         if (!request || request.status?.toLowerCase() !== "pending") {
@@ -184,18 +289,21 @@ exports.approveRequest = async (req, res) => {
         if (request.requestType === "delete") {
             await handleMoveToTrash(request.fileIds, request.senderUsername, approverUsername, request.departmentId);
             await DeleteRequest.findOneAndUpdate(
-                { senderUsername: request.senderUsername, createdAt: request.createdAt },
-                { status: "completed", updatedAt: new Date() }
+                { senderUsername: request.senderUsername, status: "pending" },
+                { status: "completed", updatedAt: new Date() },
+                { sort: { createdAt: -1 } }
             );
         } else {
             await handleOwnershipTransfer(request.fileIds, request.recipientId, request.senderUsername);
             await Transfer.findOneAndUpdate(
-                { senderUsername: request.senderUsername, createdAt: request.createdAt },
-                { status: "completed", updatedAt: new Date() }
+                { senderUsername: request.senderUsername, status: "pending" },
+                { status: "completed", updatedAt: new Date() },
+                { sort: { createdAt: -1 } }
             );
         }
 
         request.status = "completed";
+        request.actionedBy = approverUsername;
         request.updatedAt = new Date();
         await request.save();
 
@@ -208,46 +316,48 @@ exports.approveRequest = async (req, res) => {
                 type: 'REQUEST_APPROVED'
             });
 
-            if (sender.email) {
-                const emailHtml = templates.approvalTemplate({
-                    username: sender.username,
+            if (sender.email && templates.actionUpdateTemplate) {
+                const emailHtml = templates.actionUpdateTemplate({
+                    senderUsername: sender.username,
                     requestType: request.requestType,
-                    approverUsername
+                    actionedBy: approverUsername,
+                    status: 'completed'
                 });
-
-                await sendEmail(
-                    sender.email, 
-                    `Request Approved: ${request.requestType}`, 
-                    emailHtml, 
-                    "REQUEST_APPROVED", 
-                    approverUsername
-                );
+                await sendEmail(sender.email, `Request Approved: ${request.requestType}`, emailHtml, "REQUEST_APPROVED", approverUsername);
             }
         }
         res.json({ message: "Approved successfully" });
-    } catch (err) { res.status(500).json({ error: err.message }); }
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 };
 
 exports.denyRequest = async (req, res) => {
     try {
         const { id } = req.params;
-        const { denialComment, approverUsername } = req.body;
+        const { denialComment = "No reason provided", approverUsername = "Admin" } = req.body;
 
         const request = await Request.findByIdAndUpdate(id, {
             status: "denied",
             denialComment,
+            actionedBy: approverUsername,
             updatedAt: new Date()
         }, { new: true });
 
+        if (!request) return res.status(404).json({ message: "Request not found" });
+
+        const logUpdate = { status: "denied", denialComment, updatedAt: new Date() };
         if (request.requestType === "delete") {
             await DeleteRequest.findOneAndUpdate(
-                { senderUsername: request.senderUsername, createdAt: request.createdAt },
-                { status: "denied", denialComment, updatedAt: new Date() }
+                { senderUsername: request.senderUsername, status: "pending" },
+                logUpdate,
+                { sort: { createdAt: -1 } }
             );
         } else {
             await Transfer.findOneAndUpdate(
-                { senderUsername: request.senderUsername, createdAt: request.createdAt },
-                { status: "denied", denialComment, updatedAt: new Date() }
+                { senderUsername: request.senderUsername, status: "pending" },
+                logUpdate,
+                { sort: { createdAt: -1 } }
             );
         }
 
@@ -256,84 +366,81 @@ exports.denyRequest = async (req, res) => {
             await Notification.create({
                 recipientId: sender._id,
                 title: 'Request Denied',
-                message: `Your request was denied by ${approverUsername}. Reason: ${denialComment}`,
+                message: `Your request was denied by ${approverUsername}.`,
                 type: 'REQUEST_DENIED'
             });
 
-            if (sender.email) {
-                const emailHtml = templates.denialTemplate({
-                    username: sender.username,
+            if (sender.email && templates.actionUpdateTemplate) {
+                const emailHtml = templates.actionUpdateTemplate({
+                    senderUsername: sender.username,
                     requestType: request.requestType,
-                    approverUsername,
-                    denialComment
+                    actionedBy: approverUsername,
+                    status: 'denied',
+                    denialReason: denialComment 
                 });
-
-                await sendEmail(
-                    sender.email, 
-                    `Request Denied: ${request.requestType}`, 
-                    emailHtml, 
-                    "REQUEST_DENIED", 
-                    approverUsername
-                );
+                await sendEmail(sender.email, `Request Denied: ${request.requestType}`, emailHtml, "REQUEST_DENIED", approverUsername);
             }
         }
         res.json({ message: "Denied successfully" });
-    } catch (err) { res.status(500).json({ error: err.message }); }
-};
-
-exports.getPendingDashboard = async (req, res) => {
-    try {
-        const { role, username, departmentId, search = "", pPage = 1, hPage = 1, limit = 5 } = req.query;
-        const roleUpper = role?.toUpperCase();
-        let filter = {};
-
-        if (roleUpper === "SUPERADMIN" || roleUpper === "SUPER_ADMIN") {
-            filter = {};
-        } else if (roleUpper === "ADMIN") {
-            filter = { 
-                $or: [
-                    { senderRole: { $in: ["HOD", "EMPLOYEE", "USER"] } }, 
-                    { senderUsername: username }
-                ] 
-            };
-        } else if (roleUpper === "HOD") {
-            const deptSearch = mongoose.Types.ObjectId.isValid(departmentId) 
-                ? new mongoose.Types.ObjectId(departmentId) 
-                : departmentId;
-
-            filter = {
-                $or: [
-                    { departmentId: deptSearch, senderRole: { $in: ["EMPLOYEE", "USER"] } },
-                    { senderUsername: username }
-                ]
-            };
-        } else {
-            filter = { senderUsername: username };
-        }
-
-        if (search) filter.reason = new RegExp(search, "i");
-
-        const allRequests = await Request.find(filter)
-            .populate("fileIds")
-            .populate("recipientId", "username")
-            .sort({ createdAt: -1 })
-            .lean();
-
-        const mainRequests = allRequests.filter(r => r.status?.toLowerCase() === "pending");
-        const logs = allRequests.filter(r => r.status?.toLowerCase() !== "pending");
-
-        const pLimit = parseInt(limit);
-
-        res.json({
-            mainRequests: mainRequests.slice((pPage - 1) * pLimit, pPage * pLimit),
-            logs: logs.slice((hPage - 1) * pLimit, hPage * pLimit),
-            totalPending: mainRequests.length,
-            totalHistory: logs.length,
-            pendingTotalPages: Math.ceil(mainRequests.length / pLimit) || 1,
-            historyTotalPages: Math.ceil(logs.length / pLimit) || 1
-        });
     } catch (err) {
         res.status(500).json({ error: err.message });
+    }
+};
+exports.getPendingDashboard = async (req, res) => {
+    try {
+        const { role, departmentId, username, pPage = 1, hPage = 1, limit = 5, search = "" } = req.query;
+        const skipP = (parseInt(pPage) - 1) * parseInt(limit);
+        const skipH = (parseInt(hPage) - 1) * parseInt(limit);
+
+        let pendingFilter = { status: "pending" };
+        let historyFilter = { status: { $in: ["completed", "denied", "rejected"] } };
+
+        if (role === "HOD") {
+            pendingFilter = {
+                $or: [
+                    { departmentId: departmentId, senderRole: { $in: ["EMPLOYEE", "USER"] }, status: "pending" },
+                    { senderUsername: username, status: "pending" }
+                ]
+            };
+        } else if (!["ADMIN", "SUPERADMIN", "SUPER_ADMIN"].includes(role)) {
+            pendingFilter = { senderUsername: username, status: "pending" };
+        }
+
+        if (search) {
+            pendingFilter.reason = { $regex: search, $options: "i" };
+        }
+
+        const [mainRequests, totalPending, logs, totalHistory] = await Promise.all([
+            Request.find(pendingFilter)
+                .sort({ createdAt: -1 }).skip(skipP).limit(parseInt(limit))
+                .populate('fileIds') // <--- FIXED: Now pulls file names for Approval table
+                .populate({
+                    path: 'recipientId',
+                    select: 'username role departmentId',
+                    populate: { path: 'departmentId', select: 'departmentName' }
+                }),
+            Request.countDocuments(pendingFilter),
+            Request.find(historyFilter)
+                .sort({ updatedAt: -1 }).skip(skipH).limit(parseInt(limit))
+                .populate('fileIds') // <--- FIXED: Now pulls file names for History table
+                .populate({
+                    path: 'recipientId',
+                    select: 'username role departmentId',
+                    populate: { path: 'departmentId', select: 'departmentName' }
+                }),
+            Request.countDocuments(historyFilter)
+        ]);
+
+        res.json({
+            mainRequests,
+            totalPending,
+            pendingTotalPages: Math.ceil(totalPending / limit),
+            logs,
+            totalHistory,
+            historyTotalPages: Math.ceil(totalHistory / limit)
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
     }
 };
 
@@ -343,23 +450,10 @@ exports.getTrashItems = async (req, res) => {
         const roleUpper = role?.toUpperCase();
         let query = {};
 
-        if (roleUpper === "SUPERADMIN" || roleUpper === "SUPER_ADMIN") {
-            query = {}; 
-        } else if (roleUpper === "ADMIN") {
-            query = { 
-                $or: [
-                    { senderRole: { $in: ["HOD", "EMPLOYEE", "USER"] } },
-                    { deletedBy: username }
-                ] 
-            };
-        } else if (roleUpper === "HOD") {
-            query = { 
-                departmentId: departmentId, 
-                senderRole: { $in: ["EMPLOYEE", "USER"] } 
-            };
-        } else {
-            query = { deletedBy: username };
-        }
+        if (roleUpper === "SUPERADMIN" || roleUpper === "SUPER_ADMIN") query = {}; 
+        else if (roleUpper === "ADMIN") query = { $or: [{ senderRole: { $in: ["HOD", "EMPLOYEE", "USER"] } }, { deletedBy: username }] };
+        else if (roleUpper === "HOD") query = { departmentId: departmentId, senderRole: { $in: ["EMPLOYEE", "USER"] } };
+        else query = { deletedBy: username };
 
         const items = await Trash.find(query).sort({ deletedAt: -1 });
         res.json(items);
@@ -373,27 +467,13 @@ exports.restoreFromTrash = async (req, res) => {
 
         const data = item.toObject();
         const originalId = data.originalFileId;
-
-        const trashMetadata = [
-            '_id', 'deletedAt', 'originalFileId', 'departmentName', 
-            'approvedBy', 'deletedBy', 'reason', 'senderRole', 
-            '__v', 'createdAt', 'updatedAt'
-        ];
-        
+        const trashMetadata = ['_id', 'deletedAt', 'originalFileId', 'departmentName', 'approvedBy', 'deletedBy', 'reason', 'senderRole', '__v', 'createdAt', 'updatedAt'];
         trashMetadata.forEach(key => delete data[key]);
 
-        await File.create({ 
-            ...data, 
-            _id: originalId,
-            deletedAt: null 
-        });
-
+        await File.create({ ...data, _id: originalId, deletedAt: null });
         await Trash.findByIdAndDelete(req.params.id);
-
-        res.json({ message: "File restored successfully to original location" });
-    } catch (err) { 
-        res.status(500).json({ error: err.message }); 
-    }
+        res.json({ message: "File restored successfully" });
+    } catch (err) { res.status(500).json({ error: err.message }); }
 };
 
 exports.permanentDelete = async (req, res) => {
@@ -418,7 +498,7 @@ exports.getDashboardStats = async (req, res) => {
     try {
         const { role, departmentId } = req.query;
         let query = {};
-        if ((role?.toUpperCase() === "HOD" || role?.toUpperCase() === "HOD") && departmentId) {
+        if (role?.toUpperCase() === "HOD" && departmentId) {
             const deptSearch = mongoose.Types.ObjectId.isValid(departmentId) ? new mongoose.Types.ObjectId(departmentId) : departmentId;
             query = { departmentId: deptSearch };
         }
@@ -430,6 +510,27 @@ exports.getDashboardStats = async (req, res) => {
         stats.forEach(s => { if (s._id && formatted.hasOwnProperty(s._id)) formatted[s._id] = s.count; });
         res.json(formatted);
     } catch (err) { res.status(500).json({ error: err.message }); }
+};
+
+exports.updateRequestStatus = async (req, res) => {
+    try {
+        const { requestId } = req.params;
+        const { status, remarks, actionBy } = req.body;
+        const request = await Request.findByIdAndUpdate(requestId, { status, remarks, actionBy, updatedAt: new Date() }, { new: true });
+
+        if (!request) return res.status(404).json({ message: "Request not found" });
+
+        const sender = await User.findOne({ username: request.senderUsername });
+        if (sender) {
+            await Notification.create({
+                recipientId: sender._id,
+                title: `Request ${status.toUpperCase()}`,
+                message: `Your request for ${request.fileName} was ${status} by ${actionBy}.`,
+                type: "REQUEST_STATUS_UPDATE"
+            });
+        }
+        res.json({ message: `Request ${status} successfully`, request });
+    } catch (error) { res.status(500).json({ error: error.message }); }
 };
 
 exports.restoreAllTrash = async (req, res) => {
@@ -444,19 +545,15 @@ exports.restoreAllTrash = async (req, res) => {
         else query = { deletedBy: username };
 
         const items = await Trash.find(query);
-        if (items.length === 0) return res.status(404).json({ message: "No items to restore" });
-
         for (const item of items) {
             const data = item.toObject();
             const originalId = data.originalFileId;
             const trashMetadata = ['_id', 'deletedAt', 'originalFileId', 'departmentName', 'approvedBy', 'deletedBy', 'reason', 'senderRole', '__v', 'createdAt', 'updatedAt'];
             trashMetadata.forEach(key => delete data[key]);
-
             await File.create({ ...data, _id: originalId, deletedAt: null });
             await Trash.findByIdAndDelete(item._id);
         }
-
-        res.json({ message: `Successfully restored ${items.length} files.` });
+        res.json({ message: `Restored ${items.length} files.` });
     } catch (err) { res.status(500).json({ error: err.message }); }
 };
 
@@ -472,7 +569,7 @@ exports.emptyTrash = async (req, res) => {
         else query = { deletedBy: username };
 
         const result = await Trash.deleteMany(query);
-        res.json({ message: `Permanently deleted ${result.deletedCount} items.` });
+        res.json({ message: `Deleted ${result.deletedCount} items.` });
     } catch (err) { res.status(500).json({ error: err.message }); }
 };
 
@@ -480,7 +577,5 @@ exports.getEmailLogs = async (req, res) => {
     try {
         const logs = await EmailLog.find().sort({ sentAt: -1 }).limit(100);
         res.json(logs);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
+    } catch (err) { res.status(500).json({ error: err.message }); }
 };

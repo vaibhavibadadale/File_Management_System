@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import axios from "axios";
 import Swal from "sweetalert2";
 import {
-  Table, Badge, Container, Card, Button, Spinner, Form, Modal, Alert, InputGroup, Row, Col
+  Table, Badge, Container, Card, Button, Spinner, Form, Modal, InputGroup, Row, Col
 } from "react-bootstrap";
 import {
   FaCheck, FaTimes, FaHistory, FaHourglassHalf, FaArrowUp, FaArrowDown,
@@ -31,16 +31,16 @@ const PendingRequestsPage = ({ user, currentTheme }) => {
 
   const isDark = currentTheme === "dark";
 
-  const getCleanDeptId = (dept) => {
-    if (!dept) return null;
-    return typeof dept === 'object' ? (dept._id || dept.id) : dept;
+  const getCleanId = (obj) => {
+    if (!obj) return null;
+    return typeof obj === 'object' ? (obj._id || obj.id) : String(obj);
   };
 
-  const renderDeptInfo = (dept, role) => {
+  const renderDeptAndRole = (dept, role) => {
     const upperRole = role?.toUpperCase();
     const deptName = typeof dept === 'object' ? (dept?.departmentName || dept?.name) : dept;
 
-    if (["ADMIN", "SUPERADMIN"].includes(upperRole)) {
+    if (["ADMIN", "SUPERADMIN", "SUPER_ADMIN"].includes(upperRole)) {
       return (
         <span className="text-danger fw-bold d-block" style={{ fontSize: '0.65rem' }}>
           <FaUserShield className="me-1" /> {upperRole}
@@ -57,12 +57,11 @@ const PendingRequestsPage = ({ user, currentTheme }) => {
   const fetchDashboard = useCallback(async () => {
     setLoading(true);
     try {
-      const deptId = getCleanDeptId(user.departmentId);
       const res = await axios.get("http://localhost:5000/api/requests/pending-dashboard", {
         params: {
           role: user.role?.toUpperCase(),
           username: user.username,
-          departmentId: deptId,
+          departmentId: getCleanId(user.departmentId),
           pPage,
           hPage,
           limit: 5,
@@ -79,14 +78,14 @@ const PendingRequestsPage = ({ user, currentTheme }) => {
   }, [user, pPage, hPage, searchTerm]);
 
   useEffect(() => {
-    const delayDebounceFn = setTimeout(() => fetchDashboard(), 500);
+    const delayDebounceFn = setTimeout(() => fetchDashboard(), 300);
     return () => clearTimeout(delayDebounceFn);
   }, [searchTerm, fetchDashboard]);
 
   const handleApprove = async (id) => {
     const result = await Swal.fire({
       title: "Approve Request?",
-      text: "This action will be processed and the file status will be updated immediately.",
+      text: "This will process the file transfer/deletion immediately.",
       icon: "warning",
       showCancelButton: true,
       confirmButtonColor: "#28a745",
@@ -102,7 +101,7 @@ const PendingRequestsPage = ({ user, currentTheme }) => {
         await axios.put(`http://localhost:5000/api/requests/approve/${id}`, {
           approverUsername: user.username
         });
-        Swal.fire({ title: "Success!", icon: "success", timer: 2000 });
+        Swal.fire({ title: "Success!", icon: "success", timer: 1500, showConfirmButton: false });
         fetchDashboard();
       } catch (err) {
         Swal.fire("Error", err.response?.data?.message || "Approval failed.", "error");
@@ -113,7 +112,7 @@ const PendingRequestsPage = ({ user, currentTheme }) => {
   };
 
   const handleConfirmDeny = async () => {
-    if (!denialComment.trim()) return Swal.fire("Required", "Please enter a reason for rejection.", "info");
+    if (!denialComment.trim()) return Swal.fire("Required", "Enter a reason.", "info");
     setIsSubmitting(true);
     try {
       await axios.put(`http://localhost:5000/api/requests/deny/${activeRequestId}`, { 
@@ -122,7 +121,7 @@ const PendingRequestsPage = ({ user, currentTheme }) => {
       });
       setShowDenyModal(false);
       setDenialComment("");
-      Swal.fire("Denied", "The request has been rejected.", "success");
+      Swal.fire("Denied", "Request rejected.", "success");
       fetchDashboard();
     } catch (err) {
       Swal.fire("Error", "Rejection failed.", "error");
@@ -131,20 +130,17 @@ const PendingRequestsPage = ({ user, currentTheme }) => {
     }
   };
 
-  const renderPaginationControls = (current, total, setPage) => {
-    const safeTotal = isNaN(total) || total < 1 ? 1 : total;
-    return (
-      <div className="d-flex justify-content-end align-items-center py-2 gap-2">
-        <Button variant={isDark ? "outline-light" : "outline-primary"} size="sm" disabled={current === 1} onClick={() => setPage(p => Math.max(p - 1, 1))}>
-          <FaChevronLeft />
-        </Button>
-        <span className="small fw-bold text-muted mx-2">{current} / {safeTotal}</span>
-        <Button variant={isDark ? "outline-light" : "outline-primary"} size="sm" disabled={current >= safeTotal} onClick={() => setPage(p => p + 1)}>
-          <FaChevronRight />
-        </Button>
-      </div>
-    );
-  };
+  const renderPagination = (current, total, setPage) => (
+    <div className="d-flex justify-content-end align-items-center py-2 gap-2">
+      <Button variant={isDark ? "outline-light" : "outline-primary"} size="sm" disabled={current === 1} onClick={() => setPage(p => p - 1)}>
+        <FaChevronLeft />
+      </Button>
+      <span className="small fw-bold text-muted mx-2">{current} / {total || 1}</span>
+      <Button variant={isDark ? "outline-light" : "outline-primary"} size="sm" disabled={current >= total} onClick={() => setPage(p => p + 1)}>
+        <FaChevronRight />
+      </Button>
+    </div>
+  );
 
   const renderTable = (title, items, isMain) => {
     const currentPage = isMain ? pPage : hPage;
@@ -164,7 +160,7 @@ const PendingRequestsPage = ({ user, currentTheme }) => {
               <Col xs={12} md={6}>
                 <InputGroup size="sm" style={{ maxWidth: "250px" }} className="ms-md-auto mt-2 mt-md-0">
                   <InputGroup.Text className={isDark ? "bg-secondary border-0 text-white" : "bg-light border-0"}><FaSearch /></InputGroup.Text>
-                  <Form.Control placeholder="Search by reason..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className={isDark ? "bg-secondary border-0 text-white shadow-none" : "border-0 shadow-none"} />
+                  <Form.Control placeholder="Search..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className={isDark ? "bg-secondary border-0 text-white" : "border-0 shadow-none"} />
                 </InputGroup>
               </Col>
             )}
@@ -174,56 +170,100 @@ const PendingRequestsPage = ({ user, currentTheme }) => {
         <Table responsive hover variant={isDark ? "dark" : "light"} className="text-center mb-0">
           <thead>
             <tr className="text-uppercase text-muted border-bottom" style={{ fontSize: "0.7rem" }}>
-              <th>Dir</th><th>Type</th><th>Sender Info</th><th>Receiver Info</th><th>Files</th><th>Reason / Denial</th><th>Date</th><th>Action</th>
+              <th>Dir</th><th>Type</th><th>Sender Info</th><th>Receiver Info</th><th>Files</th><th>REASON & REMARKS</th><th>DATE</th><th>ACTION</th>
             </tr>
           </thead>
           <tbody>
-            {items && items.length > 0 ? (
-              items.map((req) => {
-                const myRole = user.role?.toUpperCase();
-                const senderRole = req.senderRole?.toUpperCase();
-                const isMyOwnRequest = req.senderUsername === user.username;
-                
-                let canApprove = false;
-                if (!isMyOwnRequest) {
-                    if (myRole === "SUPERADMIN") canApprove = true;
-                    else if (myRole === "ADMIN" && ["HOD", "EMPLOYEE", "USER"].includes(senderRole)) canApprove = true;
-                    else if (myRole === "HOD" && ["EMPLOYEE", "USER"].includes(senderRole) && getCleanDeptId(user.departmentId) === getCleanDeptId(req.departmentId)) canApprove = true;
-                }
+            {items.length > 0 ? items.map((req) => {
+              const myRole = user.role?.toUpperCase();
+              const senderRole = req.senderRole?.toUpperCase();
+              const isMyOwn = req.senderUsername === user.username;
+              
+              let canApprove = false;
+              if (!isMyOwn) {
+                if (["SUPERADMIN", "SUPER_ADMIN"].includes(myRole)) canApprove = true;
+                else if (myRole === "ADMIN" && !["ADMIN", "SUPERADMIN", "SUPER_ADMIN"].includes(senderRole)) canApprove = true;
+                else if (myRole === "HOD" && ["EMPLOYEE", "USER"].includes(senderRole) && getCleanId(user.departmentId) === getCleanId(req.departmentId)) canApprove = true;
+              }
 
-                return (
-                  <tr key={req._id} className="align-middle border-bottom">
-                    <td>{isMyOwnRequest ? <FaArrowUp className="text-warning" /> : <FaArrowDown className="text-info" />}</td>
-                    <td>{req.requestType === "delete" ? <Badge bg="danger"><FaTrashAlt /></Badge> : <Badge bg="success"><FaExchangeAlt /></Badge>}</td>
-                    <td><div className="fw-bold">{req.senderUsername}</div>{renderDeptInfo(req.senderDeptName || req.departmentId, req.senderRole)}</td>
-                    <td>{req.requestType === "delete" ? <span className="text-danger fw-bold small">SYSTEM</span> : <div className="fw-bold text-truncate" style={{maxWidth: '120px'}}>{req.recipientId?.username || "N/A"}</div>}</td>
-                    <td className="text-start">{req.fileIds?.slice(0, 2).map((f, i) => (<div key={i} className="text-truncate small">{f.originalName || "File"}</div>))}</td>
-                    <td className="text-start"><div className="small"><strong>Reason:</strong> {req.reason}</div></td>
-                    <td style={{ fontSize: "0.75rem" }}>{new Date(req.createdAt).toLocaleDateString()}</td>
-                    <td>
-                      {isMain ? (
-                        canApprove ? (
-                          <div className="d-flex gap-2 justify-content-center">
-                            <Button variant="success" size="sm" onClick={() => handleApprove(req._id)} disabled={isSubmitting}><FaCheck /></Button>
-                            <Button variant="danger" size="sm" onClick={() => { setActiveRequestId(req._id); setShowDenyModal(true); }} disabled={isSubmitting}><FaTimes /></Button>
-                          </div>
-                        ) : <Badge bg="info">{isMyOwnRequest ? "SENT" : "PENDING"}</Badge>
-                      ) : <Badge bg={req.status === "completed" ? "success" : "danger"}>{req.status?.toUpperCase()}</Badge>}
-                    </td>
-                  </tr>
-                );
-              })
-            ) : <tr><td colSpan="8" className="py-5 text-muted">No records found.</td></tr>}
+              return (
+                <tr key={req._id} className="align-middle border-bottom">
+                  <td>{isMyOwn ? <FaArrowUp className="text-warning" /> : <FaArrowDown className="text-info" />}</td>
+                  <td>{req.requestType === "delete" ? <Badge bg="danger"><FaTrashAlt /></Badge> : <Badge bg="success"><FaExchangeAlt /></Badge>}</td>
+                  
+                  <td>
+                    <div className="fw-bold">{req.senderUsername}</div>
+                    {renderDeptAndRole(req.senderDeptName || req.departmentId, req.senderRole)}
+                  </td>
+
+                  <td>
+                    {req.requestType === "delete" ? (
+                      <span className="text-danger fw-bold small">SYSTEM</span>
+                    ) : req.recipientId ? (
+                      <>
+                        <div className="fw-bold">{req.recipientId.username}</div>
+                        {renderDeptAndRole(
+                          req.recipientId.departmentId?.departmentName || req.recipientId.departmentId || "General", 
+                          req.recipientId.role
+                        )}
+                      </>
+                    ) : <span className="text-muted small">N/A</span>}
+                  </td>
+
+                  <td className="text-start small">
+                    {req.fileIds?.map((f, i) => (
+                      <div key={i} className="text-truncate" style={{ maxWidth: "150px" }}>
+                        <span className="text-muted me-1">{i + 1}.</span>
+                        {f.fileName || f.originalName || f.name || "File"}
+                      </div>
+                    ))}
+                  </td>
+
+                  {/* COLUMN: REASON & REMARKS - FIXED TO MATCH YOUR IMAGE */}
+                  <td className="text-start small" style={{ minWidth: "200px" }}>
+                    <div className="mb-2 ms-4">
+                        <span className="text-muted">Reason: </span>
+                        <span className="fw-bold text-dark">{req.reason}</span>
+                    </div>
+                    
+                    {(req.status === "denied" || req.status === "rejected") && (req.adminComment || req.denialComment) && (
+                      <div className="ms-4 p-1 px-3 border border-danger rounded-3 d-inline-block" style={{ backgroundColor: isDark ? "rgba(220, 53, 69, 0.1)" : "#fffcfc", minWidth: "220px" }}>
+                        <span className="text-danger fw-bold">denied reason: </span>
+                        <span className="text-muted">{req.adminComment || req.denialComment}</span>
+                      </div>
+                    )}
+                  </td>
+
+                  <td style={{ fontSize: "0.75rem" }}>{new Date(req.createdAt).toLocaleDateString()}</td>
+                  <td>
+                    {isMain ? (
+                      canApprove ? (
+                        <div className="d-flex gap-2 justify-content-center">
+                          <Button variant="success" size="sm" onClick={() => handleApprove(req._id)} disabled={isSubmitting}><FaCheck /></Button>
+                          <Button variant="danger" size="sm" onClick={() => { setActiveRequestId(req._id); setShowDenyModal(true); }} disabled={isSubmitting}><FaTimes /></Button>
+                        </div>
+                      ) : <Badge bg="info">{isMyOwn ? "SENT" : "PENDING"}</Badge>
+                    ) : (
+                        <Badge bg={req.status === "completed" ? "success" : (req.status === "denied" || req.status === "rejected" ? "danger" : "secondary")}>
+                            {req.status?.toUpperCase()}
+                        </Badge>
+                    )}
+                  </td>
+                </tr>
+              );
+            }) : <tr><td colSpan="8" className="py-4 text-muted">No records found.</td></tr>}
           </tbody>
         </Table>
-        <Card.Footer className="bg-transparent border-0">{renderPaginationControls(currentPage, totalPages, setPage)}</Card.Footer>
+        <Card.Footer className="bg-transparent border-0">{renderPagination(currentPage, totalPages, setPage)}</Card.Footer>
       </Card>
     );
   };
 
   return (
     <Container fluid className="mt-4 px-4 pb-5">
-      {loading && data.mainRequests.length === 0 ? <div className="text-center py-5"><Spinner animation="border" variant="primary" /></div> : (
+      {loading && data.mainRequests.length === 0 ? (
+        <div className="text-center py-5"><Spinner animation="border" variant="primary" /></div>
+      ) : (
         <>
           {renderTable("Awaiting Approval", data.mainRequests, true)}
           {renderTable("Request History", data.logs, false)}
@@ -237,7 +277,7 @@ const PendingRequestsPage = ({ user, currentTheme }) => {
         <Modal.Body className={isDark ? "bg-dark text-white" : ""}>
           <Form.Group>
             <Form.Label className="small fw-bold">Reason for Rejection</Form.Label>
-            <Form.Control as="textarea" rows={3} value={denialComment} onChange={(e) => setDenialComment(e.target.value)} className={isDark ? "bg-secondary border-secondary text-white" : ""} />
+            <Form.Control as="textarea" rows={3} value={denialComment} onChange={(e) => setDenialComment(e.target.value)} className={isDark ? "bg-secondary border-secondary text-white shadow-none" : "shadow-none"} />
           </Form.Group>
         </Modal.Body>
         <Modal.Footer className={isDark ? "bg-dark border-secondary" : ""}>

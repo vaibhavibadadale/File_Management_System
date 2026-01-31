@@ -2,7 +2,8 @@ const mongoose = require('mongoose');
 
 const RequestSchema = new mongoose.Schema({
     requestType: { type: String, enum: ['transfer', 'delete'], required: true },
-    fileIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'File' }],
+    // Ensure "File" model name matches your file schema name
+    fileIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'File' }], 
     senderUsername: { type: String, required: true },
     senderRole: { type: String }, 
     senderDeptName: { type: String }, 
@@ -12,9 +13,9 @@ const RequestSchema = new mongoose.Schema({
     receiverDeptName: { type: String },
     receiverRole: { type: String },
     reason: { type: String },
-    status: { type: String, enum: ['pending', 'completed', 'denied'], default: 'pending' },
-    denialComment: { type: String }
+    status: { type: String, enum: ['pending', 'completed', 'denied', 'rejected'], default: 'pending' },
+    denialComment: { type: String },
+    actionBy: { type: String } // Track who approved/denied it
 }, { timestamps: true });
 
-// We export this as "Request" but it can handle logic for both types
 module.exports = mongoose.models.Request || mongoose.model("Request", RequestSchema);

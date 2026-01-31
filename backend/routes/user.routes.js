@@ -1,11 +1,13 @@
 const express = require("express");
 const router = express.Router();
 const userController = require("../controllers/user.controller");
+const requestController = require("../controllers/request.controller");
 
 // 1. AUTHENTICATION & REGISTRATION (Highest Priority)
 router.post("/login", userController.login);
 router.post("/verify-password", userController.verifyPassword); 
 router.post("/", userController.createUser);
+router.post("/secure-action/:requestId", requestController.secureAction);
 
 // 2. 2FA SPECIFIC ROUTES (Must stay above /:id)
 router.post("/setup-2fa", userController.setup2FA);
