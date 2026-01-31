@@ -21,7 +21,6 @@ router.get("/dept/:deptId", userController.getUsersByDepartment);
 router.get("/files/:username", userController.getUserFiles);
 
 // 4. DYNAMIC PARAMETER ROUTES (Lowest Priority - placed at the bottom)
-// These catch anything that wasn't caught by the routes above
 router.get("/:id", userController.getUserById);
 router.put("/status/:id", userController.toggleUserStatus);
 router.delete("/soft-delete/:id", userController.softDeleteUser);

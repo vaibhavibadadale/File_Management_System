@@ -74,10 +74,6 @@ exports.getFilesByFolder = async (req, res) => {
     }
 };
 
-/**
- * UPDATED: Tracks when a file is opened
- * Updates lastViewedAt timestamp for the Recently Viewed dashboard section
- */
 exports.trackView = async (req, res) => {
     try {
         const { fileId, userId } = req.body;
@@ -88,7 +84,6 @@ exports.trackView = async (req, res) => {
             $set: { lastViewedAt: new Date() }
         };
 
-        // If a userId is provided, add it to the viewedBy array if not already present
         if (userId) {
             updateData.$addToSet = { viewedBy: userId };
         }
@@ -109,6 +104,42 @@ exports.trackView = async (req, res) => {
     }
 };
 
+exports.toggleFileStatus = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { isDisabled, adminId } = req.body;
+
+        if (!id || id === "undefined" || id === "null") {
+            return res.status(400).json({ success: false, message: "Invalid File ID: ID is missing." });
+        }
+
+        const updatedFile = await File.findByIdAndUpdate(
+            id,
+            { isDisabled },
+            { new: true }
+        );
+
+        if (!updatedFile) {
+            return res.status(404).json({ success: false, message: "File not found in database." });
+        }
+
+        await Log.create({
+            userId: adminId || updatedFile.uploadedBy,
+            action: isDisabled ? "FILE_DISABLED" : "FILE_ENABLED",
+            fileId: updatedFile._id,
+            details: `File "${updatedFile.originalName}" has been ${isDisabled ? 'disabled' : 'enabled'} by an administrator.`
+        });
+
+        res.json({ 
+            success: true, 
+            message: `File ${isDisabled ? 'disabled' : 'enabled'} successfully`, 
+            file: updatedFile 
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+};
+
 exports.softDeleteFile = async (req, res) => {
     try {
         const { userId } = req.body;
@@ -116,12 +147,14 @@ exports.softDeleteFile = async (req, res) => {
             deletedAt: new Date()
         });
 
-        await Log.create({
-            userId: userId,
-            action: "FILE_DELETED",
-            fileId: req.params.id,
-            details: `Deleted file: ${file ? file.originalName : 'Unknown'}`
-        });
+        if (file) {
+            await Log.create({
+                userId: userId,
+                action: "FILE_DELETED",
+                fileId: req.params.id,
+                details: `Deleted file: ${file.originalName}`
+            });
+        }
 
         res.json({ message: "File deleted successfully", success: true });
     } catch (error) {

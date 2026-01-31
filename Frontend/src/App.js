@@ -17,7 +17,8 @@ import UsersPage from "./pages/UsersPage";
 import UserFilesView from "./pages/UserFilesView"; 
 import PendingRequestsPage from "./pages/PendingRequestsPage"; 
 import NotificationsPage from "./pages/NotificationsPage";
-import TrashPage from "./pages/TrashPage"; // ADDED: Import the TrashPage component
+import TrashPage from "./pages/TrashPage"; 
+import BackupPage from "./pages/BackupPage"; // Imported
 
 function App() {
     const [themeMode, setThemeMode] = useState("light");
@@ -64,19 +65,18 @@ function App() {
         );
     }
 
+    // PUBLIC ROUTES (Before Login)
     if (!isAuthenticated) {
-    return (
-        <Routes>
-            <Route path="/login" element={<LoginPage onLogin={handleLoginSuccess} />} />
-            
-            {/* ADD THIS LINE: Allow public access to this specific page */}
-            <Route path="/request-action" element={<RequestActionPage />} />
-            
-            {/* Catch-all redirect to login for everything else */}
-            <Route path="*" element={<Navigate to="/login" />} />
-        </Routes>
-    );
-}
+        return (
+            <Routes>
+                <Route path="/login" element={<LoginPage onLogin={handleLoginSuccess} />} />
+                <Route path="/request-action" element={<RequestActionPage />} />
+                <Route path="*" element={<Navigate to="/login" />} />
+            </Routes>
+        );
+    }
+
+    // PRIVATE ROUTES (After Login)
     return (
         <div className={`theme-container ${themeMode} min-vh-100 ${themeMode === "dark" ? "bg-dark text-light" : "bg-light text-dark"}`}> 
             <div className="d-flex align-items-stretch">
@@ -101,10 +101,12 @@ function App() {
                             <Route path="/pending" element={<PendingRequestsPage user={user} currentTheme={themeMode} />} />
                             <Route path="/notifications" element={<NotificationsPage user={user} currentTheme={themeMode} />} />
                             <Route path="/important" element={<UploadFilePage user={user} viewMode="important" currentTheme={themeMode} />} />
-                            
-                            {/* UPDATED: Replaced placeholder with actual TrashPage component */}
                             <Route path="/trash" element={<TrashPage user={user} currentTheme={themeMode} />} />
                             
+                            {/* BACKUP ROUTE ADDED HERE */}
+                            <Route path="/backup" element={<BackupPage currentTheme={themeMode} />} /> 
+                            
+                            {/* Redirect login attempts to home when already authenticated */}
                             <Route path="/login" element={<Navigate to="/" />} />
                             <Route path="*" element={<Navigate to="/" />} />
                         </Routes>
