@@ -137,3 +137,17 @@ export async function toggleStarApi(id, type, isStarred) {
         throw new Error(error.response?.data?.message || `Failed to update ${type} star status.`);
     }
 }
+export async function fetchStarredItemsApi() {
+    try {
+        const response = await axios.get(`${BACKEND_URL}/files`, {
+            ...getAuthHeaders(),
+            params: { isStarred: true } 
+        });
+        return {
+            files: response.data.files || [],
+            folders: [] // Adding empty folders array to prevent map errors
+        };
+    } catch (error) {
+        throw new Error(error.response?.data?.message || 'Failed to fetch starred items.');
+    }
+}
