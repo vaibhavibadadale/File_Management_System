@@ -79,7 +79,8 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
             const folderRes = await axios.get(`${BACKEND_URL}/api/folders`, { params });
             const fileRes = await axios.get(`${BACKEND_URL}/api/files`, { params });
 
-            // Logic: Filter to show only what THIS user uploaded in the main folder section
+            // Filter out items that are strictly 'received' (have a senderId) so they don't clutter the main view 
+            // unless they were created by the user.
             const userFolders = (folderRes.data.folders || []).filter(f => f.createdBy === currentUserId || !f.senderId);
             const userFiles = (fileRes.data.files || []).filter(f => f.uploadedBy === currentUserId || !f.senderId);
 
@@ -97,22 +98,40 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
 
     const fetchReceivedFiles = async () => {
         try {
+            // Updated endpoint to ensure we are hitting the specialized received items logic
             const response = await axios.get(`${BACKEND_URL}/api/requests/received`, {
-                params: { userId: currentUserId, departmentId: userDeptId }
+                params: { 
+                    userId: currentUserId, 
+                    departmentId: userDeptId 
+                }
             });
 
-            // Logic: Only show items where the sender is NOT the current user
+            // Logic: Items where I am the recipient but not the sender
             const folders = (response.data.folders || [])
                 .filter(f => f.senderId && f.senderId !== currentUserId)
-                .map(f => ({ ...f, isFolder: true, displayName: f.folderName || f.name, sender: f.senderUsername || "Shared" }));
+                .map(f => ({ 
+                    ...f, 
+                    isFolder: true, 
+                    type: 'Folder',
+                    displayName: f.folderName || f.name, 
+                    sender: f.senderUsername || "Shared User" 
+                }));
 
             const files = (response.data.files || [])
                 .filter(f => f.senderId && f.senderId !== currentUserId)
-                .map(f => ({ ...f, isFolder: false, displayName: f.originalName || f.filename, sender: f.senderUsername || "Shared" }));
+                .map(f => ({ 
+                    ...f, 
+                    isFolder: false, 
+                    displayName: f.originalName || f.filename, 
+                    sender: f.senderUsername || "Shared User" 
+                }));
 
             setReceivedItems([...folders, ...files]);
             setIsReceivedModalOpen(true);
-        } catch (err) { alert("Could not load received files."); }
+        } catch (err) { 
+            console.error("Fetch Received Error:", err);
+            Swal.fire("Error", "Could not load received files.", "error"); 
+        }
     };
 
     const handleToggleStar = async (e, item) => {
@@ -146,7 +165,7 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
     const handleDeleteItemTrigger = async (item) => {
         const { value: formValues } = await Swal.fire({
             title: 'Request Deletion',
-            html: `<p class="small text-muted">Requesting to delete: <b>${item.displayName}</b></p>` +
+            html: `<p class="small text-muted">Requesting to delete: <b>${item.displayName || item.originalName}</b></p>` +
                 `<input id="swal-password" type="password" class="swal2-input" placeholder="Confirm Password">` +
                 `<textarea id="swal-reason" class="swal2-textarea" placeholder="Reason for deletion..."></textarea>`,
             focusConfirm: false,
@@ -224,12 +243,12 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
         }
         try {
             await axios.post(`${BACKEND_URL}/api/files/track-view`, { fileId: file._id, userId: currentUserId });
-            const folderName = file.username || file.uploadedByUsername || file.senderUsername || "Admin";
-            const fileUrl = `${BACKEND_URL}/uploads/${folderName}/${encodeURIComponent(file.filename)}`;
+            const ownerName = file.username || file.uploadedByUsername || file.senderUsername || "Admin";
+            const fileUrl = `${BACKEND_URL}/uploads/${ownerName}/${encodeURIComponent(file.filename)}`;
             window.open(fileUrl, '_blank');
         } catch (err) {
-            const folderName = file.username || file.uploadedByUsername || file.senderUsername || "Admin";
-            window.open(`${BACKEND_URL}/uploads/${folderName}/${encodeURIComponent(file.filename)}`, '_blank');
+            const ownerName = file.username || file.uploadedByUsername || file.senderUsername || "Admin";
+            window.open(`${BACKEND_URL}/uploads/${ownerName}/${encodeURIComponent(file.filename)}`, '_blank');
         }
     };
 
@@ -334,11 +353,11 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
                             </div>
                             {currentFolderId !== null && (
                                 <div className="action-group upload-group d-flex align-items-center ms-2">
-                                    <label className="upload-label-main btn btn-sm btn-outline-primary mb-0 py-1 px-2" htmlFor="file-input" style={{ fontSize: '0.85rem', cursor: 'pointer' }}>
+                                    <label className="btn btn-sm btn-outline-primary mb-0 py-1 px-2 d-flex align-items-center justify-content-center" htmlFor="file-input" style={{ fontSize: '0.85rem', cursor: 'pointer', height: '31px', minWidth: '90px' }}>
                                         <i className="fas fa-plus-circle me-1"></i> {selectedFile ? "Ready" : "Add File"}
                                     </label>
                                     <input id="file-input" type="file" onChange={(e) => setSelectedFile(e.target.files[0])} hidden />
-                                    <button onClick={handleFileUpload} disabled={!selectedFile} className="btn btn-sm btn-primary ms-1 py-1 px-2" style={{ fontSize: '0.85rem' }}>Upload</button>
+                                    <button onClick={handleFileUpload} disabled={!selectedFile} className="btn btn-sm btn-primary ms-1 py-1 px-2" style={{ fontSize: '0.85rem', height: '31px' }}>Upload</button>
                                 </div>
                             )}
                         </>
@@ -439,9 +458,9 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
                             <h4 className={`mb-0 fw-bold ${isDark ? 'text-white' : ''}`}><i className="fas fa-inbox me-2 text-primary"></i>Received Files</h4>
                             <button className={`btn-close ${isDark ? 'btn-close-white' : ''}`} onClick={() => setIsReceivedModalOpen(false)}></button>
                         </div>
-                        <div className="modal-body p-0">
+                        <div className="modal-body p-0" style={{ maxHeight: '60vh', overflowY: 'auto' }}>
                             <table className={`file-table mb-0 ${isDark ? 'table-dark' : ''}`}>
-                                <thead className={isDark ? 'bg-dark' : 'bg-light'}>
+                                <thead className={isDark ? 'bg-dark sticky-top' : 'bg-light sticky-top'}>
                                     <tr><th>Name</th><th>Size</th><th>Sender</th><th className="text-end">Actions</th></tr>
                                 </thead>
                                 <tbody>
@@ -466,7 +485,7 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
                                                 </div>
                                             </td>
                                         </tr>
-                                    )) : <tr><td colSpan="4" className="text-center py-5 text-muted">No files received.</td></tr>}
+                                    )) : <tr><td colSpan="4" className="text-center py-5 text-muted">No files received from other users.</td></tr>}
                                 </tbody>
                             </table>
                         </div>
@@ -495,4 +514,5 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
         </div>
     );
 }
+
 export default UploadFilePage;
