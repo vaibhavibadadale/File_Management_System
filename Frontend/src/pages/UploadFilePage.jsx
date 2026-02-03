@@ -55,6 +55,7 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
     const userRole = (user?.role || "").toLowerCase();
     const isAdmin = userRole === "admin" || userRole === "superadmin";
     const userDeptId = user?.departmentId || (isAdmin ? null : DEPARTMENT_ID);
+    const currentUserId = user?._id || USER_ID;
 
     useEffect(() => {
         loadContent(currentFolderId);
@@ -63,7 +64,6 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
     const loadContent = async (parentId) => {
         setItemsToTransfer({});
         const activeFolderId = parentId || "null";
-        const currentUserId = user?._id || USER_ID;
 
         let params = { userId: currentUserId };
 
@@ -77,13 +77,17 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
 
         try {
             const folderRes = await axios.get(`${BACKEND_URL}/api/folders`, { params });
-            setFoldersInCurrentView(folderRes.data.folders || []);
-
             const fileRes = await axios.get(`${BACKEND_URL}/api/files`, { params });
-            setFilesInCurrentView(fileRes.data.files || []);
+
+            // Logic: Filter to show only what THIS user uploaded in the main folder section
+            const userFolders = (folderRes.data.folders || []).filter(f => f.createdBy === currentUserId || !f.senderId);
+            const userFiles = (fileRes.data.files || []).filter(f => f.uploadedBy === currentUserId || !f.senderId);
+
+            setFoldersInCurrentView(userFolders);
+            setFilesInCurrentView(userFiles);
 
             const stars = {};
-            const allItems = [...(folderRes.data.folders || []), ...(fileRes.data.files || [])];
+            const allItems = [...userFolders, ...userFiles];
             allItems.forEach(item => {
                 if (item.isStarred) stars[item._id] = true;
             });
@@ -91,17 +95,36 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
         } catch (err) { console.error("Error loading content:", err); }
     };
 
+    const fetchReceivedFiles = async () => {
+        try {
+            const response = await axios.get(`${BACKEND_URL}/api/requests/received`, {
+                params: { userId: currentUserId, departmentId: userDeptId }
+            });
+
+            // Logic: Only show items where the sender is NOT the current user
+            const folders = (response.data.folders || [])
+                .filter(f => f.senderId && f.senderId !== currentUserId)
+                .map(f => ({ ...f, isFolder: true, displayName: f.folderName || f.name, sender: f.senderUsername || "Shared" }));
+
+            const files = (response.data.files || [])
+                .filter(f => f.senderId && f.senderId !== currentUserId)
+                .map(f => ({ ...f, isFolder: false, displayName: f.originalName || f.filename, sender: f.senderUsername || "Shared" }));
+
+            setReceivedItems([...folders, ...files]);
+            setIsReceivedModalOpen(true);
+        } catch (err) { alert("Could not load received files."); }
+    };
+
     const handleToggleStar = async (e, item) => {
         e.stopPropagation();
-        if (item.isDisabled && !isAdmin) return; // Block interaction if disabled
+        if (item.isDisabled && !isAdmin) return;
         const isFolder = item.type === 'Folder' || item.isFolder;
         if (isFolder) return;
 
         const newStarredState = !starredItems[item._id];
-
         try {
             await axios.patch(`${BACKEND_URL}/api/files/star/${item._id}`, {
-                userId: user?._id || USER_ID,
+                userId: currentUserId,
                 isStarred: newStarredState
             });
             setStarredItems(prev => ({ ...prev, [item._id]: newStarredState }));
@@ -123,8 +146,7 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
     const handleDeleteItemTrigger = async (item) => {
         const { value: formValues } = await Swal.fire({
             title: 'Request Deletion',
-            html:
-                `<p class="small text-muted">Requesting to delete: <b>${item.displayName}</b></p>` +
+            html: `<p class="small text-muted">Requesting to delete: <b>${item.displayName}</b></p>` +
                 `<input id="swal-password" type="password" class="swal2-input" placeholder="Confirm Password">` +
                 `<textarea id="swal-reason" class="swal2-textarea" placeholder="Reason for deletion..."></textarea>`,
             focusConfirm: false,
@@ -147,10 +169,9 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
         if (formValues) {
             try {
                 await axios.post(`${BACKEND_URL}/api/users/verify-password`, {
-                    userId: user?._id || USER_ID,
+                    userId: currentUserId,
                     password: formValues.password
                 });
-
                 await axios.post(`${BACKEND_URL}/api/requests/create`, {
                     requestType: "delete",
                     senderUsername: user?.username || "Unknown",
@@ -159,46 +180,26 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
                     fileIds: [item._id],
                     reason: formValues.reason
                 });
-
-                Swal.fire({
-                    title: "Request Sent",
-                    text: "Your deletion request is pending admin approval.",
-                    icon: "success",
-                    background: isDark ? '#2d2d2d' : '#fff',
-                    color: isDark ? '#fff' : '#000'
-                });
-            } catch (err) {
-                Swal.fire("Error", err.response?.data?.message || "Incorrect password or submission error.", "error");
-            }
+                Swal.fire({ title: "Request Sent", text: "Your deletion request is pending admin approval.", icon: "success", background: isDark ? '#2d2d2d' : '#fff', color: isDark ? '#fff' : '#000' });
+            } catch (err) { Swal.fire("Error", "Incorrect password or submission error.", "error"); }
         }
     };
 
     const executeBulkDeleteRequest = async () => {
         const selectedIds = Object.keys(itemsToTransfer).filter(id => itemsToTransfer[id]);
-
-        if (selectedIds.length === 0) {
-            return Swal.fire("Info", "No items selected.", "info");
-        }
+        if (selectedIds.length === 0) return Swal.fire("Info", "No items selected.", "info");
 
         const { value: formValues } = await Swal.fire({
             title: 'Confirm Bulk Deletion Request',
-            html:
-                `<p class="small text-muted">Requesting to delete <b>${selectedIds.length}</b> items</p>` +
+            html: `<p class="small text-muted">Requesting to delete <b>${selectedIds.length}</b> items</p>` +
                 `<input id="bulk-swal-password" type="password" class="swal2-input" placeholder="Confirm Password">` +
                 `<textarea id="bulk-swal-reason" class="swal2-textarea" placeholder="Reason for bulk deletion..."></textarea>`,
-            focusConfirm: false,
-            showCancelButton: true,
-            confirmButtonText: 'Send Bulk Request',
-            confirmButtonColor: '#dc3545',
-            background: isDark ? '#2d2d2d' : '#fff',
-            color: isDark ? '#fff' : '#000',
+            focusConfirm: false, showCancelButton: true, confirmButtonText: 'Send Bulk Request', confirmButtonColor: '#dc3545',
+            background: isDark ? '#2d2d2d' : '#fff', color: isDark ? '#fff' : '#000',
             preConfirm: () => {
                 const password = document.getElementById('bulk-swal-password').value;
                 const reason = document.getElementById('bulk-swal-reason').value;
-                if (!password || !reason) {
-                    Swal.showValidationMessage('Password and reason are required');
-                    return false;
-                }
+                if (!password || !reason) { Swal.showValidationMessage('Password and reason are required'); return false; }
                 return { password, reason };
             }
         });
@@ -206,105 +207,40 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
         if (formValues) {
             setIsDeleting(true);
             try {
-                await axios.post(`${BACKEND_URL}/api/users/verify-password`, {
-                    userId: user?._id || USER_ID,
-                    password: formValues.password
-                });
-
+                await axios.post(`${BACKEND_URL}/api/users/verify-password`, { userId: currentUserId, password: formValues.password });
                 await axios.post(`${BACKEND_URL}/api/requests/create`, {
-                    requestType: "delete",
-                    senderUsername: user?.username || "Admin",
-                    senderRole: user?.role || "user",
-                    departmentId: userDeptId,
-                    fileIds: selectedIds,
-                    reason: formValues.reason
+                    requestType: "delete", senderUsername: user?.username || "Admin", senderRole: user?.role || "user",
+                    departmentId: userDeptId, fileIds: selectedIds, reason: formValues.reason
                 });
-
-                Swal.fire({
-                    title: "Success",
-                    text: "Bulk deletion request submitted successfully.",
-                    icon: "success",
-                    background: isDark ? '#2d2d2d' : '#fff',
-                    color: isDark ? '#fff' : '#000'
-                });
-
-                setItemsToTransfer({});
-                loadContent(currentFolderId);
-            } catch (err) {
-                const errorMsg = err.response?.data?.message || err.response?.data?.error || "Error submitting request.";
-                Swal.fire("Error", errorMsg, "error");
-            } finally {
-                setIsDeleting(false);
-            }
+                Swal.fire({ title: "Success", text: "Bulk deletion request submitted.", icon: "success", background: isDark ? '#2d2d2d' : '#fff', color: isDark ? '#fff' : '#000' });
+                setItemsToTransfer({}); loadContent(currentFolderId);
+            } catch (err) { Swal.fire("Error", "Error submitting request.", "error"); } finally { setIsDeleting(false); }
         }
-    };
-
-    const fetchReceivedFiles = async () => {
-        try {
-            const response = await axios.get(`${BACKEND_URL}/api/requests/received`, {
-                params: { userId: user?._id || USER_ID, departmentId: userDeptId }
-            });
-            const items = [
-                ...(response.data.folders || []).map(f => ({ ...f, isFolder: true, displayName: f.folderName || f.name, sender: f.senderUsername || "Shared" })),
-                ...(response.data.files || []).map(f => ({ ...f, isFolder: false, displayName: f.originalName || f.filename, sender: f.senderUsername || "Shared" }))
-            ];
-            setReceivedItems(items);
-            setIsReceivedModalOpen(true);
-        } catch (err) { alert("Could not load received files."); }
     };
 
     const handleViewFile = async (file) => {
-        // GLOBAL DISABLE CHECK
         if (file.isDisabled && !isAdmin) {
-            return Swal.fire({
-                icon: 'error',
-                title: 'File Restricted',
-                text: 'This file has been disabled by an administrator and cannot be viewed.',
-                background: isDark ? '#2d2d2d' : '#fff',
-                color: isDark ? '#fff' : '#000'
-            });
+            return Swal.fire({ icon: 'error', title: 'File Restricted', text: 'This file is disabled.', background: isDark ? '#2d2d2d' : '#fff', color: isDark ? '#fff' : '#000' });
         }
-
         try {
-            await axios.post(`${BACKEND_URL}/api/files/track-view`, {
-                fileId: file._id,
-                userId: user?._id || USER_ID
-            });
-
+            await axios.post(`${BACKEND_URL}/api/files/track-view`, { fileId: file._id, userId: currentUserId });
             const folderName = file.username || file.uploadedByUsername || file.senderUsername || "Admin";
             const fileUrl = `${BACKEND_URL}/uploads/${folderName}/${encodeURIComponent(file.filename)}`;
             window.open(fileUrl, '_blank');
         } catch (err) {
-            console.error("Error opening/tracking file:", err);
             const folderName = file.username || file.uploadedByUsername || file.senderUsername || "Admin";
-            const fileUrl = `${BACKEND_URL}/uploads/${folderName}/${encodeURIComponent(file.filename)}`;
-            window.open(fileUrl, '_blank');
+            window.open(`${BACKEND_URL}/uploads/${folderName}/${encodeURIComponent(file.filename)}`, '_blank');
         }
     };
 
     const handleDownload = async (file) => {
-        // GLOBAL DISABLE CHECK
-        if (file.isDisabled && !isAdmin) {
-            return Swal.fire({
-                icon: 'error',
-                title: 'Download Restricted',
-                text: 'This file is currently disabled.',
-                background: isDark ? '#2d2d2d' : '#fff',
-                color: isDark ? '#fff' : '#000'
-            });
-        }
-
+        if (file.isDisabled && !isAdmin) return Swal.fire({ icon: 'error', title: 'Restricted', text: 'File disabled.' });
         try {
-            const response = await axios({
-                url: `${BACKEND_URL}/api/files/download/${file._id}`,
-                method: 'GET', responseType: 'blob',
-            });
+            const response = await axios({ url: `${BACKEND_URL}/api/files/download/${file._id}`, method: 'GET', responseType: 'blob' });
             const url = window.URL.createObjectURL(new Blob([response.data]));
             const link = document.createElement('a');
-            link.href = url;
-            link.setAttribute('download', file.originalName || file.filename);
-            document.body.appendChild(link);
-            link.click(); link.remove();
+            link.href = url; link.setAttribute('download', file.originalName || file.filename);
+            document.body.appendChild(link); link.click(); link.remove();
         } catch (err) { alert("Download failed."); }
     };
 
@@ -313,15 +249,12 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
         const formData = new FormData();
         formData.append("username", user?.username || "Admin");
         formData.append("folderId", currentFolderId || "null");
-        formData.append("uploadedBy", user?._id || USER_ID);
+        formData.append("uploadedBy", currentUserId);
         formData.append("departmentId", userDeptId || "");
         formData.append("file", selectedFile);
-
         try {
             await axios.post(`${BACKEND_URL}/api/files/upload`, formData);
-            setSelectedFile(null);
-            loadContent(currentFolderId);
-            alert(`Uploaded!`);
+            setSelectedFile(null); loadContent(currentFolderId); alert(`Uploaded!`);
         } catch (err) { alert("Upload failed."); }
     };
 
@@ -330,7 +263,7 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
         try {
             await axios.post(`${BACKEND_URL}/api/folders/create`, {
                 name: folderName, parent: currentFolderId || null,
-                createdBy: user?._id || USER_ID, departmentId: userDeptId || null,
+                createdBy: currentUserId, departmentId: userDeptId || null,
             });
             setFolderName(""); loadContent(currentFolderId);
         } catch (err) { console.error(err); }
@@ -464,21 +397,12 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
                         </thead>
                         <tbody>
                             {combinedItems.length > 0 ? combinedItems.map((item) => (
-                                <tr 
-                                    key={item._id} 
-                                    onDoubleClick={item.type === 'Folder' ? () => handleFolderClick(item) : null} 
-                                    className={`${itemsToTransfer[item._id] ? 'table-active' : ''} ${item.isDisabled ? 'opacity-50' : ''}`}
-                                >
+                                <tr key={item._id} onDoubleClick={item.type === 'Folder' ? () => handleFolderClick(item) : null} className={`${itemsToTransfer[item._id] ? 'table-active' : ''} ${item.isDisabled ? 'opacity-50' : ''}`}>
                                     <td>{viewMode !== "important" && <input type="checkbox" checked={!!itemsToTransfer[item._id]} onChange={() => handleSelectItem(item._id)} className="form-check-input" />}</td>
                                     <td className={item.type === 'Folder' ? 'folder-row' : ''}>
                                         <div className="d-flex align-items-center">
                                             <i className={`${item.type === 'Folder' ? 'fas fa-folder text-warning' : getFileIcon(item.type)} file-icon me-3 fs-5`}></i>
-                                            <span 
-                                                className={`text-truncate ${item.isDisabled ? 'text-decoration-line-through text-muted' : ''}`} 
-                                                style={{ maxWidth: '250px' }}
-                                            >
-                                                {item.displayName}
-                                            </span>
+                                            <span className={`text-truncate ${item.isDisabled ? 'text-decoration-line-through text-muted' : ''}`} style={{ maxWidth: '250px' }}>{item.displayName}</span>
                                             {item.isDisabled && <span className="badge bg-danger ms-2" style={{ fontSize: '0.65rem' }}>Disabled</span>}
                                             {item.type !== 'Folder' && !item.isDisabled && (
                                                 <i className={`${starredItems[item._id] ? 'fas fa-star text-warning' : 'far fa-star text-muted'} ms-3`} style={{ cursor: 'pointer', fontSize: '0.9rem' }} onClick={(e) => handleToggleStar(e, item)}></i>
@@ -491,11 +415,7 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
                                     <td className="text-end">
                                         <div className="d-flex gap-3 justify-content-end align-items-center">
                                             {item.type !== 'Folder' && (
-                                                <button 
-                                                    className="btn btn-link btn-sm p-0" 
-                                                    onClick={() => handleViewFile(item)}
-                                                    style={{ cursor: item.isDisabled && !isAdmin ? 'not-allowed' : 'pointer' }}
-                                                >
+                                                <button className="btn btn-link btn-sm p-0" onClick={() => handleViewFile(item)} style={{ cursor: item.isDisabled && !isAdmin ? 'not-allowed' : 'pointer' }}>
                                                     <i className={`fas fa-eye ${item.isDisabled ? 'text-muted' : 'text-primary'}`}></i>
                                                 </button>
                                             )}
@@ -538,16 +458,8 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
                                                 <div className="d-flex gap-3 justify-content-end">
                                                     {!item.isFolder && (
                                                         <>
-                                                            <i 
-                                                                className={`fas fa-eye action-icon ${item.isDisabled ? 'text-muted' : 'text-primary'}`} 
-                                                                style={{ cursor: item.isDisabled && !isAdmin ? 'not-allowed' : 'pointer' }} 
-                                                                onClick={() => handleViewFile(item)}
-                                                            ></i>
-                                                            <i 
-                                                                className={`fas fa-download action-icon ${item.isDisabled ? 'text-muted' : 'text-success'}`} 
-                                                                style={{ cursor: item.isDisabled && !isAdmin ? 'not-allowed' : 'pointer' }} 
-                                                                onClick={() => handleDownload(item)}
-                                                            ></i>
+                                                            <i className={`fas fa-eye action-icon ${item.isDisabled ? 'text-muted' : 'text-primary'}`} style={{ cursor: item.isDisabled && !isAdmin ? 'not-allowed' : 'pointer' }} onClick={() => handleViewFile(item)}></i>
+                                                            <i className={`fas fa-download action-icon ${item.isDisabled ? 'text-muted' : 'text-success'}`} style={{ cursor: item.isDisabled && !isAdmin ? 'not-allowed' : 'pointer' }} onClick={() => handleDownload(item)}></i>
                                                         </>
                                                     )}
                                                     <i className="fas fa-trash text-danger action-icon" style={{ cursor: 'pointer' }} onClick={() => handleDeleteItemTrigger(item)}></i>
@@ -583,5 +495,4 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
         </div>
     );
 }
-
 export default UploadFilePage;

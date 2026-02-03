@@ -9,7 +9,7 @@ import Footer from "./components/Footer";
 // Pages
 import RequestActionPage from "./pages/RequestActionPage";
 import FileDashboard from "./pages/FileDashboard";  
-import UploadFilePage from "./pages/UploadFilePage";
+import UploadFilePage from "./pages/UploadFilePage"; 
 import LoginPage from "./pages/LoginPage";
 import VenturesPage from "./pages/VenturesPage"; 
 import DepartmentStaff from "./pages/DepartmentStaff"; 
@@ -17,8 +17,10 @@ import UsersPage from "./pages/UsersPage";
 import UserFilesView from "./pages/UserFilesView"; 
 import PendingRequestsPage from "./pages/PendingRequestsPage"; 
 import NotificationsPage from "./pages/NotificationsPage";
+import ImportantFilesPage from "./pages/ImportantFilesPage";
 import TrashPage from "./pages/TrashPage"; 
-import BackupPage from "./pages/BackupPage"; // Imported
+import BackupPage from "./pages/BackupPage"; 
+import ResetPasswordPage from "./pages/ResetPasswordPage"; // 1. Import the Page
 
 function App() {
     const [themeMode, setThemeMode] = useState("light");
@@ -59,55 +61,64 @@ function App() {
         return (
             <div className="d-flex justify-content-center align-items-center vh-100">
                 <div className="spinner-border text-primary" role="status">
-                    <span className="visually-hidden">Loading Session...</span>
+                    <span className="visually-hidden">Loading...</span>
                 </div>
             </div>
         );
     }
 
-    // PUBLIC ROUTES (Before Login)
+    // --- 2. PUBLIC ROUTES (Accessible when NOT logged in) ---
     if (!isAuthenticated) {
         return (
             <Routes>
                 <Route path="/login" element={<LoginPage onLogin={handleLoginSuccess} />} />
                 <Route path="/request-action" element={<RequestActionPage />} />
+                
+                {/* ADDED THIS ROUTE HERE: This allows the email link to work */}
+                <Route path="/reset-password/:token" element={<ResetPasswordPage currentTheme={themeMode} />} />
+                
                 <Route path="*" element={<Navigate to="/login" />} />
             </Routes>
         );
     }
 
-    // PRIVATE ROUTES (After Login)
+    // --- 3. PRIVATE ROUTES (Accessible when logged in) ---
     return (
         <div className={`theme-container ${themeMode} min-vh-100 ${themeMode === "dark" ? "bg-dark text-light" : "bg-light text-dark"}`}> 
             <div className="d-flex align-items-stretch">
                 <Sidebar themeMode={themeMode} user={user} />
                 
                 <div className="flex-grow-1 d-flex flex-column" style={{ minHeight: "100vh", minWidth: 0 }}>
-                    <Header 
-                        user={user} 
-                        currentTheme={themeMode} 
-                        onThemeToggle={toggleTheme} 
-                        onLogout={handleLogout} 
-                    />
+                    <Header user={user} currentTheme={themeMode} onThemeToggle={toggleTheme} onLogout={handleLogout} />
 
                     <main className="flex-grow-1 p-3 p-md-4">
                         <Routes>
+                            <Route 
+                                path="/file-manager" 
+                                element={<UploadFilePage key="file-manager-view" user={user} currentTheme={themeMode} />} 
+                            />
+
+                            <Route 
+                                path="/users" 
+                                element={<UsersPage key="users-view" currentTheme={themeMode} user={user} />} 
+                            />
+
+                            <Route 
+                                path="/important" 
+                                element={<ImportantFilesPage key="important-view" currentTheme={themeMode} />} 
+                            />
+
                             <Route path="/" element={<FileDashboard user={user} currentTheme={themeMode} />} />
-                            <Route path="/file-manager" element={<UploadFilePage user={user} currentTheme={themeMode} />} />
                             <Route path="/ventures" element={<VenturesPage user={user} currentTheme={themeMode} />} />
-                            <Route path="/users" element={<UsersPage currentTheme={themeMode} user={user} />} />
+                            <Route path="/pending" element={<PendingRequestsPage user={user} currentTheme={themeMode} />} />
+                            <Route path="/trash" element={<TrashPage user={user} currentTheme={themeMode} />} />
+                            <Route path="/backup" element={<BackupPage currentTheme={themeMode} />} /> 
                             <Route path="/department-staff/:deptId" element={<DepartmentStaff currentTheme={themeMode} user={user} />} />
                             <Route path="/user-files/:userId" element={<UserFilesView currentTheme={themeMode} user={user} />} />
-                            <Route path="/pending" element={<PendingRequestsPage user={user} currentTheme={themeMode} />} />
-                            <Route path="/notifications" element={<NotificationsPage user={user} currentTheme={themeMode} />} />
-                            <Route path="/important" element={<UploadFilePage user={user} viewMode="important" currentTheme={themeMode} />} />
-                            <Route path="/trash" element={<TrashPage user={user} currentTheme={themeMode} />} />
                             
-                            {/* BACKUP ROUTE ADDED HERE */}
-                            <Route path="/backup" element={<BackupPage currentTheme={themeMode} />} /> 
+                            {/* Also add it here just in case a logged-in user clicks a reset link */}
+                            <Route path="/reset-password/:token" element={<ResetPasswordPage currentTheme={themeMode} />} />
                             
-                            {/* Redirect login attempts to home when already authenticated */}
-                            <Route path="/login" element={<Navigate to="/" />} />
                             <Route path="*" element={<Navigate to="/" />} />
                         </Routes>
                     </main>

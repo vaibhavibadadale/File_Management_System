@@ -2,6 +2,7 @@ const User = require('../models/User');
 const mongoose = require('mongoose');
 const nodemailer = require('nodemailer');
 
+// 1. CREATE the transporter first
 const transporter = nodemailer.createTransport({
     service: 'gmail',
     auth: {
@@ -10,7 +11,10 @@ const transporter = nodemailer.createTransport({
     }
 });
 
-// Fetch unique recipients (Admins/HODs) excluding the sender
+// 2. NOW export it
+exports.transporter = transporter;
+
+// 3. YOUR TEMPLATES AND FUNCTIONS
 exports.getRecipientsForRequest = async (senderRole, departmentId, senderUsername) => {
     try {
         const [admins, hods] = await Promise.all([
@@ -44,7 +48,6 @@ exports.getRecipientsForRequest = async (senderRole, departmentId, senderUsernam
     }
 };
 
-// Initial Notification to Approvers
 exports.notifyApprovers = async (staffArray, requestData) => {
     const uniqueRecipients = new Map();
     staffArray.forEach(staff => {
@@ -85,7 +88,6 @@ exports.notifyApprovers = async (staffArray, requestData) => {
     await Promise.all(emailPromises);
 };
 
-// Notification back to the sender after approval or denial
 exports.notifyUserOfAction = async (userEmail, action, requestData, comment) => {
     const isApproved = action === 'approve';
     const statusColor = isApproved ? '#28a745' : '#dc3545';
@@ -114,17 +116,40 @@ exports.notifyUserOfAction = async (userEmail, action, requestData, comment) => 
         `
     });
 };
+
 exports.sendEmail = async (to, subject, html) => {
-    // Ensure 'to' is converted to an array if it's a string
     const bccList = Array.isArray(to) ? to : [to];
 
     return transporter.sendMail({
         from: `"Aaryan System" <${process.env.EMAIL_USER}>`,
-        // Visible 'To' address
         to: `"Aaryan System Recipients" <${process.env.EMAIL_USER}>`, 
-        // Actual recipients are hidden here
         bcc: bccList, 
         subject: subject,
         html: html
     });
+};
+
+exports.passwordResetTemplate = (data) => {
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+    const resetUrl = `${frontendUrl}/reset-password/${data.token}`;
+
+    return `
+        <div style="font-family: sans-serif; padding: 20px; border: 1px solid #e0e0e0; border-radius: 10px; max-width: 600px; margin: auto;">
+            <h2 style="color: #0056b3; border-bottom: 2px solid #eee; padding-bottom: 10px;">Password Reset Authorized</h2>
+            <div style="background: #f9f9f9; padding: 15px; border-radius: 5px;">
+                <p>Hello <strong>${data.username}</strong>,</p>
+                <p>An administrator has authorized a password reset for your account as per your request.</p>
+                <p><strong>Authorized By:</strong> ${data.adminName}</p>
+                <p style="color: #666; font-size: 14px;">This link will expire in 1 hour for security purposes.</p>
+            </div>
+            <div style="margin-top: 25px; text-align: center;">
+                <a href="${resetUrl}" style="background: #111827; color: white; padding: 12px 25px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">
+                    Set New Password
+                </a>
+            </div>
+            <p style="font-size: 12px; color: #999; text-align: center; margin-top: 20px;">
+                Aaryan Security System &copy; 2026
+            </p>
+        </div>
+    `;
 };

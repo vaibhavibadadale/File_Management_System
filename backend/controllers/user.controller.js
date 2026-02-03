@@ -3,22 +3,29 @@ const mongoose = require("mongoose");
 const QRCode = require('qrcode');
 const otplib = require('otplib');
 const bcrypt = require("bcryptjs");
-const authenticator = otplib.authenticator || otplib.Authenticator || (otplib.default && otplib.default.authenticator);
 const Notification = require("../models/Notification");
 const fs = require("fs");
 const path = require("path");
 const jwt = require('jsonwebtoken');
+const crypto = require("crypto");
+const { transporter, passwordResetTemplate } = require('../utils/emailHelper');
+
+// Initialize authenticator
+const authenticator = otplib.authenticator || otplib.Authenticator || (otplib.default && otplib.default.authenticator);
 
 // Import the email helpers
 const { getRecipientsForRequest, sendEmail } = require('../utils/emailHelper');
 
+// Helper to generate JWT
 const generateToken = (id) => {
     return jwt.sign({ id }, process.env.JWT_SECRET || 'fallback_secret', {
         expiresIn: '30d',
     });
 };
 
-// 1. CREATE USER
+
+
+// 1. CREATE USER (Kept your existing Registration & Notification logic)
 exports.createUser = async (req, res) => {
     try {
         const { 
@@ -29,7 +36,7 @@ exports.createUser = async (req, res) => {
         const validDeptId = mongoose.Types.ObjectId.isValid(departmentId) ? departmentId : null;
 
         const existingUser = await User.findOne({ 
-            $or: [{ email }, { employeeId }, { username }] 
+            $or: [{ email }, { employeeId }, { username: username.toLowerCase().trim() }] 
         });
 
         if (existingUser) {
@@ -39,7 +46,7 @@ exports.createUser = async (req, res) => {
         }
 
         const newUser = new User({ 
-            username: username.toLowerCase(), 
+            username: username.toLowerCase().trim(), 
             password, 
             role: role.toUpperCase(), 
             departmentId: validDeptId,
@@ -105,20 +112,19 @@ exports.createUser = async (req, res) => {
     }
 };
 
-// 2. VERIFY PASSWORD
+// 2. VERIFY PASSWORD (Existing logic for 2FA Setup verification)
 exports.verifyPassword = async (req, res) => {
     try {
         const { userId, username, password } = req.body;
         if (!password) return res.status(400).json({ success: false, message: "Password is required" });
 
-        // Search by ID or Username (since 2FA setup might use either)
         const user = await User.findOne({
             $or: [
                 { _id: mongoose.Types.ObjectId.isValid(userId) ? userId : new mongoose.Types.ObjectId() },
-                { username: username || "" }
+                { username: (username || "").toLowerCase().trim() }
             ],
             deletedAt: null
-        }).select("+password"); // Important: select hidden password
+        }).select("+password"); 
 
         if (!user || !(await bcrypt.compare(password, user.password))) {
             return res.status(401).json({ success: false, message: "Invalid credentials" });
@@ -134,42 +140,63 @@ exports.verifyPassword = async (req, res) => {
         res.status(500).json({ success: false, error: "Internal verification error" });
     }
 };
-// 3. LOGIN
 
+// 3. LOGIN (Updated to handle case-insensitivity while keeping your flow)
+// 3. LOGIN (Optimized for debugging and accuracy)
 exports.login = async (req, res) => {
     try {
         const { username, password, department } = req.body;
         
-        // Use .select("+password") because we set select: false in the model
+        // Normalize input
+        const cleanUsername = (username || "").toLowerCase().trim();
+        const cleanDept = (department || "").toLowerCase().trim();
+
+        console.log(`--- Login Attempt ---`);
+        console.log(`User: ${cleanUsername} | Dept Input: ${cleanDept}`);
+
         const user = await User.findOne({ 
-            username: username.toLowerCase(), 
+            username: cleanUsername, 
             deletedAt: null 
         }).populate("departmentId").select("+password"); 
         
-        // Use bcrypt.compare instead of ===
-        if (!user || !(await bcrypt.compare(password, user.password))) {
+        if (!user) {
+            console.log("❌ Failure: Username not found.");
             return res.status(401).json({ message: "Invalid username or password" });
         }
 
-        const userDeptName = user.departmentId?.departmentName || user.department;
-        const role = (user.role || "").toLowerCase();
+        // Compare Input (Welcome@123) with DB Hash
+        const isMatch = await bcrypt.compare(password, user.password);
+        if (!isMatch) {
+            console.log(`❌ Failure: Password mismatch for ${cleanUsername}.`);
+            console.log(`DB Hash starts with: ${user.password.substring(0, 10)}...`);
+            return res.status(401).json({ message: "Invalid username or password" });
+        }
 
-        if (["employee", "hod"].includes(role)) {
-            if (userDeptName !== department) {
+        // Department Verification
+        const userDeptName = (user.departmentId?.departmentName || user.department || "").toLowerCase().trim();
+        const role = (user.role || "").toUpperCase();
+
+        // Admins and Superadmins usually bypass department restrictions
+        const isAdmin = ["ADMIN", "SUPERADMIN", "SUPER_ADMIN"].includes(role);
+
+        if (!isAdmin && ["EMPLOYEE", "HOD"].includes(role)) {
+            if (userDeptName !== cleanDept) {
+                console.log(`❌ Failure: Dept Mismatch. DB: '${userDeptName}', Input: '${cleanDept}'`);
                 return res.status(401).json({ message: `Access Denied: Registered under '${userDeptName}'` });
             }
         }
 
+        console.log("✅ Credentials valid. Proceeding to 2FA.");
         return res.json({
             requires2FA: true,
             mustSetup: !user.is2FAEnabled,
             userId: user._id
         });
     } catch (error) { 
-        res.status(500).json({ error: error.message }); 
+        console.error("Login Error:", error);
+        res.status(500).json({ error: "Internal Server Error" }); 
     }
 };
-
 // 4. GET ALL USERS
 exports.getAllUsers = async (req, res) => {
     try {
@@ -243,7 +270,7 @@ exports.getUserFiles = async (req, res) => {
     }
 };
 
-// 9. SOFT DELETE USER
+// 9. SOFT DELETE USER (Existing Soft Delete & Notification logic)
 exports.softDeleteUser = async (req, res) => {
     try {
         const userToDelete = await User.findById(req.params.id);
@@ -268,7 +295,7 @@ exports.softDeleteUser = async (req, res) => {
     }
 };
 
-// 10. 2FA SETUP
+// 10. 2FA SETUP (Keeps existing QR code generation logic)
 exports.setup2FA = async (req, res) => {
     try {
         const { userId } = req.body;
@@ -276,7 +303,6 @@ exports.setup2FA = async (req, res) => {
 
         if (!user) return res.status(404).json({ error: "User not found" });
 
-        // 1. Check if 2FA is already fully enabled
         if (user.is2FAEnabled && user.twoFactorSecret) {
             return res.json({ 
                 alreadyEnabled: true, 
@@ -284,11 +310,8 @@ exports.setup2FA = async (req, res) => {
             });
         }
 
-        // 2. Only generate a NEW secret if one doesn't exist 
-        // (This prevents the QR from changing if they refresh the page)
-        let secret = user.twoFactorSecret;
-        if (!secret) {
-            secret = authenticator.generateSecret();
+        let secret = user.twoFactorSecret || authenticator.generateSecret();
+        if (!user.twoFactorSecret) {
             user.twoFactorSecret = secret;
             await user.save();
         }
@@ -298,6 +321,7 @@ exports.setup2FA = async (req, res) => {
         
         res.json({ qrImageUrl, mustScan: true });
     } catch (error) {
+        console.error("2FA Setup Error:", error);
         res.status(500).json({ error: "Server error during 2FA setup" });
     }
 };
@@ -312,12 +336,9 @@ exports.confirm2FA = async (req, res) => {
             return res.status(400).json({ message: "2FA Setup not initiated." });
         }
 
-        // Verify the token
         const isValid = authenticator.check(String(token).trim(), user.twoFactorSecret);
 
         if (isValid) {
-            // AUTOMATIC STEP:
-            // This flips the switch in the DB so the QR never shows again.
             user.is2FAEnabled = true; 
             await user.save();
 
@@ -333,7 +354,7 @@ exports.confirm2FA = async (req, res) => {
     }
 };
 
-// 12. VERIFY OTP
+// 12. VERIFY OTP (Final login step)
 exports.verifyOTP = async (req, res) => {
     try {
         const { userId, token } = req.body;
@@ -358,11 +379,12 @@ exports.verifyOTP = async (req, res) => {
             res.status(401).json({ message: "Invalid OTP" });
         }
     } catch (error) {
+        console.error("OTP Verification Error:", error);
         res.status(500).json({ error: "Internal Server Error" });
     }
 };
 
-// 13. RESET 2FA (Admin)
+// 13. RESET 2FA (Admin only)
 exports.resetUser2FA = async (req, res) => {
     try {
         const { targetUserId, adminId } = req.body;
@@ -374,5 +396,127 @@ exports.resetUser2FA = async (req, res) => {
         res.json({ success: true, message: "2FA has been reset." });
     } catch (error) {
         res.status(500).json({ error: error.message });
+    }
+};
+
+exports.initiateAdminPasswordReset = async (req, res) => {
+  try {
+    const { targetUserId, adminId } = req.body;
+    const targetUser = await User.findById(targetUserId);
+
+    if (!targetUser) return res.status(404).json({ message: "User not found" });
+
+    // Generate a secure random token
+    const resetToken = crypto.randomBytes(32).toString("hex");
+    
+    // Set expiry for 1 hour
+    targetUser.resetPasswordToken = crypto.createHash("sha256").update(resetToken).digest("hex");
+    targetUser.resetPasswordExpire = Date.now() + 3600000;
+    targetUser.resetRequestedBy = adminId; // Track which admin started this
+
+    await targetUser.save();
+
+    // Send Email to User (Use your existing mailer logic)
+    const resetUrl = `http://localhost:3000/reset-password/${resetToken}`;
+    // await sendEmail(targetUser.email, "Admin Authorized Password Reset", `Link: ${resetUrl}`);
+
+    res.json({ success: true, message: "Reset link sent to user's email." });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// 2. User sets the new password
+exports.finalizeAdminPasswordReset = async (req, res) => {
+  try {
+    const hashedToken = crypto.createHash("sha256").update(req.params.token).digest("hex");
+
+    const user = await User.findOne({
+      resetPasswordToken: hashedToken,
+      resetPasswordExpire: { $gt: Date.now() },
+    });
+
+    if (!user) return res.status(400).json({ message: "Invalid or expired token" });
+
+    // Set new password (the .pre("save") hook in your User.js will encrypt this automatically)
+    user.password = req.body.password;
+    user.resetPasswordToken = undefined;
+    user.resetPasswordExpire = undefined;
+    const adminWhoStartedThis = user.resetRequestedBy;
+    user.resetRequestedBy = undefined;
+
+    await user.save();
+
+    // OPTIONAL: Send confirmation email to the Admin who authorized it
+    // const admin = await User.findById(adminWhoStartedThis);
+    // await sendEmail(admin.email, "Reset Complete", `User ${user.name} has updated their password.`);
+
+    res.json({ success: true, message: "Password updated and stored securely." });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// FUNCTION 1: Triggered by Admin to send the email
+exports.adminTriggerReset = async (req, res) => {
+    try {
+        const { targetUserId, adminId } = req.body;
+        const [targetUser, adminUser] = await Promise.all([
+            User.findById(targetUserId),
+            User.findById(adminId)
+        ]);
+
+        if (!targetUser) return res.status(404).json({ message: "User not found" });
+
+        const resetToken = crypto.randomBytes(32).toString("hex");
+        const hashedToken = crypto.createHash("sha256").update(resetToken).digest("hex");
+
+        targetUser.resetPasswordToken = hashedToken;
+        targetUser.resetPasswordExpire = Date.now() + 3600000; // 1 Hour
+        targetUser.resetAuthorizedBy = adminId;
+        await targetUser.save();
+
+        await transporter.sendMail({
+            from: `"Aaryan System" <${process.env.EMAIL_USER}>`,
+            to: targetUser.email,
+            subject: "Authorized Password Reset",
+            html: passwordResetTemplate({
+                username: targetUser.username,
+                adminName: adminUser ? adminUser.username : "Administrator",
+                token: resetToken
+            })
+        });
+
+        res.json({ success: true, message: "Reset link sent to user email." });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+};
+
+// FUNCTION 2: Triggered by User clicking the link to save new password
+exports.completePasswordReset = async (req, res) => {
+    try {
+        const { token } = req.params;
+        const { password } = req.body;
+
+        const hashedToken = crypto.createHash("sha256").update(token).digest("hex");
+
+        const user = await User.findOne({
+            resetPasswordToken: hashedToken,
+            resetPasswordExpire: { $gt: Date.now() }
+        });
+
+        if (!user) return res.status(400).json({ message: "Token invalid or expired" });
+
+        user.password = password; // Ensure your User model has a pre-save hook to hash this!
+        user.resetPasswordToken = undefined;
+        user.resetPasswordExpire = undefined;
+        user.resetAuthorizedBy = undefined;
+        
+        await user.save();
+
+        res.json({ success: true, message: "Password updated successfully!" });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
     }
 };

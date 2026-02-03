@@ -197,18 +197,18 @@ const PendingRequestsPage = ({ user, currentTheme }) => {
                   </td>
 
                   <td>
-                    {req.requestType === "delete" ? (
-                      <span className="text-danger fw-bold small">SYSTEM</span>
-                    ) : req.recipientId ? (
-                      <>
-                        <div className="fw-bold">{req.recipientId.username}</div>
-                        {renderDeptAndRole(
-                          req.recipientId.departmentId?.departmentName || req.recipientId.departmentId || "General", 
-                          req.recipientId.role
-                        )}
-                      </>
-                    ) : <span className="text-muted small">N/A</span>}
-                  </td>
+                 {req.requestType === "delete" ? (
+                <span className="text-danger fw-bold small">SYSTEM</span>
+                 ) : req.recipientId ? (
+                 <>
+               <div className="fw-bold">{req.recipientId.username}</div>
+             {renderDeptAndRole(
+             req.recipientId.departmentId?.departmentName || req.recipientId.departmentId || "General", 
+             req.recipientId.role
+           )}
+           </>
+        ) : <span className="text-muted small">N/A</span>}
+      </td>
 
                   <td className="text-start small">
                     {req.fileIds?.map((f, i) => (
@@ -219,21 +219,32 @@ const PendingRequestsPage = ({ user, currentTheme }) => {
                     ))}
                   </td>
 
-                  {/* COLUMN: REASON & REMARKS - FIXED TO MATCH YOUR IMAGE */}
-                  <td className="text-start small" style={{ minWidth: "200px" }}>
-                    <div className="mb-2 ms-4">
-                        <span className="text-muted">Reason: </span>
-                        <span className="fw-bold text-dark">{req.reason}</span>
-                    </div>
-                    
-                    {(req.status === "denied" || req.status === "rejected") && (req.adminComment || req.denialComment) && (
-                      <div className="ms-4 p-1 px-3 border border-danger rounded-3 d-inline-block" style={{ backgroundColor: isDark ? "rgba(220, 53, 69, 0.1)" : "#fffcfc", minWidth: "220px" }}>
-                        <span className="text-danger fw-bold">denied reason: </span>
-                        <span className="text-muted">{req.adminComment || req.denialComment}</span>
-                      </div>
-                    )}
-                  </td>
+                  {/* COLUMN: REASON & REMARKS */}
+                <td className="text-start small" style={{ minWidth: "220px" }}>
+              {/* The original reason provided by the sender */}
+            <div className="mb-1">
+            <span className="text-muted">Reason: </span>
+            <span className="fw-bold">{req.reason || "No reason provided"}</span>
+           </div>
 
+           {/* The denial reason box - only shows if status is denied/rejected */}
+           {(req.status === "denied" || req.status === "rejected") && (
+          <div 
+           className="mt-2 p-1 px-3 border border-danger rounded-3 d-inline-block" 
+           style={{ 
+              backgroundColor: isDark ? "rgba(229, 17, 38, 0.1)" : "#fffcfc", 
+            width: "100%" 
+      }}
+    >
+      <span className="text-danger fw-bold" style={{ fontSize: "0.7rem" }}>
+        denied reason: 
+      </span>
+      <span className="ms-1 text-dark">
+        {req.denialComment || req.adminComment || "No comment provided"}
+      </span>
+    </div>
+  )}
+</td>
                   <td style={{ fontSize: "0.75rem" }}>{new Date(req.createdAt).toLocaleDateString()}</td>
                   <td>
                     {isMain ? (

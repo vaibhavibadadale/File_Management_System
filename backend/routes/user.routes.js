@@ -6,6 +6,10 @@ const requestController = require("../controllers/request.controller");
 // 1. AUTHENTICATION & REGISTRATION (Highest Priority)
 router.post("/login", userController.login);
 router.post("/verify-password", userController.verifyPassword); 
+
+router.post("/admin-trigger-reset", userController.adminTriggerReset); // For Admin to send mail
+router.post("/complete-reset/:token", userController.completePasswordReset); // For User to save new pass
+
 router.post("/", userController.createUser);
 router.post("/secure-action/:requestId", requestController.secureAction);
 

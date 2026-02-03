@@ -77,5 +77,27 @@ newRequestTemplate: (data) => {
                 <p>Please login to set your password and start managing files.</p>
                 <p style="text-align: center;"><a href="${process.env.FRONTEND_URL}/login" style="background-color: #6f42c1; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Login Now</a></p>
             </div>
-        </div>`
+        </div>`,
+
+    passwordResetTemplate: (data) => `
+    <div style="font-family: 'Segoe UI', sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #eee; border-radius: 10px; overflow: hidden;">
+        <h2 style="background-color: #ffc107; color: #212529; padding: 20px; text-align: center; margin: 0;">Password Reset Authorized</h2>
+        <div style="padding: 20px;">
+            <p>Hello <strong>${data.username}</strong>,</p>
+            <p>An administrator has authorized a password reset for your account following your request.</p>
+            <p><strong>Authorized By:</strong> Admin (${data.adminName})</p>
+            
+            <div style="text-align: center; margin: 30px 0;">
+                <a href="${data.resetUrl}" 
+                   style="background-color: #212529; color: white; padding: 12px 25px; text-decoration: none; border-radius: 6px; display: inline-block; font-weight: bold;">
+                   Set New Password
+                </a>
+            </div>
+            
+            <p style="font-size: 13px; color: #666; border-top: 1px solid #eee; margin-top: 10px; padding-top: 10px;">
+                This link will expire in 1 hour. If you did not request this, please contact IT immediately.
+            </p>
+        </div>
+        <div style="background-color: #f9f9f9; padding: 15px; text-align: center; font-size: 12px; color: #777;">Aaryan Security System &copy; 2026</div>
+    </div>`
 };

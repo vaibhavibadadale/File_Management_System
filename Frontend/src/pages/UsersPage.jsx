@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Modal, Button, Form, Table, Badge, Row, Col } from "react-bootstrap";
-import { Visibility, PersonAdd, RestartAlt, LockReset } from "@mui/icons-material"; // Added LockReset
+import { Visibility, PersonAdd, RestartAlt, LockReset } from "@mui/icons-material";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import Swal from "sweetalert2"; 
@@ -19,7 +19,10 @@ const UsersPage = ({ currentTheme, user }) => {
 
   const isDark = currentTheme === "dark";
   const myRole = (user?.role || "").toLowerCase();
-  const canManageStatus = myRole === "admin" || myRole === "superadmin";
+  const myDepartment = user?.department; 
+  
+  // Logic: HOD, Admin, and SuperAdmin can manage status and trigger resets
+  const canManageStatus = myRole === "admin" || myRole === "superadmin" || myRole === "hod";
 
   const [formData, setFormData] = useState({
     name: "",
@@ -50,7 +53,17 @@ const UsersPage = ({ currentTheme, user }) => {
         axios.get("http://localhost:5000/api/users"),
         axios.get("http://localhost:5000/api/departments"),
       ]);
-      setUsers(userRes.data);
+
+      let allUsers = userRes.data;
+
+      if (myRole === "hod") {
+        allUsers = allUsers.filter(u => 
+          u.department === myDepartment && 
+          (u.role || "").toLowerCase() === "employee"
+        );
+      }
+
+      setUsers(allUsers);
       setDeptList(deptRes.data);
     } catch (err) {
       console.error("Error fetching data:", err);
@@ -61,9 +74,47 @@ const UsersPage = ({ currentTheme, user }) => {
 
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [myRole, myDepartment]);
 
-  // --- NEW: RESET 2FA LOGIC ---
+  // --- EMAIL TRIGGER LOGIC (As per your requirement) ---
+  const handleAdminTriggerReset = async (targetUserId, targetUsername) => {
+    const confirm = await Swal.fire({
+      ...swalConfig,
+      title: 'Authorize Password Reset?',
+      text: `Confirming will send a secure reset link to ${targetUsername}. They will use the Reset Password Page to set their new password.`,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#ffc107',
+      confirmButtonText: 'Yes, Send Email'
+    });
+
+    if (confirm.isConfirmed) {
+      try {
+        // Hits the endpoint that triggers the email sending logic
+        const response = await axios.post("http://localhost:5000/api/users/admin-trigger-reset", {
+          targetUserId,
+          adminId: user?._id 
+        });
+
+        if (response.data.success) {
+          Swal.fire({ 
+            ...swalConfig, 
+            icon: 'success', 
+            title: 'Email Sent', 
+            text: `A reset link has been successfully sent to ${targetUsername}.` 
+          });
+        }
+      } catch (error) {
+        Swal.fire({ 
+          ...swalConfig, 
+          icon: 'error', 
+          title: 'Action Failed', 
+          text: error.response?.data?.message || "Internal Server Error" 
+        });
+      }
+    }
+  };
+
   const handleReset2FA = async (targetUserId, targetUsername) => {
     const confirm = await Swal.fire({
       ...swalConfig,
@@ -79,7 +130,7 @@ const UsersPage = ({ currentTheme, user }) => {
       try {
         const response = await axios.post("http://localhost:5000/api/users/reset-2fa", {
           targetUserId,
-          adminId: user?._id // The ID of the currently logged-in Admin
+          adminId: user?._id 
         });
 
         if (response.data.success) {
@@ -122,7 +173,6 @@ const UsersPage = ({ currentTheme, user }) => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-
     const requiredPrefix = rolePrefixes[formData.role];
     if (requiredPrefix && !formData.username.startsWith(requiredPrefix)) {
       Swal.fire({
@@ -179,7 +229,6 @@ const UsersPage = ({ currentTheme, user }) => {
 
   const toggleStatus = async (userId) => {
     if (!canManageStatus) return;
-
     const result = await Swal.fire({
       ...swalConfig,
       title: 'Update Status?',
@@ -219,18 +268,24 @@ const UsersPage = ({ currentTheme, user }) => {
   const getRoleBadge = (role) => {
     const roleStyles = {
       SuperAdmin: { bg: "#FF0000", color: "#FFFFFF" },
-      Admin: { bg: "#FF0000", color: "#FFFFFF" },
+      Admin: { bg: "#757575", color: "#FFFFFF" }, 
       HOD: { bg: "#000000", color: "#FFFFFF" },
-      Employee: { bg: "#007BFF", color: "#FFFFFF" },
+      Employee: { bg: "#757575", color: "#FFFFFF" }, 
     };
     const style = roleStyles[role] || { bg: "#9e9e9e", color: "white" };
+    
+    const displayRole = (role === "HOD" || role === "SuperAdmin") 
+      ? role 
+      : (role.charAt(0).toUpperCase() + role.slice(1).toLowerCase());
+
     return (
       <div style={{
           backgroundColor: style.bg, color: style.color,
           width: "100px", padding: "6px 0", borderRadius: "4px",
-          fontWeight: "500", fontSize: "0.85rem", textAlign: "center", display: "inline-block",
+          fontWeight: "500", fontSize: "0.75rem", textAlign: "center", display: "inline-block",
+          textTransform: "none"
         }}>
-        {role}
+        {displayRole}
       </div>
     );
   };
@@ -256,27 +311,38 @@ const UsersPage = ({ currentTheme, user }) => {
         )}
       </div>
 
-      <Row className="mb-4 g-2">
-        <Col md={4}>
+      <Row className="mb-4 g-2 align-items-center">
+        <Col md={3}>
           <Form.Control placeholder="Search name..." value={searchTerm} style={dynamicInputStyle} onChange={(e) => setSearchTerm(e.target.value)} />
         </Col>
-        <Col md={3}>
-          <Form.Select value={filterDept} style={dynamicInputStyle} onChange={(e) => setFilterDept(e.target.value)}>
-            <option value="">All Departments</option>
-            {deptList.map((d) => <option key={d._id} value={d.departmentName}>{d.departmentName}</option>)}
-          </Form.Select>
-        </Col>
+        
+        {myRole !== "hod" && (
+          <Col md={3}>
+            <Form.Select value={filterDept} style={dynamicInputStyle} onChange={(e) => setFilterDept(e.target.value)}>
+              <option value="">All Departments</option>
+              {deptList.map((d) => <option key={d._id} value={d.departmentName}>{d.departmentName}</option>)}
+            </Form.Select>
+          </Col>
+        )}
+
         <Col md={3}>
           <Form.Select value={filterRole} style={dynamicInputStyle} onChange={(e) => setFilterRole(e.target.value)}>
             <option value="">All Roles</option>
-            <option value="SuperAdmin">SuperAdmin</option>
-            <option value="Admin">Admin</option>
-            <option value="HOD">HOD</option>
+            {myRole !== "hod" && (
+              <>
+                <option value="SuperAdmin">SuperAdmin</option>
+                <option value="Admin">Admin</option>
+                <option value="HOD">HOD</option>
+              </>
+            )}
             <option value="Employee">Employee</option>
           </Form.Select>
         </Col>
-        <Col md={2}>
-          <Button variant="outline-secondary" className="w-100" onClick={handleReset}><RestartAlt /> Reset</Button>
+
+        <Col md={1}>
+          <Button variant="outline-secondary" className="px-3" onClick={handleReset} title="Reset Filters">
+            <RestartAlt />
+          </Button>
         </Col>
       </Row>
 
@@ -301,7 +367,16 @@ const UsersPage = ({ currentTheme, user }) => {
                   <td className="ps-4">{u.name}</td>
                   <td>{u.username}</td>
                   <td>{getRoleBadge(u.role)}</td>
-                  <td>{u.department || "All"}</td>
+                  <td>
+                    <Badge 
+                      bg={isDark ? "secondary" : "light"} 
+                      text={isDark ? "white" : "dark"}
+                      className="border px-3 py-2"
+                      style={{ fontWeight: "600", fontSize: "0.85rem", letterSpacing: "0.3px", boxShadow: "0 1px 3px rgba(0,0,0,0.1)" }}
+                    >
+                      {u.department || "All"}
+                    </Badge>
+                  </td>
                   <td className="text-center">
                     <Badge 
                        bg={u.isActive !== false ? "success" : "danger"}
@@ -317,7 +392,18 @@ const UsersPage = ({ currentTheme, user }) => {
                         <Visibility fontSize="small" />
                       </Button>
 
-                      {/* 🛡️ SECURITY: Only show Reset 2FA to Admin/SuperAdmin, NOT HOD */}
+                      {/* TRIGGER RESET EMAIL BUTTON */}
+                      {canManageStatus && (
+                        <Button 
+                          variant="outline-warning" 
+                          size="sm" 
+                          onClick={() => handleAdminTriggerReset(u._id, u.username)}
+                          title="Authorize Password Reset"
+                        >
+                          <RestartAlt fontSize="small" />
+                        </Button>
+                      )}
+
                       {canManageStatus && (
                         <Button 
                           variant="outline-danger" 
@@ -337,7 +423,6 @@ const UsersPage = ({ currentTheme, user }) => {
         </Table>
       </div>
 
-      {/* MODAL SECTION - NO CHANGES TO LOGIC HERE */}
       <Modal show={showModal} onHide={() => setShowModal(false)} centered size="lg">
         <div className={isDark ? "bg-dark text-white" : ""}>
           <Modal.Header closeButton closeVariant={isDark ? "white" : undefined}>
@@ -358,20 +443,10 @@ const UsersPage = ({ currentTheme, user }) => {
               <Row>
                 <Col md={6} className="mb-3">
                   <Form.Label>Department</Form.Label>
-                  <Form.Select 
-                    name="departmentId" 
-                    required 
-                    style={dynamicInputStyle} 
-                    value={formData.departmentId} 
-                    onChange={handleInputChange}
-                  >
+                  <Form.Select name="departmentId" required style={dynamicInputStyle} value={formData.departmentId} onChange={handleInputChange}>
                     <option value="">Select Department</option>
-                    {myRole === "superadmin" && (
-                      <option value="ALL_DEPT">All (Admin/Super Admin)</option>
-                    )}
-                    {deptList.map((d) => (
-                      <option key={d._id} value={d._id}>{d.departmentName}</option>
-                    ))}
+                    {myRole === "superadmin" && <option value="ALL_DEPT">All (Admin/Super Admin)</option>}
+                    {deptList.map((d) => <option key={d._id} value={d._id}>{d.departmentName}</option>)}
                   </Form.Select>
                 </Col>
                 <Col md={6} className="mb-3">
@@ -384,11 +459,7 @@ const UsersPage = ({ currentTheme, user }) => {
               <Row>
                 <Col md={6} className="mb-3">
                   <Form.Label>Username</Form.Label>
-                  <Form.Control 
-                    name="username" required style={dynamicInputStyle} 
-                    placeholder={formData.role ? `Must start with ${rolePrefixes[formData.role]}` : ""}
-                    value={formData.username} onChange={handleInputChange} 
-                  />
+                  <Form.Control name="username" required style={dynamicInputStyle} placeholder={formData.role ? `Must start with ${rolePrefixes[formData.role]}` : ""} value={formData.username} onChange={handleInputChange} />
                 </Col>
                 <Col md={6} className="mb-3">
                   <Form.Label>Password</Form.Label>

@@ -83,7 +83,6 @@ exports.createRequest = async (req, res) => {
         const sRole = (senderUser.role || "USER").toUpperCase();
         const finalDeptId = senderUser.departmentId?._id || senderUser.departmentId;
         
-        // Check for Auto-Approval (Superadmins don't need permission)
         const isAutoApprove = ["SUPERADMIN", "SUPER_ADMIN"].includes(sRole);
 
         const mainReq = await new Request({
@@ -98,7 +97,6 @@ exports.createRequest = async (req, res) => {
             status: isAutoApprove ? "completed" : "pending"
         }).save();
 
-        // CASE 1: AUTO-APPROVE (Execute file logic immediately)
         if (isAutoApprove) {
             if (requestType === "delete") {
                 await handleMoveToTrash(fileIds, senderUser.username, "SYSTEM_AUTO", finalDeptId);
@@ -106,32 +104,43 @@ exports.createRequest = async (req, res) => {
                 await handleOwnershipTransfer(fileIds, recipientId, senderUser.username);
             }
         } 
-        
-        // CASE 2: PENDING APPROVAL (Notify Admins/HODs)
         else {
             const recipients = await getRecipientsForRequest(sRole, finalDeptId, senderUser.username);
 
             if (recipients && recipients.length > 0) {
-                // Fetch the request and POPULATE the file metadata
-                const populatedReq = await Request.findById(mainReq._id).populate('fileIds');
+                // --- ADDED: IN-APP NOTIFICATION LOGIC ---
+                const notificationPromises = recipients.map(rec => 
+                    Notification.create({
+                        recipientId: rec.id || rec._id, // Ensure this matches your recipient object structure
+                        title: `New ${requestType?.toUpperCase()} Request`,
+                        message: `${senderUser.username} requested a file ${requestType}. Needs your approval.`,
+                        type: "APPROVAL_REQUIRED",
+                        requestId: mainReq._id,
+                        status: "unread"
+                    })
+                );
 
-                // Extract real names for the email template
+                const populatedReq = await Request.findById(mainReq._id).populate('fileIds');
                 const fileNamesStr = populatedReq.fileIds
                     .map(f => f.fileName || f.originalName || f.name || "Unnamed File")
                     .join(", ");
 
-                await notifyApprovers(recipients, {
-                    senderUsername: senderUser.username,
-                    requestType: requestType || "transfer",
-                    reason: mainReq.reason,
-                    requestId: mainReq._id,
-                    fileNames: fileNamesStr 
-                });
+                // Run both Email and In-App Notifications in parallel
+                await Promise.all([
+                    ...notificationPromises,
+                    notifyApprovers(recipients, {
+                        senderUsername: senderUser.username,
+                        requestType: requestType || "transfer",
+                        reason: mainReq.reason,
+                        requestId: mainReq._id,
+                        fileNames: fileNamesStr 
+                    })
+                ]);
             }
         }
 
         res.status(201).json({ 
-            message: isAutoApprove ? "Request auto-approved and executed" : "Request created and pending approval", 
+            message: isAutoApprove ? "Request auto-approved" : "Request created & Notifications sent", 
             data: mainReq 
         });
 
