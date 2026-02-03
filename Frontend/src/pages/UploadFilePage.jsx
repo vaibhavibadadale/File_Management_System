@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import axios from "axios";
 import Swal from "sweetalert2";
 import "../styles/UploadFilePage.css";
@@ -53,34 +53,34 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
 
     const isDark = currentTheme === "dark";
     const userRole = (user?.role || "").toLowerCase();
-    const isAdmin = userRole === "admin" || userRole === "superadmin";
+    const isAdmin = userRole === "admin" || userRole === "superadmin" || userRole === "hod";
     const userDeptId = user?.departmentId || (isAdmin ? null : DEPARTMENT_ID);
     const currentUserId = user?._id || USER_ID;
 
-    useEffect(() => {
-        loadContent(currentFolderId);
-    }, [currentFolderId, user?._id, viewMode]);
-
-    const loadContent = async (parentId) => {
+    const loadContent = useCallback(async (parentId) => {
         setItemsToTransfer({});
-        let params = { userId: currentUserId };
+        
+        let params = { 
+            userId: currentUserId,
+            parentId: parentId || "null",
+            folderId: parentId || "null"
+        };
 
         if (viewMode === "important") {
             params.isStarred = true;
-        } else {
-            // Ensure we send 'null' as a string if it's the root to match common backend expectations
-            // or keep it as null depending on your API implementation.
-            params.parentId = parentId || "null";
-            params.folderId = parentId || "null";
-            if (userDeptId) params.departmentId = userDeptId;
+            delete params.parentId; 
+        } else if (userDeptId && !isAdmin) {
+            params.departmentId = userDeptId;
         }
 
         try {
-            const folderRes = await axios.get(`${BACKEND_URL}/api/folders`, { params });
-            const fileRes = await axios.get(`${BACKEND_URL}/api/files`, { params });
+            const [folderRes, fileRes] = await Promise.all([
+                axios.get(`${BACKEND_URL}/api/folders`, { params }),
+                axios.get(`${BACKEND_URL}/api/files`, { params })
+            ]);
 
             const userFolders = (folderRes.data.folders || []).filter(f => 
-                (f.createdBy === currentUserId || isAdmin) && 
+                (f.createdBy === currentUserId || f.uploadedBy === currentUserId || isAdmin) && 
                 (f.transferStatus === 'none' || !f.transferStatus)
             );
             
@@ -100,146 +100,11 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
         } catch (err) { 
             console.error("Error loading content:", err); 
         }
-    };
+    }, [currentUserId, isAdmin, userDeptId, viewMode]);
 
-    const fetchReceivedFiles = async () => {
-        try {
-            const response = await axios.get(`${BACKEND_URL}/api/requests/received`, {
-                params: { userId: currentUserId }
-            });
-            const rawData = response.data.data || { files: [], folders: [] };
-            const folders = (rawData.folders || []).map(f => ({ 
-                ...f, isFolder: true, type: 'Folder',
-                displayName: f.folderName || f.name, 
-                sender: f.senderId?.username || "System",
-                senderRole: f.senderId?.role || "N/A"
-            }));
-            const files = (rawData.files || []).map(f => ({ 
-                ...f, isFolder: false, 
-                displayName: f.originalName || f.filename, 
-                sender: f.senderId?.username || "System",
-                senderRole: f.senderId?.role || "N/A"
-            }));
-            setReceivedItems([...folders, ...files]);
-            setIsReceivedModalOpen(true);
-        } catch (err) { 
-            console.error("Fetch Received Error:", err);
-            Swal.fire("Error", "Could not load received files.", "error"); 
-        }
-    };
-
-    const handleToggleStar = async (e, item) => {
-        e.stopPropagation();
-        if (item.isDisabled && !isAdmin) return;
-        if (item.type === 'Folder' || item.isFolder) return;
-        const newStarredState = !starredItems[item._id];
-        try {
-            await axios.patch(`${BACKEND_URL}/api/files/star/${item._id}`, {
-                userId: currentUserId, isStarred: newStarredState
-            });
-            setStarredItems(prev => ({ ...prev, [item._id]: newStarredState }));
-            if (viewMode === "important") loadContent(currentFolderId);
-        } catch (err) { alert("Could not update star status."); }
-    };
-
-    const handleSelectAll = (e) => {
-        const isChecked = e.target.checked;
-        if (isChecked) {
-            const allIds = {};
-            combinedItems.forEach(item => { allIds[item._id] = true; });
-            setItemsToTransfer(allIds);
-        } else {
-            setItemsToTransfer({});
-        }
-    };
-
-    const handleDeleteItemTrigger = async (item) => {
-        const { value: formValues } = await Swal.fire({
-            title: 'Request Deletion',
-            html: `<p class="small text-muted">Requesting to delete: <b>${item.displayName || item.originalName}</b></p>` +
-                `<input id="swal-password" type="password" class="swal2-input" placeholder="Confirm Password">` +
-                `<textarea id="swal-reason" class="swal2-textarea" placeholder="Reason for deletion..."></textarea>`,
-            focusConfirm: false, showCancelButton: true, confirmButtonText: 'Submit Request',
-            confirmButtonColor: '#dc3545', background: isDark ? '#2d2d2d' : '#fff', color: isDark ? '#fff' : '#000',
-            preConfirm: () => {
-                const password = document.getElementById('swal-password').value;
-                const reason = document.getElementById('swal-reason').value;
-                if (!password || !reason) { Swal.showValidationMessage('Please enter both password and reason'); return false; }
-                return { password, reason };
-            }
-        });
-
-        if (formValues) {
-            try {
-                await axios.post(`${BACKEND_URL}/api/users/verify-password`, { userId: currentUserId, password: formValues.password });
-                await axios.post(`${BACKEND_URL}/api/requests/create`, {
-                    requestType: "delete", senderUsername: user?.username || "Unknown",
-                    senderRole: user?.role || "user", departmentId: userDeptId,
-                    fileIds: [item._id], reason: formValues.reason
-                });
-                Swal.fire({ title: "Request Sent", text: "Your deletion request is pending admin approval.", icon: "success", background: isDark ? '#2d2d2d' : '#fff', color: isDark ? '#fff' : '#000' });
-            } catch (err) { Swal.fire("Error", "Incorrect password or submission error.", "error"); }
-        }
-    };
-
-    const executeBulkDeleteRequest = async () => {
-        const selectedIds = Object.keys(itemsToTransfer).filter(id => itemsToTransfer[id]);
-        if (selectedIds.length === 0) return Swal.fire("Info", "No items selected.", "info");
-
-        const { value: formValues } = await Swal.fire({
-            title: 'Confirm Bulk Deletion Request',
-            html: `<p class="small text-muted">Requesting to delete <b>${selectedIds.length}</b> items</p>` +
-                `<input id="bulk-swal-password" type="password" class="swal2-input" placeholder="Confirm Password">` +
-                `<textarea id="bulk-swal-reason" class="swal2-textarea" placeholder="Reason for bulk deletion..."></textarea>`,
-            focusConfirm: false, showCancelButton: true, confirmButtonText: 'Send Bulk Request', confirmButtonColor: '#dc3545',
-            background: isDark ? '#2d2d2d' : '#fff', color: isDark ? '#fff' : '#000',
-            preConfirm: () => {
-                const password = document.getElementById('bulk-swal-password').value;
-                const reason = document.getElementById('bulk-swal-reason').value;
-                if (!password || !reason) { Swal.showValidationMessage('Password and reason are required'); return false; }
-                return { password, reason };
-            }
-        });
-
-        if (formValues) {
-            setIsDeleting(true);
-            try {
-                await axios.post(`${BACKEND_URL}/api/users/verify-password`, { userId: currentUserId, password: formValues.password });
-                await axios.post(`${BACKEND_URL}/api/requests/create`, {
-                    requestType: "delete", senderUsername: user?.username || "Admin", senderRole: user?.role || "user",
-                    departmentId: userDeptId, fileIds: selectedIds, reason: formValues.reason
-                });
-                Swal.fire({ title: "Success", text: "Bulk deletion request submitted.", icon: "success", background: isDark ? '#2d2d2d' : '#fff', color: isDark ? '#fff' : '#000' });
-                setItemsToTransfer({}); loadContent(currentFolderId);
-            } catch (err) { Swal.fire("Error", "Error submitting request.", "error"); } finally { setIsDeleting(false); }
-        }
-    };
-
-    const handleViewFile = async (file) => {
-        if (file.isDisabled && !isAdmin) {
-            return Swal.fire({ icon: 'error', title: 'File Restricted', text: 'This file is disabled.', background: isDark ? '#2d2d2d' : '#fff', color: isDark ? '#fff' : '#000' });
-        }
-        try {
-            await axios.post(`${BACKEND_URL}/api/files/track-view`, { fileId: file._id, userId: currentUserId });
-            const ownerName = file.username || file.uploadedByUsername || file.senderUsername || "Admin";
-            const fileUrl = `${BACKEND_URL}/uploads/${ownerName}/${encodeURIComponent(file.filename)}`;
-            window.open(fileUrl, '_blank');
-        } catch (err) {
-            const ownerName = file.username || file.uploadedByUsername || file.senderUsername || "Admin";
-            window.open(`${BACKEND_URL}/uploads/${ownerName}/${encodeURIComponent(file.filename)}`, '_blank');
-        }
-    };
-
-    const handleDownload = async (file) => {
-        if (file.isDisabled && !isAdmin) return Swal.fire({ icon: 'error', title: 'Restricted', text: 'File disabled.' });
-        try {
-            const response = await axios({ url: `${BACKEND_URL}/api/files/download/${file._id}`, method: 'GET', responseType: 'blob' });
-            const url = window.URL.createObjectURL(new Blob([response.data]));
-            const link = document.createElement('a');
-            link.href = url; link.setAttribute('download', file.originalName || file.filename);
-            document.body.appendChild(link); link.click(); link.remove();
-        } catch (err) { alert("Download failed."); }
-    };
+    useEffect(() => {
+        loadContent(currentFolderId);
+    }, [currentFolderId, loadContent]);
 
     const handleFileUpload = async () => {
         if (!selectedFile) return alert("Select a file.");
@@ -254,9 +119,11 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
         try {
             await axios.post(`${BACKEND_URL}/api/files/upload`, formData);
             setSelectedFile(null); 
-            // Clear the input manually
-            document.getElementById('file-input').value = "";
-            await loadContent(currentFolderId); 
+            const fileInput = document.getElementById('file-input');
+            if (fileInput) fileInput.value = "";
+            
+            setTimeout(() => loadContent(currentFolderId), 500);
+            
             Swal.fire({ title: "Success", text: "File uploaded successfully.", icon: "success", timer: 1500, showConfirmButton: false });
         } catch (err) { 
             console.error(err);
@@ -264,16 +131,133 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
         }
     };
 
+    const fetchReceivedFiles = async () => {
+        try {
+            const response = await axios.get(`${BACKEND_URL}/api/requests/received`, { params: { userId: currentUserId } });
+            const rawData = response.data.data || { files: [], folders: [] };
+            
+            // Map folders with role from database
+            const folders = (rawData.folders || []).map(f => ({ 
+                ...f, 
+                isFolder: true, 
+                type: 'Folder', 
+                displayName: f.folderName || f.name, 
+                sender: f.senderId?.username || "System", 
+                senderRole: f.senderId?.role || "user" // Fetching role from senderId object
+            }));
+
+            // Map files with role from database
+            const files = (rawData.files || []).map(f => ({ 
+                ...f, 
+                isFolder: false, 
+                displayName: f.originalName || f.filename, 
+                sender: f.senderId?.username || "System", 
+                senderRole: f.senderId?.role || "user" // Fetching role from senderId object
+            }));
+
+            setReceivedItems([...folders, ...files]);
+            setIsReceivedModalOpen(true);
+        } catch (err) { 
+            console.error("Fetch Received Error:", err); 
+            Swal.fire("Error", "Could not load received files.", "error"); 
+        }
+    };
+
+    const handleToggleStar = async (e, item) => {
+        e.stopPropagation();
+        if (item.isDisabled && !isAdmin) return;
+        if (item.type === 'Folder' || item.isFolder) return;
+        const newStarredState = !starredItems[item._id];
+        try {
+            await axios.patch(`${BACKEND_URL}/api/files/star/${item._id}`, { userId: currentUserId, isStarred: newStarredState });
+            setStarredItems(prev => ({ ...prev, [item._id]: newStarredState }));
+            if (viewMode === "important") loadContent(currentFolderId);
+        } catch (err) { alert("Could not update star status."); }
+    };
+
+    const handleSelectAll = (e) => {
+        const isChecked = e.target.checked;
+        if (isChecked) {
+            const allIds = {};
+            combinedItems.forEach(item => { allIds[item._id] = true; });
+            setItemsToTransfer(allIds);
+        } else { setItemsToTransfer({}); }
+    };
+
+    const handleDeleteItemTrigger = async (item) => {
+        const { value: formValues } = await Swal.fire({
+            title: 'Request Deletion',
+            html: `<p class="small text-muted">Requesting to delete: <b>${item.displayName || item.originalName}</b></p>` + `<input id="swal-password" type="password" class="swal2-input" placeholder="Confirm Password">` + `<textarea id="swal-reason" class="swal2-textarea" placeholder="Reason for deletion..."></textarea>`,
+            focusConfirm: false, showCancelButton: true, confirmButtonText: 'Submit Request', confirmButtonColor: '#dc3545', background: isDark ? '#2d2d2d' : '#fff', color: isDark ? '#fff' : '#000',
+            preConfirm: () => {
+                const password = document.getElementById('swal-password').value;
+                const reason = document.getElementById('swal-reason').value;
+                if (!password || !reason) { Swal.showValidationMessage('Please enter both password and reason'); return false; }
+                return { password, reason };
+            }
+        });
+        if (formValues) {
+            try {
+                await axios.post(`${BACKEND_URL}/api/users/verify-password`, { userId: currentUserId, password: formValues.password });
+                await axios.post(`${BACKEND_URL}/api/requests/create`, { requestType: "delete", senderUsername: user?.username || "Unknown", senderRole: user?.role || "user", departmentId: userDeptId, fileIds: [item._id], reason: formValues.reason });
+                Swal.fire({ title: "Request Sent", text: "Your deletion request is pending admin approval.", icon: "success", background: isDark ? '#2d2d2d' : '#fff', color: isDark ? '#fff' : '#000' });
+            } catch (err) { Swal.fire("Error", "Incorrect password or submission error.", "error"); }
+        }
+    };
+
+    const executeBulkDeleteRequest = async () => {
+        const selectedIds = Object.keys(itemsToTransfer).filter(id => itemsToTransfer[id]);
+        if (selectedIds.length === 0) return Swal.fire("Info", "No items selected.", "info");
+        const { value: formValues } = await Swal.fire({
+            title: 'Confirm Bulk Deletion Request',
+            html: `<p class="small text-muted">Requesting to delete <b>${selectedIds.length}</b> items</p>` + `<input id="bulk-swal-password" type="password" class="swal2-input" placeholder="Confirm Password">` + `<textarea id="bulk-swal-reason" class="swal2-textarea" placeholder="Reason for bulk deletion..."></textarea>`,
+            focusConfirm: false, showCancelButton: true, confirmButtonText: 'Send Bulk Request', confirmButtonColor: '#dc3545', background: isDark ? '#2d2d2d' : '#fff', color: isDark ? '#fff' : '#000',
+            preConfirm: () => {
+                const password = document.getElementById('bulk-swal-password').value;
+                const reason = document.getElementById('bulk-swal-reason').value;
+                if (!password || !reason) { Swal.showValidationMessage('Password and reason are required'); return false; }
+                return { password, reason };
+            }
+        });
+        if (formValues) {
+            setIsDeleting(true);
+            try {
+                await axios.post(`${BACKEND_URL}/api/users/verify-password`, { userId: currentUserId, password: formValues.password });
+                await axios.post(`${BACKEND_URL}/api/requests/create`, { requestType: "delete", senderUsername: user?.username || "Admin", senderRole: user?.role || "user", departmentId: userDeptId, fileIds: selectedIds, reason: formValues.reason });
+                Swal.fire({ title: "Success", text: "Bulk deletion request submitted.", icon: "success", background: isDark ? '#2d2d2d' : '#fff', color: isDark ? '#fff' : '#000' });
+                setItemsToTransfer({}); loadContent(currentFolderId);
+            } catch (err) { Swal.fire("Error", "Error submitting request.", "error"); } finally { setIsDeleting(false); }
+        }
+    };
+
+    const handleViewFile = async (file) => {
+        if (file.isDisabled && !isAdmin) return Swal.fire({ icon: 'error', title: 'File Restricted', text: 'This file is disabled.', background: isDark ? '#2d2d2d' : '#fff', color: isDark ? '#fff' : '#000' });
+        try {
+            await axios.post(`${BACKEND_URL}/api/files/track-view`, { fileId: file._id, userId: currentUserId });
+            const ownerName = file.username || file.uploadedByUsername || file.senderUsername || "Admin";
+            window.open(`${BACKEND_URL}/uploads/${ownerName}/${encodeURIComponent(file.filename)}`, '_blank');
+        } catch (err) { 
+            const ownerName = file.username || file.uploadedByUsername || file.senderUsername || "Admin";
+            window.open(`${BACKEND_URL}/uploads/${ownerName}/${encodeURIComponent(file.filename)}`, '_blank'); 
+        }
+    };
+
+    const handleDownload = async (file) => {
+        if (file.isDisabled && !isAdmin) return Swal.fire({ icon: 'error', title: 'Restricted', text: 'File disabled.' });
+        try {
+            const response = await axios({ url: `${BACKEND_URL}/api/files/download/${file._id}`, method: 'GET', responseType: 'blob' });
+            const url = window.URL.createObjectURL(new Blob([response.data]));
+            const link = document.createElement('a');
+            link.href = url; link.setAttribute('download', file.originalName || file.filename);
+            document.body.appendChild(link); link.click(); link.remove();
+        } catch (err) { alert("Download failed."); }
+    };
+
     const handleCreateFolder = async () => {
         if (!folderName) return alert("Enter name");
         try {
-            await axios.post(`${BACKEND_URL}/api/folders/create`, {
-                name: folderName, parent: currentFolderId || null,
-                createdBy: currentUserId, uploadedBy: currentUserId,
-                departmentId: userDeptId || null, transferStatus: 'none'
-            });
-            setFolderName(""); 
-            await loadContent(currentFolderId);
+            await axios.post(`${BACKEND_URL}/api/folders/create`, { name: folderName, parent: currentFolderId || null, createdBy: currentUserId, uploadedBy: currentUserId, departmentId: userDeptId || null, transferStatus: 'none' });
+            setFolderName(""); await loadContent(currentFolderId);
         } catch (err) { console.error(err); }
     };
 
@@ -300,31 +284,12 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
         }
     };
 
-    const handleSelectItem = (id) => {
-        setItemsToTransfer(prev => ({ ...prev, [id]: !prev[id] }));
-    };
+    const handleSelectItem = (id) => { setItemsToTransfer(prev => ({ ...prev, [id]: !prev[id] })); };
 
-    // Mapping items for display
-    const foldersMapped = foldersInCurrentView.map(f => ({ 
-        ...f, 
-        type: 'Folder', 
-        displayName: f.folderName || f.name 
-    }));
-    
-    const filesMapped = filesInCurrentView.map(f => ({ 
-        ...f, 
-        type: f.mimeType || 'File', 
-        displayName: f.originalName || f.filename || "Unnamed" 
-    }));
-    
+    const foldersMapped = foldersInCurrentView.map(f => ({ ...f, type: 'Folder', displayName: f.folderName || f.name }));
+    const filesMapped = filesInCurrentView.map(f => ({ ...f, type: f.mimeType || 'File', displayName: f.originalName || f.filename || "Unnamed" }));
     let combinedItems = [...foldersMapped, ...filesMapped];
-
-    if (searchQuery) {
-        combinedItems = combinedItems.filter(item => 
-            item.displayName.toLowerCase().includes(searchQuery.toLowerCase())
-        );
-    }
-
+    if (searchQuery) combinedItems = combinedItems.filter(item => item.displayName.toLowerCase().includes(searchQuery.toLowerCase()));
     const selectedCount = Object.values(itemsToTransfer).filter(Boolean).length;
     const isAllSelected = combinedItems.length > 0 && selectedCount === combinedItems.length;
 
@@ -353,13 +318,15 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
                                 <button onClick={handleCreateFolder} className="create-btn">Create</button>
                             </div>
                             
-                            <div className="action-group upload-group d-flex align-items-center ms-2">
-                                <label className="btn btn-sm btn-outline-primary mb-0 py-1 px-2 d-flex align-items-center justify-content-center" htmlFor="file-input" style={{ fontSize: '0.85rem', cursor: 'pointer', height: '31px', minWidth: '90px' }}>
-                                    <i className="fas fa-plus-circle me-1"></i> {selectedFile ? "Ready" : "Add File"}
-                                </label>
-                                <input id="file-input" type="file" onChange={(e) => setSelectedFile(e.target.files[0])} hidden />
-                                <button onClick={handleFileUpload} disabled={!selectedFile} className="btn btn-sm btn-primary ms-1 py-1 px-2" style={{ fontSize: '0.85rem', height: '31px' }}>Upload</button>
-                            </div>
+                            {currentFolderId !== null && (
+                                <div className="action-group upload-group d-flex align-items-center ms-2">
+                                    <label className="btn btn-sm btn-outline-primary mb-0 py-1 px-2 d-flex align-items-center justify-content-center" htmlFor="file-input" style={{ fontSize: '0.85rem', cursor: 'pointer', height: '31px', minWidth: '90px' }}>
+                                        <i className="fas fa-plus-circle me-1"></i> {selectedFile ? "Ready" : "Add File"}
+                                    </label>
+                                    <input id="file-input" type="file" onChange={(e) => setSelectedFile(e.target.files[0])} hidden />
+                                    <button onClick={handleFileUpload} disabled={!selectedFile} className="btn btn-sm btn-primary ms-1 py-1 px-2" style={{ fontSize: '0.85rem', height: '31px' }}>Upload</button>
+                                </div>
+                            )}
                         </>
                     ) : (
                         <div className="action-group d-flex align-items-center">
@@ -483,7 +450,11 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
                                             </td>
                                             <td className={isDark ? 'text-white-50' : 'text-muted'}><span className="fw-bold">{item.sender}</span></td>
                                             <td>
-                                                <span className={`badge ${item.senderRole?.toLowerCase() === 'superadmin' ? 'bg-danger' : 'bg-info'} text-dark`}>
+                                                <span className={`badge ${
+                                                    ['superadmin', 'admin', 'hod'].includes(item.senderRole?.toLowerCase()) 
+                                                    ? 'bg-danger' 
+                                                    : 'bg-info'
+                                                } text-dark`}>
                                                     {(item.senderRole || 'User').toUpperCase()}
                                                 </span>
                                             </td>

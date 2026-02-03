@@ -57,15 +57,13 @@ async function handleOwnershipTransfer(fileIds, recipientId, senderUsername, rec
     const senderUser = await User.findOne({ username: senderUsername });
     const senderId = senderUser ? senderUser._id : null;
 
-    // Enhanced Update Logic for File/Folder Ownership
     const updatePayload = {
-        uploadedBy: recipientId,           // Change ownership
-        transferStatus: 'received',        // Mark as received
-        senderId: senderId,                // Track origin
-        lastTransferDate: new Date()       // Date for sorting
+        uploadedBy: recipientId,
+        transferStatus: 'received',
+        senderId: senderId,
+        lastTransferDate: new Date()
     };
 
-    // If a specific department was targeted in the request, update access
     if (receiverDeptId) {
         updatePayload.departmentId = receiverDeptId;
     }
@@ -173,7 +171,6 @@ exports.approveFromEmail = async (req, res) => {
         if (request.requestType === "delete") {
             await handleMoveToTrash(request.fileIds, request.senderUsername, "Admin (via Email)", request.departmentId);
         } else {
-            // Updated to handle full transfer logic
             await handleOwnershipTransfer(request.fileIds, request.recipientId, request.senderUsername, request.departmentId);
         }
 
@@ -256,7 +253,6 @@ exports.secureAction = async (req, res) => {
             if (request.requestType === "delete") {
                 await handleMoveToTrash(request.fileIds, request.senderUsername, approver.username, request.departmentId);
             } else {
-                // Integrated the transfer logic here
                 await handleOwnershipTransfer(request.fileIds, request.recipientId, request.senderUsername, request.departmentId);
             }
         }
@@ -308,7 +304,6 @@ exports.approveRequest = async (req, res) => {
                 { sort: { createdAt: -1 } }
             );
         } else {
-            // Integrated the transfer logic here
             await handleOwnershipTransfer(request.fileIds, request.recipientId, request.senderUsername, request.departmentId);
             await Transfer.findOneAndUpdate(
                 { senderUsername: request.senderUsername, status: "pending" },
@@ -500,15 +495,7 @@ exports.permanentDelete = async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 };
 
-// exports.getReceivedFiles = async (req, res) => {
-//     try {
-//         const { userId } = req.query;
-//         if (!userId || !mongoose.Types.ObjectId.isValid(userId)) return res.status(400).json({ error: "Valid User ID is required" });
-//         const filter = { $or: [{ userId: userId }, { uploadedBy: userId }, { sharedWith: userId }] };
-//         const [files, folders] = await Promise.all([File.find(filter).lean(), Folder.find(filter).lean()]);
-//         res.json({ files, folders });
-//     } catch (err) { res.status(500).json({ error: err.message }); }
-// };
+// UPDATED CONTROLLER: Added 'role' to populate calls
 exports.getReceivedFiles = async (req, res) => {
     try {
         const { userId } = req.query;
@@ -517,7 +504,6 @@ exports.getReceivedFiles = async (req, res) => {
             return res.status(400).json({ error: "Valid User ID is required" });
         }
 
-        // Filter for items where the user is the recipient of a transfer
         const filter = { 
             uploadedBy: userId, 
             transferStatus: 'received',
@@ -526,11 +512,11 @@ exports.getReceivedFiles = async (req, res) => {
 
         const [files, folders] = await Promise.all([
             File.find(filter)
-                .populate('senderId', 'username email') // See who sent it
-                .sort({ lastTransferDate: -1 })         // Newest transfers first
+                .populate('senderId', 'username email role') // Added 'role' here
+                .sort({ lastTransferDate: -1 })
                 .lean(),
             Folder.find(filter)
-                .populate('senderId', 'username email')
+                .populate('senderId', 'username email role') // Added 'role' here
                 .sort({ lastTransferDate: -1 })
                 .lean()
         ]);

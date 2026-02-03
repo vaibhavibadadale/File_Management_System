@@ -2,11 +2,12 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import Swal from 'sweetalert2';
 import { Modal, Button, ListGroup, Form, InputGroup, Spinner, Alert, Badge } from 'react-bootstrap';
-import { Search, ShieldLock, Person, ArrowRightCircle, Files, XCircle } from 'react-bootstrap-icons';
+import { Search, ShieldLock, Person, ArrowRightCircle, Files, XCircle, CalendarDate } from 'react-bootstrap-icons';
 import { transferFilesApi } from '../services/apiService';
 
 const TransferModal = ({ selectedIds, senderUsername, user, onClose, onSuccess, currentTheme }) => {
     const [users, setUsers] = useState([]);
+    const [senderData, setSenderData] = useState(null); 
     const [searchTerm, setSearchTerm] = useState("");
     const [selectedUser, setSelectedUser] = useState(null);
     const [step, setStep] = useState(1); 
@@ -17,22 +18,28 @@ const TransferModal = ({ selectedIds, senderUsername, user, onClose, onSuccess, 
 
     const isDark = currentTheme === "dark";
 
-    // 1. Fetch users for the list
+    // 1. Fetch Sender Info and User List from Database
     useEffect(() => {
-        const fetchUsers = async () => {
+        const fetchData = async () => {
             try {
                 const token = localStorage.getItem('authToken');
-                const res = await axios.get("http://localhost:5000/api/users", {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
+                const headers = { 'Authorization': `Bearer ${token}` };
+
+                // Fetch all users for the selection list
+                const res = await axios.get("http://localhost:5000/api/users", { headers });
                 const data = Array.isArray(res.data) ? res.data : (res.data.users || []);
-                // Ensure we don't show the current logged-in user
                 setUsers(data.filter(u => u.username !== senderUsername));
+
+                // Fetch specific data for the current sender
+                const currentUser = data.find(u => u.username === senderUsername);
+                if (currentUser) {
+                    setSenderData(currentUser);
+                }
             } catch (err) {
-                setError("Could not load user list.");
+                setError("Could not load data from server.");
             }
         };
-        fetchUsers();
+        fetchData();
     }, [senderUsername]);
 
     // 2. Handle the actual transfer
@@ -44,12 +51,14 @@ const TransferModal = ({ selectedIds, senderUsername, user, onClose, onSuccess, 
         setError(null);
 
         try {
-            // Safety check: extract IDs correctly
-            const deptId = user?.departmentId?._id || user?.departmentId;
+            const deptId = user?.departmentId?._id || user?.departmentId || senderData?.departmentId?._id;
+            
+            // Capture current date for the transfer record
+            const currentDate = new Date().toISOString();
 
             const transferData = {
                 senderUsername: senderUsername, 
-                senderRole: user?.role || "USER", 
+                transferDate: currentDate, // Replaced senderRole with transferDate
                 recipientId: selectedUser?._id, 
                 receiverName: selectedUser?.username,
                 receiverDeptName: selectedUser?.departmentId?.departmentName || "General",
@@ -154,9 +163,11 @@ const TransferModal = ({ selectedIds, senderUsername, user, onClose, onSuccess, 
                                                     </small>
                                                 </div>
                                             </div>
-                                            <Badge bg={isSelected ? "light" : "primary"} text={isSelected ? "primary" : "white"} className="px-2 py-1">
-                                                {u.role}
-                                            </Badge>
+                                            {/* We display the current date for the transfer logic here */}
+                                            <div className={`small ${isSelected ? 'text-white' : 'text-muted'}`}>
+                                                <CalendarDate className="me-1" />
+                                                {new Date().toLocaleDateString()}
+                                            </div>
                                         </ListGroup.Item>
                                     );
                                 })
@@ -174,9 +185,17 @@ const TransferModal = ({ selectedIds, senderUsername, user, onClose, onSuccess, 
                             <ShieldLock size={40} className="text-primary" />
                         </div>
                         <h6 className="fw-bold mb-1">Confirm Identity</h6>
-                        <p className="small text-muted mb-4">
+                        <p className="small text-muted mb-2">
                             Transferring {selectedIds.length} items to <strong>{selectedUser?.username}</strong>
                         </p>
+                        
+                        {/* Data Column Replacement: Date Display */}
+                        <div className="mb-4">
+                             <Badge bg="info" className="px-3 py-2">
+                                <CalendarDate className="me-2" />
+                                Transfer Date: {new Date().toLocaleDateString()}
+                             </Badge>
+                        </div>
                         
                         <Form.Group className="mb-3 text-start">
                             <Form.Label className={`small fw-bold ${isDark ? 'text-info' : 'text-secondary'}`}>REASON FOR TRANSFER</Form.Label>
