@@ -63,15 +63,15 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
 
     const loadContent = async (parentId) => {
         setItemsToTransfer({});
-        const activeFolderId = parentId || "null";
-
         let params = { userId: currentUserId };
 
         if (viewMode === "important") {
             params.isStarred = true;
         } else {
-            params.parentId = activeFolderId;
-            params.folderId = activeFolderId;
+            // Ensure we send 'null' as a string if it's the root to match common backend expectations
+            // or keep it as null depending on your API implementation.
+            params.parentId = parentId || "null";
+            params.folderId = parentId || "null";
             if (userDeptId) params.departmentId = userDeptId;
         }
 
@@ -79,53 +79,47 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
             const folderRes = await axios.get(`${BACKEND_URL}/api/folders`, { params });
             const fileRes = await axios.get(`${BACKEND_URL}/api/files`, { params });
 
-            // Filter out items that are strictly 'received' (have a senderId) so they don't clutter the main view 
-            // unless they were created by the user.
-            const userFolders = (folderRes.data.folders || []).filter(f => f.createdBy === currentUserId || !f.senderId);
-            const userFiles = (fileRes.data.files || []).filter(f => f.uploadedBy === currentUserId || !f.senderId);
+            const userFolders = (folderRes.data.folders || []).filter(f => 
+                (f.createdBy === currentUserId || isAdmin) && 
+                (f.transferStatus === 'none' || !f.transferStatus)
+            );
+            
+            const userFiles = (fileRes.data.files || []).filter(f => 
+                (f.uploadedBy === currentUserId || isAdmin) && 
+                (f.transferStatus === 'none' || !f.transferStatus)
+            );
 
             setFoldersInCurrentView(userFolders);
             setFilesInCurrentView(userFiles);
 
             const stars = {};
-            const allItems = [...userFolders, ...userFiles];
-            allItems.forEach(item => {
+            [...userFolders, ...userFiles].forEach(item => {
                 if (item.isStarred) stars[item._id] = true;
             });
             setStarredItems(stars);
-        } catch (err) { console.error("Error loading content:", err); }
+        } catch (err) { 
+            console.error("Error loading content:", err); 
+        }
     };
 
     const fetchReceivedFiles = async () => {
         try {
-            // Updated endpoint to ensure we are hitting the specialized received items logic
             const response = await axios.get(`${BACKEND_URL}/api/requests/received`, {
-                params: { 
-                    userId: currentUserId, 
-                    departmentId: userDeptId 
-                }
+                params: { userId: currentUserId }
             });
-
-            // Logic: Items where I am the recipient but not the sender
-            const folders = (response.data.folders || [])
-                .filter(f => f.senderId && f.senderId !== currentUserId)
-                .map(f => ({ 
-                    ...f, 
-                    isFolder: true, 
-                    type: 'Folder',
-                    displayName: f.folderName || f.name, 
-                    sender: f.senderUsername || "Shared User" 
-                }));
-
-            const files = (response.data.files || [])
-                .filter(f => f.senderId && f.senderId !== currentUserId)
-                .map(f => ({ 
-                    ...f, 
-                    isFolder: false, 
-                    displayName: f.originalName || f.filename, 
-                    sender: f.senderUsername || "Shared User" 
-                }));
-
+            const rawData = response.data.data || { files: [], folders: [] };
+            const folders = (rawData.folders || []).map(f => ({ 
+                ...f, isFolder: true, type: 'Folder',
+                displayName: f.folderName || f.name, 
+                sender: f.senderId?.username || "System",
+                senderRole: f.senderId?.role || "N/A"
+            }));
+            const files = (rawData.files || []).map(f => ({ 
+                ...f, isFolder: false, 
+                displayName: f.originalName || f.filename, 
+                sender: f.senderId?.username || "System",
+                senderRole: f.senderId?.role || "N/A"
+            }));
             setReceivedItems([...folders, ...files]);
             setIsReceivedModalOpen(true);
         } catch (err) { 
@@ -137,14 +131,11 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
     const handleToggleStar = async (e, item) => {
         e.stopPropagation();
         if (item.isDisabled && !isAdmin) return;
-        const isFolder = item.type === 'Folder' || item.isFolder;
-        if (isFolder) return;
-
+        if (item.type === 'Folder' || item.isFolder) return;
         const newStarredState = !starredItems[item._id];
         try {
             await axios.patch(`${BACKEND_URL}/api/files/star/${item._id}`, {
-                userId: currentUserId,
-                isStarred: newStarredState
+                userId: currentUserId, isStarred: newStarredState
             });
             setStarredItems(prev => ({ ...prev, [item._id]: newStarredState }));
             if (viewMode === "important") loadContent(currentFolderId);
@@ -168,36 +159,23 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
             html: `<p class="small text-muted">Requesting to delete: <b>${item.displayName || item.originalName}</b></p>` +
                 `<input id="swal-password" type="password" class="swal2-input" placeholder="Confirm Password">` +
                 `<textarea id="swal-reason" class="swal2-textarea" placeholder="Reason for deletion..."></textarea>`,
-            focusConfirm: false,
-            showCancelButton: true,
-            confirmButtonText: 'Submit Request',
-            confirmButtonColor: '#dc3545',
-            background: isDark ? '#2d2d2d' : '#fff',
-            color: isDark ? '#fff' : '#000',
+            focusConfirm: false, showCancelButton: true, confirmButtonText: 'Submit Request',
+            confirmButtonColor: '#dc3545', background: isDark ? '#2d2d2d' : '#fff', color: isDark ? '#fff' : '#000',
             preConfirm: () => {
                 const password = document.getElementById('swal-password').value;
                 const reason = document.getElementById('swal-reason').value;
-                if (!password || !reason) {
-                    Swal.showValidationMessage('Please enter both password and reason');
-                    return false;
-                }
+                if (!password || !reason) { Swal.showValidationMessage('Please enter both password and reason'); return false; }
                 return { password, reason };
             }
         });
 
         if (formValues) {
             try {
-                await axios.post(`${BACKEND_URL}/api/users/verify-password`, {
-                    userId: currentUserId,
-                    password: formValues.password
-                });
+                await axios.post(`${BACKEND_URL}/api/users/verify-password`, { userId: currentUserId, password: formValues.password });
                 await axios.post(`${BACKEND_URL}/api/requests/create`, {
-                    requestType: "delete",
-                    senderUsername: user?.username || "Unknown",
-                    senderRole: user?.role || "user",
-                    departmentId: userDeptId,
-                    fileIds: [item._id],
-                    reason: formValues.reason
+                    requestType: "delete", senderUsername: user?.username || "Unknown",
+                    senderRole: user?.role || "user", departmentId: userDeptId,
+                    fileIds: [item._id], reason: formValues.reason
                 });
                 Swal.fire({ title: "Request Sent", text: "Your deletion request is pending admin approval.", icon: "success", background: isDark ? '#2d2d2d' : '#fff', color: isDark ? '#fff' : '#000' });
             } catch (err) { Swal.fire("Error", "Incorrect password or submission error.", "error"); }
@@ -271,10 +249,19 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
         formData.append("uploadedBy", currentUserId);
         formData.append("departmentId", userDeptId || "");
         formData.append("file", selectedFile);
+        formData.append("transferStatus", "none");
+
         try {
             await axios.post(`${BACKEND_URL}/api/files/upload`, formData);
-            setSelectedFile(null); loadContent(currentFolderId); alert(`Uploaded!`);
-        } catch (err) { alert("Upload failed."); }
+            setSelectedFile(null); 
+            // Clear the input manually
+            document.getElementById('file-input').value = "";
+            await loadContent(currentFolderId); 
+            Swal.fire({ title: "Success", text: "File uploaded successfully.", icon: "success", timer: 1500, showConfirmButton: false });
+        } catch (err) { 
+            console.error(err);
+            alert("Upload failed."); 
+        }
     };
 
     const handleCreateFolder = async () => {
@@ -282,9 +269,11 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
         try {
             await axios.post(`${BACKEND_URL}/api/folders/create`, {
                 name: folderName, parent: currentFolderId || null,
-                createdBy: currentUserId, departmentId: userDeptId || null,
+                createdBy: currentUserId, uploadedBy: currentUserId,
+                departmentId: userDeptId || null, transferStatus: 'none'
             });
-            setFolderName(""); loadContent(currentFolderId);
+            setFolderName(""); 
+            await loadContent(currentFolderId);
         } catch (err) { console.error(err); }
     };
 
@@ -296,7 +285,8 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
     const handlePathClick = (item) => {
         const index = currentPath.findIndex(p => p._id === item._id);
         if (index !== -1) {
-            setCurrentPath(currentPath.slice(0, index + 1));
+            const newPath = currentPath.slice(0, index + 1);
+            setCurrentPath(newPath);
             setCurrentFolderId(item._id);
         }
     };
@@ -314,14 +304,25 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
         setItemsToTransfer(prev => ({ ...prev, [id]: !prev[id] }));
     };
 
-    let combinedItems = [];
-    const foldersMapped = foldersInCurrentView.map(f => ({ ...f, type: 'Folder', displayName: f.folderName || f.name }));
-    const filesMapped = filesInCurrentView.map(f => ({ ...f, type: f.mimeType || 'File', displayName: f.originalName || "Unnamed" }));
-
-    combinedItems = viewMode === "important" ? [...foldersMapped, ...filesMapped] : (currentFolderId === null ? [...foldersMapped] : [...foldersMapped, ...filesMapped]);
+    // Mapping items for display
+    const foldersMapped = foldersInCurrentView.map(f => ({ 
+        ...f, 
+        type: 'Folder', 
+        displayName: f.folderName || f.name 
+    }));
+    
+    const filesMapped = filesInCurrentView.map(f => ({ 
+        ...f, 
+        type: f.mimeType || 'File', 
+        displayName: f.originalName || f.filename || "Unnamed" 
+    }));
+    
+    let combinedItems = [...foldersMapped, ...filesMapped];
 
     if (searchQuery) {
-        combinedItems = combinedItems.filter(item => item.displayName.toLowerCase().includes(searchQuery.toLowerCase()));
+        combinedItems = combinedItems.filter(item => 
+            item.displayName.toLowerCase().includes(searchQuery.toLowerCase())
+        );
     }
 
     const selectedCount = Object.values(itemsToTransfer).filter(Boolean).length;
@@ -351,15 +352,14 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
                                 <input type="text" placeholder="New folder..." value={folderName} onChange={(e) => setFolderName(e.target.value)} className="create-input" />
                                 <button onClick={handleCreateFolder} className="create-btn">Create</button>
                             </div>
-                            {currentFolderId !== null && (
-                                <div className="action-group upload-group d-flex align-items-center ms-2">
-                                    <label className="btn btn-sm btn-outline-primary mb-0 py-1 px-2 d-flex align-items-center justify-content-center" htmlFor="file-input" style={{ fontSize: '0.85rem', cursor: 'pointer', height: '31px', minWidth: '90px' }}>
-                                        <i className="fas fa-plus-circle me-1"></i> {selectedFile ? "Ready" : "Add File"}
-                                    </label>
-                                    <input id="file-input" type="file" onChange={(e) => setSelectedFile(e.target.files[0])} hidden />
-                                    <button onClick={handleFileUpload} disabled={!selectedFile} className="btn btn-sm btn-primary ms-1 py-1 px-2" style={{ fontSize: '0.85rem', height: '31px' }}>Upload</button>
-                                </div>
-                            )}
+                            
+                            <div className="action-group upload-group d-flex align-items-center ms-2">
+                                <label className="btn btn-sm btn-outline-primary mb-0 py-1 px-2 d-flex align-items-center justify-content-center" htmlFor="file-input" style={{ fontSize: '0.85rem', cursor: 'pointer', height: '31px', minWidth: '90px' }}>
+                                    <i className="fas fa-plus-circle me-1"></i> {selectedFile ? "Ready" : "Add File"}
+                                </label>
+                                <input id="file-input" type="file" onChange={(e) => setSelectedFile(e.target.files[0])} hidden />
+                                <button onClick={handleFileUpload} disabled={!selectedFile} className="btn btn-sm btn-primary ms-1 py-1 px-2" style={{ fontSize: '0.85rem', height: '31px' }}>Upload</button>
+                            </div>
                         </>
                     ) : (
                         <div className="action-group d-flex align-items-center">
@@ -367,7 +367,6 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
                             <span className={isDark ? "text-light-50 small" : "text-muted small"}>Starred items from all folders.</span>
                         </div>
                     )}
-
                     <div className="action-group search-group ms-auto">
                         <i className="fas fa-search search-icon ms-2"></i>
                         <input type="text" placeholder="Search..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="search-input" />
@@ -389,7 +388,7 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
                 )}
 
                 <div className="list-toolbar mt-4 d-flex justify-content-between align-items-center">
-                    <h5 className="mb-0 fw-bold">{viewMode === "important" ? "Starred Content" : currentFolderId === null ? "Folders" : "Files & Folders"}</h5>
+                    <h5 className="mb-0 fw-bold">{viewMode === "important" ? "Starred Content" : currentFolderId === null ? "Folders & Files" : "Files & Folders"}</h5>
                     {viewMode !== "important" && selectedCount > 0 && (
                         <div className="selection-action-bar d-flex align-items-center gap-2 p-2 px-3 rounded-pill shadow-sm" style={{ background: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)', border: '1px solid #ddd' }}>
                             <span className="me-3 small fw-bold text-primary">{selectedCount} Selected</span>
@@ -420,7 +419,7 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
                                     <td>{viewMode !== "important" && <input type="checkbox" checked={!!itemsToTransfer[item._id]} onChange={() => handleSelectItem(item._id)} className="form-check-input" />}</td>
                                     <td className={item.type === 'Folder' ? 'folder-row' : ''}>
                                         <div className="d-flex align-items-center">
-                                            <i className={`${item.type === 'Folder' ? 'fas fa-folder text-warning' : getFileIcon(item.type)} file-icon me-3 fs-5`}></i>
+                                            <i className={`${item.type === 'Folder' ? 'fas fa-folder text-warning' : getFileIcon(item.type || item.mimeType)} file-icon me-3 fs-5`}></i>
                                             <span className={`text-truncate ${item.isDisabled ? 'text-decoration-line-through text-muted' : ''}`} style={{ maxWidth: '250px' }}>{item.displayName}</span>
                                             {item.isDisabled && <span className="badge bg-danger ms-2" style={{ fontSize: '0.65rem' }}>Disabled</span>}
                                             {item.type !== 'Folder' && !item.isDisabled && (
@@ -450,10 +449,9 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
                 </div>
             </main>
 
-            {/* Received Modal */}
             {isReceivedModalOpen && (
                 <div className="modal-overlay">
-                    <div className="received-files-modal shadow-lg" style={{ maxWidth: '850px', width: '90%', borderRadius: '12px', background: isDark ? '#2d2d2d' : 'white' }}>
+                    <div className="received-files-modal shadow-lg" style={{ maxWidth: '900px', width: '95%', borderRadius: '12px', background: isDark ? '#2d2d2d' : 'white' }}>
                         <div className="modal-header d-flex justify-content-between align-items-center p-3 border-bottom">
                             <h4 className={`mb-0 fw-bold ${isDark ? 'text-white' : ''}`}><i className="fas fa-inbox me-2 text-primary"></i>Received Files</h4>
                             <button className={`btn-close ${isDark ? 'btn-close-white' : ''}`} onClick={() => setIsReceivedModalOpen(false)}></button>
@@ -461,18 +459,34 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
                         <div className="modal-body p-0" style={{ maxHeight: '60vh', overflowY: 'auto' }}>
                             <table className={`file-table mb-0 ${isDark ? 'table-dark' : ''}`}>
                                 <thead className={isDark ? 'bg-dark sticky-top' : 'bg-light sticky-top'}>
-                                    <tr><th>Name</th><th>Size</th><th>Sender</th><th className="text-end">Actions</th></tr>
+                                    <tr>
+                                        <th>Name</th>
+                                        <th>Sender</th>
+                                        <th>Sender Role</th>
+                                        <th className="text-end">Actions</th>
+                                    </tr>
                                 </thead>
                                 <tbody>
                                     {receivedItems.length > 0 ? receivedItems.map((item) => (
                                         <tr key={item._id} className={item.isDisabled ? 'opacity-50' : ''}>
                                             <td className={isDark ? 'text-white' : ''}>
-                                                <i className={`${item.isFolder ? 'fas fa-folder text-warning' : getFileIcon(item.mimeType || item.type)} me-2`}></i>
-                                                <span className={item.isDisabled ? 'text-decoration-line-through' : ''}>{item.displayName}</span>
-                                                {item.isDisabled && <span className="badge bg-danger ms-2" style={{ fontSize: '0.6rem' }}>Disabled</span>}
+                                                <div className="d-flex align-items-center">
+                                                    <i className={`${item.isFolder ? 'fas fa-folder text-warning' : getFileIcon(item.mimeType || item.type)} me-2`}></i>
+                                                    <div>
+                                                        <span className={item.isDisabled ? 'text-decoration-line-through' : ''}>{item.displayName}</span>
+                                                        <div className="text-muted" style={{fontSize: '0.7rem'}}>{item.isFolder ? 'Folder' : formatBytes(item.size)}</div>
+                                                        {item.lastTransferDate && (
+                                                            <div className="text-primary" style={{fontSize: '0.6rem'}}>Received: {new Date(item.lastTransferDate).toLocaleDateString()}</div>
+                                                        )}
+                                                    </div>
+                                                </div>
                                             </td>
-                                            <td className={isDark ? 'text-white-50' : ''}>{item.isFolder ? '—' : formatBytes(item.size)}</td>
-                                            <td className="small text-muted">{item.sender}</td>
+                                            <td className={isDark ? 'text-white-50' : 'text-muted'}><span className="fw-bold">{item.sender}</span></td>
+                                            <td>
+                                                <span className={`badge ${item.senderRole?.toLowerCase() === 'superadmin' ? 'bg-danger' : 'bg-info'} text-dark`}>
+                                                    {(item.senderRole || 'User').toUpperCase()}
+                                                </span>
+                                            </td>
                                             <td className="text-end">
                                                 <div className="d-flex gap-3 justify-content-end">
                                                     {!item.isFolder && (
@@ -485,7 +499,9 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
                                                 </div>
                                             </td>
                                         </tr>
-                                    )) : <tr><td colSpan="4" className="text-center py-5 text-muted">No files received from other users.</td></tr>}
+                                    )) : (
+                                        <tr><td colSpan="4" className="text-center py-5 text-muted">No files have been received yet.</td></tr>
+                                    )}
                                 </tbody>
                             </table>
                         </div>

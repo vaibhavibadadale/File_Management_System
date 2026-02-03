@@ -1,5 +1,5 @@
 const Request = require("../models/Request");
-const User = require("../models/User"); 
+const User = require("../models/User");
 const bcrypt = require("bcryptjs");
 const File = require("../models/File");
 const Folder = require("../models/Folder");
@@ -35,10 +35,10 @@ async function handleMoveToTrash(files, sender, approver, deptId) {
             originalFileId: fileData._id,
             uploadedBy: fileData.uploadedBy,
             sharedWith: fileData.sharedWith,
-            folder: fileData.folder, 
-            username: fileData.username, 
+            folder: fileData.folder,
+            username: fileData.username,
             deletedBy: sender,
-            senderRole: senderUser?.role?.toUpperCase() || "EMPLOYEE", 
+            senderRole: senderUser?.role?.toUpperCase() || "EMPLOYEE",
             approvedBy: approver,
             departmentId: deptId,
             departmentName: dept?.departmentName || dept?.name || "General",
@@ -50,15 +50,28 @@ async function handleMoveToTrash(files, sender, approver, deptId) {
     }
 }
 
-async function handleOwnershipTransfer(fileIds, recipientId, senderUsername) {
+async function handleOwnershipTransfer(fileIds, recipientId, senderUsername, receiverDeptId = null) {
     if (!recipientId || !fileIds || fileIds.length === 0) return;
 
     const idsOnly = fileIds.map(f => (f._id ? f._id : f));
     const senderUser = await User.findOne({ username: senderUsername });
     const senderId = senderUser ? senderUser._id : null;
 
+    // Enhanced Update Logic for File/Folder Ownership
+    const updatePayload = {
+        uploadedBy: recipientId,           // Change ownership
+        transferStatus: 'received',        // Mark as received
+        senderId: senderId,                // Track origin
+        lastTransferDate: new Date()       // Date for sorting
+    };
+
+    // If a specific department was targeted in the request, update access
+    if (receiverDeptId) {
+        updatePayload.departmentId = receiverDeptId;
+    }
+
     const updateOps = {
-        $set: { uploadedBy: recipientId },
+        $set: updatePayload,
         $addToSet: { sharedWith: recipientId }
     };
 
@@ -82,7 +95,7 @@ exports.createRequest = async (req, res) => {
 
         const sRole = (senderUser.role || "USER").toUpperCase();
         const finalDeptId = senderUser.departmentId?._id || senderUser.departmentId;
-        
+
         const isAutoApprove = ["SUPERADMIN", "SUPER_ADMIN"].includes(sRole);
 
         const mainReq = await new Request({
@@ -103,15 +116,14 @@ exports.createRequest = async (req, res) => {
             } else {
                 await handleOwnershipTransfer(fileIds, recipientId, senderUser.username);
             }
-        } 
+        }
         else {
             const recipients = await getRecipientsForRequest(sRole, finalDeptId, senderUser.username);
 
             if (recipients && recipients.length > 0) {
-                // --- ADDED: IN-APP NOTIFICATION LOGIC ---
-                const notificationPromises = recipients.map(rec => 
+                const notificationPromises = recipients.map(rec =>
                     Notification.create({
-                        recipientId: rec.id || rec._id, // Ensure this matches your recipient object structure
+                        recipientId: rec.id || rec._id,
                         title: `New ${requestType?.toUpperCase()} Request`,
                         message: `${senderUser.username} requested a file ${requestType}. Needs your approval.`,
                         type: "APPROVAL_REQUIRED",
@@ -125,7 +137,6 @@ exports.createRequest = async (req, res) => {
                     .map(f => f.fileName || f.originalName || f.name || "Unnamed File")
                     .join(", ");
 
-                // Run both Email and In-App Notifications in parallel
                 await Promise.all([
                     ...notificationPromises,
                     notifyApprovers(recipients, {
@@ -133,15 +144,15 @@ exports.createRequest = async (req, res) => {
                         requestType: requestType || "transfer",
                         reason: mainReq.reason,
                         requestId: mainReq._id,
-                        fileNames: fileNamesStr 
+                        fileNames: fileNamesStr
                     })
                 ]);
             }
         }
 
-        res.status(201).json({ 
-            message: isAutoApprove ? "Request auto-approved" : "Request created & Notifications sent", 
-            data: mainReq 
+        res.status(201).json({
+            message: isAutoApprove ? "Request auto-approved" : "Request created & Notifications sent",
+            data: mainReq
         });
 
     } catch (err) {
@@ -162,7 +173,8 @@ exports.approveFromEmail = async (req, res) => {
         if (request.requestType === "delete") {
             await handleMoveToTrash(request.fileIds, request.senderUsername, "Admin (via Email)", request.departmentId);
         } else {
-            await handleOwnershipTransfer(request.fileIds, request.recipientId, request.senderUsername);
+            // Updated to handle full transfer logic
+            await handleOwnershipTransfer(request.fileIds, request.recipientId, request.senderUsername, request.departmentId);
         }
 
         request.status = "completed";
@@ -183,7 +195,7 @@ exports.approveFromEmail = async (req, res) => {
 exports.denyFromEmail = async (req, res) => {
     try {
         const { id } = req.params;
-        const { denialComment } = req.body; 
+        const { denialComment } = req.body;
 
         const request = await Request.findById(id);
         if (!request) return res.status(404).json({ message: "Request not found" });
@@ -205,15 +217,12 @@ exports.denyFromEmail = async (req, res) => {
         res.status(200).json({ message: "Success" });
     } catch (err) { res.status(500).json({ message: err.message }); }
 };
+
 exports.secureAction = async (req, res) => {
     try {
         const { requestId } = req.params;
         const { action, password, userId, comment } = req.body;
 
-        // DEBUG LOGS - Check your terminal to see if these appear
-        console.log("SECURE ACTION ATTEMPT:", { requestId, userId, action });
-
-        // 1. Validation
         if (!password || !userId) {
             return res.status(400).json({ message: "Password and User ID are required." });
         }
@@ -226,36 +235,32 @@ exports.secureAction = async (req, res) => {
 
         const request = await Request.findById(requestId).populate('fileIds');
         if (!request) return res.status(404).json({ message: "Request no longer exists." });
-        
-        // This is likely what caused your 400 error
+
         if (request.status !== 'pending') {
             return res.status(400).json({ message: `This request is already ${request.status}.` });
         }
 
         const isApproved = action === 'approve' || action === 'confirm';
-        
-        // 2. Update Request State
+
         request.status = isApproved ? 'completed' : 'rejected';
         request.actionedBy = approver.username;
         request.actionedAt = new Date();
-        
-        // Save comment as adminComment for the Frontend "Red Box"
+
         if (!isApproved) {
-            request.adminComment = comment || "No reason provided by admin."; 
+            request.adminComment = comment || "No reason provided by admin.";
         }
-        
+
         await request.save();
 
-        // 3. Execute File Operations (Move to Trash or Transfer Ownership)
         if (isApproved) {
             if (request.requestType === "delete") {
                 await handleMoveToTrash(request.fileIds, request.senderUsername, approver.username, request.departmentId);
             } else {
-                await handleOwnershipTransfer(request.fileIds, request.recipientId, request.senderUsername);
+                // Integrated the transfer logic here
+                await handleOwnershipTransfer(request.fileIds, request.recipientId, request.senderUsername, request.departmentId);
             }
         }
 
-        // 4. Notify Sender (Fixing the previous crash)
         const senderUser = await User.findOne({ username: request.senderUsername });
         if (senderUser) {
             await Notification.create({
@@ -265,14 +270,13 @@ exports.secureAction = async (req, res) => {
                 type: isApproved ? 'REQUEST_APPROVED' : 'REQUEST_DENIED'
             });
 
-            // Using standard sendEmail helper to avoid "notifyUserOfAction is not defined" error
             if (senderUser.email && templates.actionUpdateTemplate) {
                 const emailHtml = templates.actionUpdateTemplate({
                     senderUsername: senderUser.username,
                     requestType: request.requestType,
                     actionedBy: approver.username,
                     status: request.status,
-                    denialReason: comment 
+                    denialReason: comment
                 });
                 await sendEmail(senderUser.email, `Request ${request.status.toUpperCase()}`, emailHtml);
             }
@@ -285,6 +289,7 @@ exports.secureAction = async (req, res) => {
         res.status(500).json({ message: "Server error during processing", error: err.message });
     }
 };
+
 exports.approveRequest = async (req, res) => {
     try {
         const { id } = req.params;
@@ -303,7 +308,8 @@ exports.approveRequest = async (req, res) => {
                 { sort: { createdAt: -1 } }
             );
         } else {
-            await handleOwnershipTransfer(request.fileIds, request.recipientId, request.senderUsername);
+            // Integrated the transfer logic here
+            await handleOwnershipTransfer(request.fileIds, request.recipientId, request.senderUsername, request.departmentId);
             await Transfer.findOneAndUpdate(
                 { senderUsername: request.senderUsername, status: "pending" },
                 { status: "completed", updatedAt: new Date() },
@@ -385,7 +391,7 @@ exports.denyRequest = async (req, res) => {
                     requestType: request.requestType,
                     actionedBy: approverUsername,
                     status: 'denied',
-                    denialReason: denialComment 
+                    denialReason: denialComment
                 });
                 await sendEmail(sender.email, `Request Denied: ${request.requestType}`, emailHtml, "REQUEST_DENIED", approverUsername);
             }
@@ -395,6 +401,7 @@ exports.denyRequest = async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 };
+
 exports.getPendingDashboard = async (req, res) => {
     try {
         const { role, departmentId, username, pPage = 1, hPage = 1, limit = 5, search = "" } = req.query;
@@ -422,7 +429,7 @@ exports.getPendingDashboard = async (req, res) => {
         const [mainRequests, totalPending, logs, totalHistory] = await Promise.all([
             Request.find(pendingFilter)
                 .sort({ createdAt: -1 }).skip(skipP).limit(parseInt(limit))
-                .populate('fileIds') // <--- FIXED: Now pulls file names for Approval table
+                .populate('fileIds')
                 .populate({
                     path: 'recipientId',
                     select: 'username role departmentId',
@@ -431,7 +438,7 @@ exports.getPendingDashboard = async (req, res) => {
             Request.countDocuments(pendingFilter),
             Request.find(historyFilter)
                 .sort({ updatedAt: -1 }).skip(skipH).limit(parseInt(limit))
-                .populate('fileIds') // <--- FIXED: Now pulls file names for History table
+                .populate('fileIds')
                 .populate({
                     path: 'recipientId',
                     select: 'username role departmentId',
@@ -459,7 +466,7 @@ exports.getTrashItems = async (req, res) => {
         const roleUpper = role?.toUpperCase();
         let query = {};
 
-        if (roleUpper === "SUPERADMIN" || roleUpper === "SUPER_ADMIN") query = {}; 
+        if (roleUpper === "SUPERADMIN" || roleUpper === "SUPER_ADMIN") query = {};
         else if (roleUpper === "ADMIN") query = { $or: [{ senderRole: { $in: ["HOD", "EMPLOYEE", "USER"] } }, { deletedBy: username }] };
         else if (roleUpper === "HOD") query = { departmentId: departmentId, senderRole: { $in: ["EMPLOYEE", "USER"] } };
         else query = { deletedBy: username };
@@ -493,14 +500,50 @@ exports.permanentDelete = async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 };
 
+// exports.getReceivedFiles = async (req, res) => {
+//     try {
+//         const { userId } = req.query;
+//         if (!userId || !mongoose.Types.ObjectId.isValid(userId)) return res.status(400).json({ error: "Valid User ID is required" });
+//         const filter = { $or: [{ userId: userId }, { uploadedBy: userId }, { sharedWith: userId }] };
+//         const [files, folders] = await Promise.all([File.find(filter).lean(), Folder.find(filter).lean()]);
+//         res.json({ files, folders });
+//     } catch (err) { res.status(500).json({ error: err.message }); }
+// };
 exports.getReceivedFiles = async (req, res) => {
     try {
         const { userId } = req.query;
-        if (!userId || !mongoose.Types.ObjectId.isValid(userId)) return res.status(400).json({ error: "Valid User ID is required" });
-        const filter = { $or: [{ userId: userId }, { uploadedBy: userId }, { sharedWith: userId }] };
-        const [files, folders] = await Promise.all([File.find(filter).lean(), Folder.find(filter).lean()]);
-        res.json({ files, folders });
-    } catch (err) { res.status(500).json({ error: err.message }); }
+
+        if (!userId || !mongoose.Types.ObjectId.isValid(userId)) {
+            return res.status(400).json({ error: "Valid User ID is required" });
+        }
+
+        // Filter for items where the user is the recipient of a transfer
+        const filter = { 
+            uploadedBy: userId, 
+            transferStatus: 'received',
+            deletedAt: null 
+        };
+
+        const [files, folders] = await Promise.all([
+            File.find(filter)
+                .populate('senderId', 'username email') // See who sent it
+                .sort({ lastTransferDate: -1 })         // Newest transfers first
+                .lean(),
+            Folder.find(filter)
+                .populate('senderId', 'username email')
+                .sort({ lastTransferDate: -1 })
+                .lean()
+        ]);
+
+        res.json({ 
+            message: "Received items fetched successfully",
+            count: files.length + folders.length,
+            data: { files, folders } 
+        });
+
+    } catch (err) { 
+        res.status(500).json({ error: err.message }); 
+    }
 };
 
 exports.getDashboardStats = async (req, res) => {

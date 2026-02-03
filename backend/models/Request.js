@@ -2,7 +2,6 @@ const mongoose = require('mongoose');
 
 const RequestSchema = new mongoose.Schema({
     requestType: { type: String, enum: ['transfer', 'delete'], required: true },
-    // Ensure "File" model name matches your file schema name
     fileIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'File' }], 
     senderUsername: { type: String, required: true },
     senderRole: { type: String }, 
@@ -15,7 +14,9 @@ const RequestSchema = new mongoose.Schema({
     reason: { type: String },
     status: { type: String, enum: ['pending', 'completed', 'denied', 'rejected'], default: 'pending' },
     denialComment: { type: String },
-    actionBy: { type: String } // Track who approved/denied it
+    adminComment: { type: String }, // For the "Red Box" denial reason in UI
+    actionedBy: { type: String },   // Consistent with controller
+    actionedAt: { type: Date }      // Track exact time of approval/denial
 }, { timestamps: true });
 
 module.exports = mongoose.models.Request || mongoose.model("Request", RequestSchema);
