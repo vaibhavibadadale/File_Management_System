@@ -54,16 +54,12 @@ const NotificationsPage = ({ user, currentTheme }) => {
   // HANDLER: Mark Read & Redirect
   const handleNotificationClick = async (notification) => {
     try {
-        // 1. Mark as read in the database
         await axios.put(`http://localhost:5000/api/notifications/mark-read/${notification._id}`);
         
-        // 2. Normalize strings for reliable routing
         const title = (notification.title || "").toLowerCase().trim();
         const msg = (notification.message || "").toLowerCase().trim();
 
-        // 3. Routing Logic based on your request
         if (title.includes('user')) {
-            // If new user created or user update
             navigate('/users');
         } 
         else if (
@@ -72,19 +68,21 @@ const NotificationsPage = ({ user, currentTheme }) => {
             title.includes('delete') || 
             msg.includes('requested')
         ) {
-            // If it's a transfer/delete file request, go to Pending Requests page
             navigate('/pending'); 
+        } 
+        else {
+            // FALLBACK: If it's just a general info notification, stay on the page
+            // but refresh the list to show it's been read.
+            fetchNotifications(); 
         }
-        
-        // Refresh the list locally to show the "New" badge disappeared
+
         setNotifications(prev => 
             prev.map(n => n._id === notification._id ? { ...n, isRead: true } : n)
         );
-
     } catch (err) {
-        console.error("Redirection error from history:", err);
+        console.error("Navigation error:", err);
     }
-  };
+};
 
   // HANDLER: Delete All History for this user/role
   const handleDeleteAll = async () => {

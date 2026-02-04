@@ -17,9 +17,17 @@ exports.transporter = transporter;
 // 3. YOUR TEMPLATES AND FUNCTIONS
 exports.getRecipientsForRequest = async (senderRole, departmentId, senderUsername) => {
     try {
+        // Updated Regex to be more inclusive of "ADMIN"
         const [admins, hods] = await Promise.all([
-            User.find({ role: { $regex: /^(admin|superadmin|super_admin)$/i } }),
-            departmentId ? User.find({ role: /hod/i, departmentId }) : []
+            User.find({ 
+                role: { $in: ["ADMIN", "SUPERADMIN", "SUPER_ADMIN"] },
+                deletedAt: null 
+            }),
+            departmentId ? User.find({ 
+                role: "HOD", 
+                departmentId: departmentId,
+                deletedAt: null 
+            }) : []
         ]);
 
         const allPotential = [...admins, ...hods];
@@ -29,7 +37,7 @@ exports.getRecipientsForRequest = async (senderRole, departmentId, senderUsernam
         allPotential.forEach(u => {
             if (u.email) {
                 const email = u.email.toLowerCase().trim();
-                const isSender = u.username.toLowerCase() === senderUsername.toLowerCase();
+                const isSender = u.username.toLowerCase() === senderUsername?.toLowerCase();
 
                 if (!seenEmails.has(email) && !isSender) {
                     seenEmails.add(email);

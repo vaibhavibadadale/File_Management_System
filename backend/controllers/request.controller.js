@@ -296,6 +296,7 @@ exports.approveRequest = async (req, res) => {
             return res.status(404).json({ message: "Request not found or already processed" });
         }
 
+        // 1. Core Logic Processing (Keep your existing helpers)
         if (request.requestType === "delete") {
             await handleMoveToTrash(request.fileIds, request.senderUsername, approverUsername, request.departmentId);
             await DeleteRequest.findOneAndUpdate(
@@ -317,7 +318,46 @@ exports.approveRequest = async (req, res) => {
         request.updatedAt = new Date();
         await request.save();
 
+        // 2. BROADCAST UPDATES TO ALL STAKEHOLDERS
+        // This finds all Admins and the specific HOD for the department
+        const staffRecipients = await getRecipientsForRequest(request.senderRole, request.departmentId, request.senderUsername);
         const sender = await User.findOne({ username: request.senderUsername });
+
+        let finalRecipientList = [...staffRecipients];
+        if (sender) finalRecipientList.push(sender);
+
+        // Filter: Don't email the person who just clicked 'Approve'
+        const peopleToNotify = finalRecipientList.filter(u => 
+            u.username?.toLowerCase() !== approverUsername?.toLowerCase() && u.email
+        );
+
+        console.log(`[Email Broadcast] Found ${peopleToNotify.length} people to notify for approval.`);
+
+        const emailSubject = `Update: Request Approved (${request.senderUsername})`;
+        const fileNames = request.fileIds.map(f => f.fileName || f.originalName || "File").join(", ");
+        const emailHtml = `
+            <div style="font-family: Arial, sans-serif; border: 1px solid #e1e1e1; padding: 20px; max-width: 600px;">
+                <h3 style="color: #28a745;">Request Approved</h3>
+                <p>The <b>${request.requestType}</b> request has been processed successfully.</p>
+                <p><b>Files:</b> ${fileNames}</p>
+                <p><b>Sender:</b> ${request.senderUsername}</p>
+                <p><b>Approved By:</b> ${approverUsername}</p>
+                <hr/>
+                <p style="font-size: 11px; color: #999;">Aaryans File Management System</p>
+            </div>
+        `;
+
+        // Loop to ensure delivery to each stakeholder
+        for (const person of peopleToNotify) {
+            try {
+                await sendEmail(person.email, emailSubject, emailHtml);
+                console.log(`- Status Email sent to: ${person.email} (${person.role || 'User'})`);
+            } catch (mailErr) {
+                console.error(`- Failed to send email to ${person.email}:`, mailErr.message);
+            }
+        }
+
+        // 3. In-App Notification for Sender
         if (sender) {
             await Notification.create({
                 recipientId: sender._id,
@@ -325,19 +365,11 @@ exports.approveRequest = async (req, res) => {
                 message: `Your ${request.requestType} request was approved by ${approverUsername}.`,
                 type: 'REQUEST_APPROVED'
             });
-
-            if (sender.email && templates.actionUpdateTemplate) {
-                const emailHtml = templates.actionUpdateTemplate({
-                    senderUsername: sender.username,
-                    requestType: request.requestType,
-                    actionedBy: approverUsername,
-                    status: 'completed'
-                });
-                await sendEmail(sender.email, `Request Approved: ${request.requestType}`, emailHtml, "REQUEST_APPROVED", approverUsername);
-            }
         }
-        res.json({ message: "Approved successfully" });
+
+        res.json({ message: "Approved successfully and stakeholders notified." });
     } catch (err) {
+        console.error("Approval Error:", err);
         res.status(500).json({ error: err.message });
     }
 };
@@ -358,41 +390,57 @@ exports.denyRequest = async (req, res) => {
 
         const logUpdate = { status: "denied", denialComment, updatedAt: new Date() };
         if (request.requestType === "delete") {
-            await DeleteRequest.findOneAndUpdate(
-                { senderUsername: request.senderUsername, status: "pending" },
-                logUpdate,
-                { sort: { createdAt: -1 } }
-            );
+            await DeleteRequest.findOneAndUpdate({ senderUsername: request.senderUsername, status: "pending" }, logUpdate, { sort: { createdAt: -1 } });
         } else {
-            await Transfer.findOneAndUpdate(
-                { senderUsername: request.senderUsername, status: "pending" },
-                logUpdate,
-                { sort: { createdAt: -1 } }
-            );
+            await Transfer.findOneAndUpdate({ senderUsername: request.senderUsername, status: "pending" }, logUpdate, { sort: { createdAt: -1 } });
         }
 
+        // 2. BROADCAST DENIAL TO ALL STAKEHOLDERS
+        const staffRecipients = await getRecipientsForRequest(request.senderRole, request.departmentId, request.senderUsername);
         const sender = await User.findOne({ username: request.senderUsername });
+
+        let finalRecipientList = [...staffRecipients];
+        if (sender) finalRecipientList.push(sender);
+
+        const peopleToNotify = finalRecipientList.filter(u => 
+            u.username?.toLowerCase() !== approverUsername?.toLowerCase() && u.email
+        );
+
+        console.log(`[Email Broadcast] Found ${peopleToNotify.length} people to notify for denial.`);
+
+        const emailSubject = `Update: Request Denied (${request.senderUsername})`;
+        const emailHtml = `
+            <div style="font-family: Arial, sans-serif; border: 1px solid #e1e1e1; padding: 20px; max-width: 600px;">
+                <h3 style="color: #dc3545;">Request Denied</h3>
+                <p>The <b>${request.requestType}</b> request from <b>${request.senderUsername}</b> was denied.</p>
+                <p><b>Reason:</b> ${denialComment}</p>
+                <p><b>Denied By:</b> ${approverUsername}</p>
+                <hr/>
+                <p style="font-size: 11px; color: #999;">Aaryans File Management System</p>
+            </div>
+        `;
+
+        for (const person of peopleToNotify) {
+            try {
+                await sendEmail(person.email, emailSubject, emailHtml);
+                console.log(`- Denial Email sent to: ${person.email}`);
+            } catch (mailErr) {
+                console.error(`- Failed to send denial email to ${person.email}:`, mailErr.message);
+            }
+        }
+
         if (sender) {
             await Notification.create({
                 recipientId: sender._id,
                 title: 'Request Denied',
-                message: `Your request was denied by ${approverUsername}.`,
+                message: `Your request was denied by ${approverUsername}. Reason: ${denialComment}`,
                 type: 'REQUEST_DENIED'
             });
-
-            if (sender.email && templates.actionUpdateTemplate) {
-                const emailHtml = templates.actionUpdateTemplate({
-                    senderUsername: sender.username,
-                    requestType: request.requestType,
-                    actionedBy: approverUsername,
-                    status: 'denied',
-                    denialReason: denialComment
-                });
-                await sendEmail(sender.email, `Request Denied: ${request.requestType}`, emailHtml, "REQUEST_DENIED", approverUsername);
-            }
         }
-        res.json({ message: "Denied successfully" });
+
+        res.json({ message: "Denied successfully and stakeholders notified." });
     } catch (err) {
+        console.error("Denial Error:", err);
         res.status(500).json({ error: err.message });
     }
 };
@@ -403,24 +451,46 @@ exports.getPendingDashboard = async (req, res) => {
         const skipP = (parseInt(pPage) - 1) * parseInt(limit);
         const skipH = (parseInt(hPage) - 1) * parseInt(limit);
 
+        // --- FILTER LOGIC ---
         let pendingFilter = { status: "pending" };
         let historyFilter = { status: { $in: ["completed", "denied", "rejected"] } };
 
-        if (role === "HOD") {
-            pendingFilter = {
-                $or: [
-                    { departmentId: departmentId, senderRole: { $in: ["EMPLOYEE", "USER"] }, status: "pending" },
-                    { senderUsername: username, status: "pending" }
-                ]
-            };
-        } else if (!["ADMIN", "SUPERADMIN", "SUPER_ADMIN"].includes(role)) {
-            pendingFilter = { senderUsername: username, status: "pending" };
-        }
+        const upperRole = role?.toUpperCase();
 
+        if (upperRole === "HOD") {
+            // HOD Pending: See dept employees' requests or their own
+            pendingFilter.$or = [
+                { departmentId: departmentId, senderRole: { $in: ["EMPLOYEE", "USER"] }, status: "pending" },
+                { senderUsername: username, status: "pending" }
+            ];
+            // HOD History: See their own history or history of their department
+            historyFilter.$and = [
+                { status: { $in: ["completed", "denied", "rejected"] } },
+                { 
+                    $or: [
+                        { departmentId: departmentId }, 
+                        { senderUsername: username }
+                    ] 
+                }
+            ];
+        } 
+        else if (!["ADMIN", "SUPERADMIN", "SUPER_ADMIN"].includes(upperRole)) {
+            // Employee Pending: Only their own
+            pendingFilter = { senderUsername: username, status: "pending" };
+            // Employee History: Only their own
+            historyFilter = { 
+                senderUsername: username, 
+                status: { $in: ["completed", "denied", "rejected"] } 
+            };
+        }
+        // If Admin/SuperAdmin, historyFilter stays as the global default (everything)
+
+        // --- SEARCH LOGIC (Only applied to Pending as per your original code) ---
         if (search) {
             pendingFilter.reason = { $regex: search, $options: "i" };
         }
 
+        // --- DATABASE QUERIES (Keep your existing Promise.all logic) ---
         const [mainRequests, totalPending, logs, totalHistory] = await Promise.all([
             Request.find(pendingFilter)
                 .sort({ createdAt: -1 }).skip(skipP).limit(parseInt(limit))

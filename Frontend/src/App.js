@@ -112,6 +112,7 @@ function App() {
                             <Route path="/ventures" element={<VenturesPage user={user} currentTheme={themeMode} />} />
                             <Route path="/pending" element={<PendingRequestsPage user={user} currentTheme={themeMode} />} />
                             <Route path="/trash" element={<TrashPage user={user} currentTheme={themeMode} />} />
+                            <Route path="/notifications" element={<NotificationsPage user={user} currentTheme={themeMode} />} />
                             <Route path="/backup" element={<BackupPage currentTheme={themeMode} />} /> 
                             <Route path="/department-staff/:deptId" element={<DepartmentStaff currentTheme={themeMode} user={user} />} />
                             <Route path="/user-files/:userId" element={<UserFilesView currentTheme={themeMode} user={user} />} />

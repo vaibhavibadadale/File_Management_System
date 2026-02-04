@@ -266,29 +266,40 @@ const UsersPage = ({ currentTheme, user }) => {
   };
 
   const getRoleBadge = (role) => {
-    const roleStyles = {
-      SuperAdmin: { bg: "#FF0000", color: "#FFFFFF" },
-      Admin: { bg: "#757575", color: "#FFFFFF" }, 
-      HOD: { bg: "#000000", color: "#FFFFFF" },
-      Employee: { bg: "#757575", color: "#FFFFFF" }, 
-    };
-    const style = roleStyles[role] || { bg: "#9e9e9e", color: "white" };
-    
-    const displayRole = (role === "HOD" || role === "SuperAdmin") 
-      ? role 
-      : (role.charAt(0).toUpperCase() + role.slice(1).toLowerCase());
+  if (!role) return null;
 
-    return (
-      <div style={{
-          backgroundColor: style.bg, color: style.color,
-          width: "100px", padding: "6px 0", borderRadius: "4px",
-          fontWeight: "500", fontSize: "0.75rem", textAlign: "center", display: "inline-block",
-          textTransform: "none"
-        }}>
-        {displayRole}
-      </div>
-    );
+  // 1. Convert the input to UpperCase so it matches the keys below
+  const upperRole = role.toUpperCase();
+
+  const roleStyles = {
+    SUPERADMIN: { bg: "#FF0000", color: "#FFFFFF" },
+    ADMIN:      { bg: "#FF0000", color: "#FFFFFF" },
+    HOD:        { bg: "#000000", color: "#FFFFFF" },
+    EMPLOYEE:   { bg: "#007BFF", color: "#FFFFFF" },
   };
+
+  // 2. Lookup the style using the uppercase key
+  const style = roleStyles[upperRole] || { bg: "#9e9e9e", color: "white" };
+
+  return (
+    <div
+      style={{
+        backgroundColor: style.bg,
+        color: style.color,
+        width: "110px",      // Slightly wider to fit "SUPERADMIN"
+        padding: "6px 0",
+        borderRadius: "4px",
+        fontWeight: "bold",   // Bold looks better with all caps
+        fontSize: "0.75rem",
+        textAlign: "center",
+        display: "inline-block",
+        textTransform: "uppercase" // Forces the text to be uppercase
+      }}
+    >
+      {upperRole}
+    </div>
+  );
+};
 
   const filteredUsers = users.filter((u) => {
     const matchesSearch = (u.name || "").toLowerCase().includes(searchTerm.toLowerCase()) ||

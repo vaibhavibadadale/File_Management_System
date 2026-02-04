@@ -197,18 +197,18 @@ const PendingRequestsPage = ({ user, currentTheme }) => {
                   </td>
 
                   <td>
-                 {req.requestType === "delete" ? (
-                <span className="text-danger fw-bold small">SYSTEM</span>
-                 ) : req.recipientId ? (
-                 <>
-               <div className="fw-bold">{req.recipientId.username}</div>
-             {renderDeptAndRole(
-             req.recipientId.departmentId?.departmentName || req.recipientId.departmentId || "General", 
-             req.recipientId.role
-           )}
-           </>
-        ) : <span className="text-muted small">N/A</span>}
-      </td>
+                    {req.requestType === "delete" ? (
+                      <span className="text-danger fw-bold small">SYSTEM</span>
+                    ) : req.recipientId ? (
+                      <>
+                        <div className="fw-bold">{req.recipientId.username}</div>
+                        {renderDeptAndRole(
+                          req.recipientId.departmentId?.departmentName || req.recipientId.departmentId || "General", 
+                          req.recipientId.role
+                        )}
+                      </>
+                    ) : <span className="text-muted small">N/A</span>}
+                  </td>
 
                   <td className="text-start small">
                     {req.fileIds?.map((f, i) => (
@@ -219,32 +219,29 @@ const PendingRequestsPage = ({ user, currentTheme }) => {
                     ))}
                   </td>
 
-                  {/* COLUMN: REASON & REMARKS */}
-                <td className="text-start small" style={{ minWidth: "220px" }}>
-              {/* The original reason provided by the sender */}
-            <div className="mb-1">
-            <span className="text-muted">Reason: </span>
-            <span className="fw-bold">{req.reason || "No reason provided"}</span>
-           </div>
+                  <td className="text-start small" style={{ minWidth: "220px" }}>
+                    <div className="mb-1">
+                      <span className="text-muted">Reason: </span>
+                      <span className="fw-bold">{req.reason || "No reason provided"}</span>
+                    </div>
 
-           {/* The denial reason box - only shows if status is denied/rejected */}
-           {(req.status === "denied" || req.status === "rejected") && (
-          <div 
-           className="mt-2 p-1 px-3 border border-danger rounded-3 d-inline-block" 
-           style={{ 
-              backgroundColor: isDark ? "rgba(229, 17, 38, 0.1)" : "#fffcfc", 
-            width: "100%" 
-      }}
-    >
-      <span className="text-danger fw-bold" style={{ fontSize: "0.7rem" }}>
-        denied reason: 
-      </span>
-      <span className="ms-1 text-dark">
-        {req.denialComment || req.adminComment || "No comment provided"}
-      </span>
-    </div>
-  )}
-</td>
+                    {(req.status === "denied" || req.status === "rejected") && (
+                      <div 
+                        className="mt-2 p-1 px-3 border border-danger rounded-3 d-inline-block" 
+                        style={{ 
+                          backgroundColor: isDark ? "rgba(229, 17, 38, 0.1)" : "#fffcfc", 
+                          width: "100%" 
+                        }}
+                      >
+                        <span className="text-danger fw-bold" style={{ fontSize: "0.7rem" }}>
+                          denied reason: 
+                        </span>
+                        <span className={`ms-1 ${isDark ? "text-white-50" : "text-dark"}`}>
+                          {req.denialComment || req.adminComment || "No comment provided"}
+                        </span>
+                      </div>
+                    )}
+                  </td>
                   <td style={{ fontSize: "0.75rem" }}>{new Date(req.createdAt).toLocaleDateString()}</td>
                   <td>
                     {isMain ? (
@@ -271,7 +268,18 @@ const PendingRequestsPage = ({ user, currentTheme }) => {
   };
 
   return (
-    <Container fluid className="mt-4 px-4 pb-5">
+    <Container fluid className="mt-0 px-4 pt-3 pb-5">
+  {/* PAGE HEADING - Matched to File Dashboard Style */}
+  <h3 className={`mb-4 ${isDark ? "text-white" : "text-dark"}`} 
+      style={{ 
+        fontSize: "calc(1.3rem + .6vw)", 
+        fontWeight: "500",
+        fontFamily: "'Segoe UI', Roboto, Helvetica, Arial, sans-serif" ,
+        marginTop: "-5px"
+      }}>
+    Pending Requests
+  </h3>
+
       {loading && data.mainRequests.length === 0 ? (
         <div className="text-center py-5"><Spinner animation="border" variant="primary" /></div>
       ) : (
@@ -281,6 +289,7 @@ const PendingRequestsPage = ({ user, currentTheme }) => {
         </>
       )}
 
+      {/* REJECTION MODAL */}
       <Modal show={showDenyModal} onHide={() => !isSubmitting && setShowDenyModal(false)} centered>
         <Modal.Header closeButton className={isDark ? "bg-dark text-white border-secondary" : ""}>
           <Modal.Title className="h6 text-danger fw-bold">Reject Request</Modal.Title>
@@ -288,12 +297,20 @@ const PendingRequestsPage = ({ user, currentTheme }) => {
         <Modal.Body className={isDark ? "bg-dark text-white" : ""}>
           <Form.Group>
             <Form.Label className="small fw-bold">Reason for Rejection</Form.Label>
-            <Form.Control as="textarea" rows={3} value={denialComment} onChange={(e) => setDenialComment(e.target.value)} className={isDark ? "bg-secondary border-secondary text-white shadow-none" : "shadow-none"} />
+            <Form.Control 
+              as="textarea" 
+              rows={3} 
+              value={denialComment} 
+              onChange={(e) => setDenialComment(e.target.value)} 
+              className={isDark ? "bg-secondary border-secondary text-white shadow-none" : "shadow-none"} 
+            />
           </Form.Group>
         </Modal.Body>
         <Modal.Footer className={isDark ? "bg-dark border-secondary" : ""}>
           <Button variant="outline-secondary" size="sm" onClick={() => setShowDenyModal(false)}>Cancel</Button>
-          <Button variant="danger" size="sm" onClick={handleConfirmDeny} disabled={isSubmitting}>{isSubmitting ? <Spinner size="sm" /> : "Confirm Reject"}</Button>
+          <Button variant="danger" size="sm" onClick={handleConfirmDeny} disabled={isSubmitting}>
+            {isSubmitting ? <Spinner size="sm" /> : "Confirm Reject"}
+          </Button>
         </Modal.Footer>
       </Modal>
     </Container>
