@@ -17,41 +17,43 @@ exports.transporter = transporter;
 // 3. YOUR TEMPLATES AND FUNCTIONS
 exports.getRecipientsForRequest = async (senderRole, departmentId, senderUsername) => {
     try {
-        // Updated Regex to be more inclusive of "ADMIN"
-        const [admins, hods] = await Promise.all([
-            User.find({ 
-                role: { $in: ["ADMIN", "SUPERADMIN", "SUPER_ADMIN"] },
-                deletedAt: null 
-            }),
-            departmentId ? User.find({ 
-                role: "HOD", 
-                departmentId: departmentId,
-                deletedAt: null 
-            }) : []
-        ]);
+        console.log(`--- DEBUG: Finding Recipients ---`);
+        console.log(`Sender: ${senderUsername}, Dept: ${departmentId}`);
 
-        const allPotential = [...admins, ...hods];
-        const uniqueRecipients = [];
+        // 1. Find Admins using case-insensitive regex
+        // This finds "ADMIN", "Admin", "admin", "SUPERADMIN", etc.
+        const admins = await User.find({
+            role: { $regex: /admin/i }, 
+            email: { $exists: true, $ne: "" }
+        });
+        console.log(`Admins Found: ${admins.length}`);
+
+        // 2. Find HOD for this specific department
+        const hods = departmentId ? await User.find({
+            role: { $regex: /^hod$/i },
+            departmentId: departmentId,
+            email: { $exists: true, $ne: "" }
+        }) : [];
+        console.log(`HODs Found: ${hods.length}`);
+
+        // 3. Merge and deduplicate
+        const combined = [...admins, ...hods];
+        const uniqueList = [];
         const seenEmails = new Set();
 
-        allPotential.forEach(u => {
-            if (u.email) {
-                const email = u.email.toLowerCase().trim();
-                const isSender = u.username.toLowerCase() === senderUsername?.toLowerCase();
-
-                if (!seenEmails.has(email) && !isSender) {
-                    seenEmails.add(email);
-                    uniqueRecipients.push({
-                        email: email,
-                        username: u.username,
-                        id: u._id
-                    });
-                }
+        combined.forEach(user => {
+            const email = user.email.toLowerCase().trim();
+            // Only add if not seen and NOT the person who sent the request
+            if (!seenEmails.has(email) && user.username !== senderUsername) {
+                seenEmails.add(email);
+                uniqueList.push(user);
             }
         });
-        return uniqueRecipients;
-    } catch (error) {
-        console.error("Recipient Fetch Error:", error);
+
+        console.log(`Final Notification List: ${uniqueList.map(u => u.email).join(', ')}`);
+        return uniqueList;
+    } catch (err) {
+        console.error("Error in getRecipientsForRequest:", err);
         return [];
     }
 };
@@ -126,15 +128,26 @@ exports.notifyUserOfAction = async (userEmail, action, requestData, comment) => 
 };
 
 exports.sendEmail = async (to, subject, html) => {
-    const bccList = Array.isArray(to) ? to : [to];
+    // Ensure 'to' is an array
+    const recipientList = Array.isArray(to) ? to : [to];
 
-    return transporter.sendMail({
-        from: `"Aaryan System" <${process.env.EMAIL_USER}>`,
-        to: `"Aaryan System Recipients" <${process.env.EMAIL_USER}>`, 
-        bcc: bccList, 
-        subject: subject,
-        html: html
+    // Map through the list and create individual sending tasks
+    const sendTasks = recipientList.map(email => {
+        return transporter.sendMail({
+            from: `"Aaryan System" <${process.env.EMAIL_USER}>`,
+            to: email, // Direct 'To' header (no BCC)
+            subject: subject,
+            html: html
+        });
     });
+
+    try {
+        const results = await Promise.all(sendTasks);
+        return results;
+    } catch (err) {
+        console.error("Mail Dispatch Error:", err);
+        throw err;
+    }
 };
 
 exports.passwordResetTemplate = (data) => {

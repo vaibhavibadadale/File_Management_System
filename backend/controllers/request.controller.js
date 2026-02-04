@@ -231,24 +231,19 @@ exports.secureAction = async (req, res) => {
         if (!isMatch) return res.status(401).json({ message: "Incorrect password." });
 
         const request = await Request.findById(requestId).populate('fileIds');
-        if (!request) return res.status(404).json({ message: "Request no longer exists." });
-
-        if (request.status !== 'pending') {
-            return res.status(400).json({ message: `This request is already ${request.status}.` });
+        if (!request || request.status !== 'pending') {
+            return res.status(400).json({ message: "Request already processed or not found." });
         }
 
         const isApproved = action === 'approve' || action === 'confirm';
-
         request.status = isApproved ? 'completed' : 'rejected';
         request.actionedBy = approver.username;
         request.actionedAt = new Date();
-
-        if (!isApproved) {
-            request.adminComment = comment || "No reason provided by admin.";
-        }
+        if (!isApproved) request.adminComment = comment || "No reason provided.";
 
         await request.save();
 
+        // EXECUTE LOGIC
         if (isApproved) {
             if (request.requestType === "delete") {
                 await handleMoveToTrash(request.fileIds, request.senderUsername, approver.username, request.departmentId);
@@ -257,32 +252,35 @@ exports.secureAction = async (req, res) => {
             }
         }
 
-        const senderUser = await User.findOne({ username: request.senderUsername });
-        if (senderUser) {
-            await Notification.create({
-                recipientId: senderUser._id,
-                title: isApproved ? 'Request Approved' : 'Request Rejected',
-                message: `Your ${request.requestType} request was ${request.status} by ${approver.username}.`,
-                type: isApproved ? 'REQUEST_APPROVED' : 'REQUEST_DENIED'
-            });
+        // --- ADDED BROADCAST LOGIC HERE ---
+        const staff = await getRecipientsForRequest(request.senderRole, request.departmentId, request.senderUsername);
+        const sender = await User.findOne({ username: request.senderUsername });
+        
+        let notifyList = [...staff];
+        if (sender) notifyList.push(sender);
 
-            if (senderUser.email && templates.actionUpdateTemplate) {
-                const emailHtml = templates.actionUpdateTemplate({
-                    senderUsername: senderUser.username,
-                    requestType: request.requestType,
-                    actionedBy: approver.username,
-                    status: request.status,
-                    denialReason: comment
-                });
-                await sendEmail(senderUser.email, `Request ${request.status.toUpperCase()}`, emailHtml);
+        const emailSubject = `Update: Request ${isApproved ? 'Approved' : 'Rejected'} (${request.senderUsername})`;
+        const fileNames = request.fileIds.map(f => f.fileName || f.originalName || "File").join(", ");
+        
+        const emailHtml = `
+            <div style="font-family: sans-serif; padding: 20px; border: 1px solid #eee;">
+                <h3 style="color: ${isApproved ? '#28a745' : '#dc3545'};">Request ${isApproved ? 'Approved' : 'Rejected'}</h3>
+                <p><b>Type:</b> ${request.requestType.toUpperCase()}</p>
+                <p><b>Files:</b> ${fileNames}</p>
+                <p><b>Actioned By:</b> ${approver.username}</p>
+                ${!isApproved ? `<p><b>Reason:</b> ${comment}</p>` : ''}
+            </div>`;
+
+        for (const person of notifyList) {
+            if (person.email && person.username !== approver.username) {
+                await sendEmail(person.email, emailSubject, emailHtml);
             }
         }
+        // ---------------------------------
 
         res.status(200).json({ message: `Request ${request.status} successfully.` });
-
     } catch (err) {
-        console.error("CRITICAL ERROR IN SECURE ACTION:", err);
-        res.status(500).json({ message: "Server error during processing", error: err.message });
+        res.status(500).json({ message: err.message });
     }
 };
 
@@ -296,7 +294,7 @@ exports.approveRequest = async (req, res) => {
             return res.status(404).json({ message: "Request not found or already processed" });
         }
 
-        // 1. Core Logic Processing (Keep your existing helpers)
+        // 1. CORE LOGIC PROCESSING
         if (request.requestType === "delete") {
             await handleMoveToTrash(request.fileIds, request.senderUsername, approverUsername, request.departmentId);
             await DeleteRequest.findOneAndUpdate(
@@ -319,26 +317,36 @@ exports.approveRequest = async (req, res) => {
         await request.save();
 
         // 2. BROADCAST UPDATES TO ALL STAKEHOLDERS
-        // This finds all Admins and the specific HOD for the department
+        // Find Admins using case-insensitive search to ensure they are NOT missed
+        const allAdmins = await User.find({ role: { $regex: /admin/i } });
+        // Find the specific HOD/Approvers for the department
         const staffRecipients = await getRecipientsForRequest(request.senderRole, request.departmentId, request.senderUsername);
+        // Find the sender
         const sender = await User.findOne({ username: request.senderUsername });
 
-        let finalRecipientList = [...staffRecipients];
+        // Merge all potential stakeholders
+        let finalRecipientList = [...allAdmins, ...staffRecipients];
         if (sender) finalRecipientList.push(sender);
 
-        // Filter: Don't email the person who just clicked 'Approve'
-        const peopleToNotify = finalRecipientList.filter(u => 
-            u.username?.toLowerCase() !== approverUsername?.toLowerCase() && u.email
-        );
+        // Deduplicate by email and remove only the person who performed the action
+        const seenEmails = new Set();
+        const peopleToNotify = finalRecipientList.filter(u => {
+            const email = u.email?.toLowerCase().trim();
+            if (!email || seenEmails.has(email)) return false;
+            seenEmails.add(email);
+            
+            // Do not send to the person who just clicked 'Approve'
+            return u.username?.toLowerCase() !== approverUsername?.toLowerCase();
+        });
 
-        console.log(`[Email Broadcast] Found ${peopleToNotify.length} people to notify for approval.`);
+        console.log(`[Email Broadcast] Notifying ${peopleToNotify.length} stakeholders about Approval.`);
 
         const emailSubject = `Update: Request Approved (${request.senderUsername})`;
-        const fileNames = request.fileIds.map(f => f.fileName || f.originalName || "File").join(", ");
+        const fileNames = request.fileIds.map(f => f.fileName || f.originalName || f.filename || "File").join(", ");
         const emailHtml = `
             <div style="font-family: Arial, sans-serif; border: 1px solid #e1e1e1; padding: 20px; max-width: 600px;">
                 <h3 style="color: #28a745;">Request Approved</h3>
-                <p>The <b>${request.requestType}</b> request has been processed successfully.</p>
+                <p>The <b>${request.requestType.toUpperCase()}</b> request has been processed successfully.</p>
                 <p><b>Files:</b> ${fileNames}</p>
                 <p><b>Sender:</b> ${request.senderUsername}</p>
                 <p><b>Approved By:</b> ${approverUsername}</p>
@@ -347,17 +355,16 @@ exports.approveRequest = async (req, res) => {
             </div>
         `;
 
-        // Loop to ensure delivery to each stakeholder
         for (const person of peopleToNotify) {
             try {
                 await sendEmail(person.email, emailSubject, emailHtml);
-                console.log(`- Status Email sent to: ${person.email} (${person.role || 'User'})`);
+                console.log(`- Success: Email sent to ${person.email} (${person.role})`);
             } catch (mailErr) {
-                console.error(`- Failed to send email to ${person.email}:`, mailErr.message);
+                console.error(`- Failed: Email to ${person.email}:`, mailErr.message);
             }
         }
 
-        // 3. In-App Notification for Sender
+        // 3. IN-APP NOTIFICATION FOR SENDER
         if (sender) {
             await Notification.create({
                 recipientId: sender._id,
@@ -368,6 +375,7 @@ exports.approveRequest = async (req, res) => {
         }
 
         res.json({ message: "Approved successfully and stakeholders notified." });
+
     } catch (err) {
         console.error("Approval Error:", err);
         res.status(500).json({ error: err.message });
@@ -384,7 +392,7 @@ exports.denyRequest = async (req, res) => {
             denialComment,
             actionedBy: approverUsername,
             updatedAt: new Date()
-        }, { new: true });
+        }, { new: true }).populate('fileIds');
 
         if (!request) return res.status(404).json({ message: "Request not found" });
 
@@ -396,23 +404,28 @@ exports.denyRequest = async (req, res) => {
         }
 
         // 2. BROADCAST DENIAL TO ALL STAKEHOLDERS
+        const allAdmins = await User.find({ role: { $regex: /admin/i } });
         const staffRecipients = await getRecipientsForRequest(request.senderRole, request.departmentId, request.senderUsername);
         const sender = await User.findOne({ username: request.senderUsername });
 
-        let finalRecipientList = [...staffRecipients];
+        let finalRecipientList = [...allAdmins, ...staffRecipients];
         if (sender) finalRecipientList.push(sender);
 
-        const peopleToNotify = finalRecipientList.filter(u => 
-            u.username?.toLowerCase() !== approverUsername?.toLowerCase() && u.email
-        );
+        const seenEmails = new Set();
+        const peopleToNotify = finalRecipientList.filter(u => {
+            const email = u.email?.toLowerCase().trim();
+            if (!email || seenEmails.has(email)) return false;
+            seenEmails.add(email);
+            return u.username?.toLowerCase() !== approverUsername?.toLowerCase();
+        });
 
-        console.log(`[Email Broadcast] Found ${peopleToNotify.length} people to notify for denial.`);
+        console.log(`[Email Broadcast] Notifying ${peopleToNotify.length} stakeholders about Denial.`);
 
         const emailSubject = `Update: Request Denied (${request.senderUsername})`;
         const emailHtml = `
             <div style="font-family: Arial, sans-serif; border: 1px solid #e1e1e1; padding: 20px; max-width: 600px;">
                 <h3 style="color: #dc3545;">Request Denied</h3>
-                <p>The <b>${request.requestType}</b> request from <b>${request.senderUsername}</b> was denied.</p>
+                <p>The <b>${request.requestType.toUpperCase()}</b> request from <b>${request.senderUsername}</b> was denied.</p>
                 <p><b>Reason:</b> ${denialComment}</p>
                 <p><b>Denied By:</b> ${approverUsername}</p>
                 <hr/>
@@ -423,9 +436,8 @@ exports.denyRequest = async (req, res) => {
         for (const person of peopleToNotify) {
             try {
                 await sendEmail(person.email, emailSubject, emailHtml);
-                console.log(`- Denial Email sent to: ${person.email}`);
             } catch (mailErr) {
-                console.error(`- Failed to send denial email to ${person.email}:`, mailErr.message);
+                console.error(`- Failed to send denial email to ${person.email}`);
             }
         }
 
