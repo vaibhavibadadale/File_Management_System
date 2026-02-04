@@ -103,10 +103,8 @@ function App() {
                                 element={<UsersPage key="users-view" currentTheme={themeMode} user={user} />} 
                             />
 
-                            <Route 
-                                path="/important" 
-                                element={<ImportantFilesPage key="important-view" currentTheme={themeMode} />} 
-                            />
+                            <Route path="/important" element={<ImportantFilesPage currentTheme={themeMode} user={user} />} />
+                            
 
                             <Route path="/" element={<FileDashboard user={user} currentTheme={themeMode} />} />
                             <Route path="/ventures" element={<VenturesPage user={user} currentTheme={themeMode} />} />

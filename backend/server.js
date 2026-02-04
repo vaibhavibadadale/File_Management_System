@@ -36,7 +36,7 @@ app.use("/uploads", express.static(UPLOADS_DIR));
 const userRoutes = require("./routes/user.routes");
 const departmentRoutes = require("./routes/department.routes");
 const folderRoutes = require("./routes/folder.routes");
-const fileRoutes = require("./routes/file.routes"); // This handles /api/files
+const fileRoutes = require("./routes/file.routes"); 
 const logRoutes = require("./routes/log.routes");
 const transferRoutes = require("./routes/transfer.routes");
 const notificationRoutes = require("./routes/notification.routes");
@@ -46,25 +46,20 @@ const backupRoutes = require('./routes/backup.route');
 app.use("/api/users", userRoutes);
 app.use("/api/departments", departmentRoutes);
 app.use("/api/folders", folderRoutes);
-app.use("/api/files", fileRoutes); // Routes defined in fileRoutes now available at /api/files/...
+app.use("/api/files", fileRoutes); 
 app.use("/api/logs", logRoutes);
 app.use("/api/transfer", transferRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/requests", requestRoutes);
-app.use('/api/files', backupRoutes);
+app.use('/api/backup', backupRoutes);
 
 // ================= GLOBAL ERROR HANDLER =================
 app.use((err, req, res, next) => {
     console.error("❌ BACKEND CRASH DETECTED:");
-    console.error("Path:", req.path);
-    console.error("Method:", req.method);
-    console.error(err.stack); 
-
     res.status(500).json({
         success: false,
         message: "Internal Server Error",
-        error: err.message,
-        stack: process.env.NODE_ENV === 'development' ? err.stack : undefined 
+        error: err.message
     });
 });
 
@@ -72,27 +67,26 @@ app.use((err, req, res, next) => {
 const connectWithRetry = () => {
   mongoose
     .connect(MONGO_URI)
-    .then(() => console.log("✅ MongoDB connected to Aaryans File Management System"))
+    .then(() => {
+      // LOG REMOVED HERE
+      console.log("✅ MongoDB connected to Aaryans File Management System");
+    })
     .catch((err) => {
       console.error("❌ MongoDB connection error:", err.message);
-      console.log("🔁 Retrying MongoDB connection in 5 seconds...");
       setTimeout(connectWithRetry, 5000);
     });
 };
 
 connectWithRetry();
 
-// ================= DEFAULT ROUTE =================
 app.get("/", (req, res) => {
   res.send("🚀 Aaryans File Management System Backend is running");
 });
 
-// ================= 404 HANDLER =================
 app.use((req, res) => {
   res.status(404).json({ message: "Route not found" });
 });
 
-// ================= START SERVER =================
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
 });

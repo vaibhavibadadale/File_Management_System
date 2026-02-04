@@ -15,7 +15,7 @@ const FileSchema = new mongoose.Schema(
     viewedBy: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
     uploadedAt: { type: Date, default: Date.now },
     departmentId: { type: mongoose.Schema.Types.ObjectId, ref: "Department" },
-    isStarred: { type: Boolean, default: false },
+    isStarred: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User', default: [] }],
     isDisabled: { type: Boolean, default: false }, // For toggle functionality
     deletedAt: { type: Date, default: null },
 

@@ -15,14 +15,13 @@ const getAuthHeaders = () => {
     };
 };
 
-// ================= UPDATED TRANSFER & REQUEST FUNCTIONS =================
+// ================= TRANSFER & REQUEST FUNCTIONS =================
 
 /**
- * FIXED: Hits the unified request endpoint and uses correct keys
+ * Hits the unified request endpoint and uses correct keys
  */
 export async function transferFilesApi(transferData) {
     try {
-        // Updated URL to match your new unified request route
         const response = await axios.post(`${BACKEND_URL}/requests/create`, transferData, getAuthHeaders());
         return response.data; 
     } catch (error) {
@@ -32,13 +31,13 @@ export async function transferFilesApi(transferData) {
 }
 
 /**
- * NEW: Fetch data for the Pending Requests / History Dashboard
+ * Fetch data for the Pending Requests / History Dashboard
  */
 export async function fetchRequestDashboardApi(params) {
     try {
         const response = await axios.get(`${BACKEND_URL}/requests/pending`, {
             ...getAuthHeaders(),
-            params: params // role, username, departmentId, etc.
+            params: params 
         });
         return response.data;
     } catch (error) {
@@ -47,7 +46,7 @@ export async function fetchRequestDashboardApi(params) {
 }
 
 /**
- * NEW: Approve a transfer or delete request
+ * Approve a transfer or delete request
  */
 export async function approveRequestApi(requestId) {
     try {
@@ -59,7 +58,7 @@ export async function approveRequestApi(requestId) {
 }
 
 /**
- * NEW: Deny a transfer or delete request
+ * Deny a transfer or delete request
  */
 export async function denyRequestApi(requestId, denialComment) {
     try {
@@ -102,7 +101,7 @@ export async function permanentDeleteApi(id) {
     }
 }
 
-// ================= EXISTING FUNCTIONS =================
+// ================= FILE & USER FUNCTIONS =================
 
 export async function fetchUsersForTransfer() {
     try {
@@ -125,29 +124,41 @@ export async function fetchFilesApi(params = {}) {
     }
 }
 
-export async function toggleStarApi(id, type, isStarred) {
+/**
+ * Toggle Star Status
+ */
+export async function toggleStarApi(id, type, isStarred, userId) {
     try {
+        const routePrefix = type === 'folders' ? 'folders' : 'files'; 
+
         const response = await axios.patch(
-            `${BACKEND_URL}/${type}/star/${id}`, 
-            { isStarred }, 
+            `${BACKEND_URL}/${routePrefix}/star/${id}`, 
+            { isStarred, userId }, 
             getAuthHeaders()
         );
         return response.data;
     } catch (error) {
-        throw new Error(error.response?.data?.message || `Failed to update ${type} star status.`);
+        console.error(`Error toggling star on ${type}:`, error);
+        throw new Error(error.response?.data?.message || `Failed to update star status.`);
     }
 }
-export async function fetchStarredItemsApi() {
+
+/**
+ * Fetch all starred items for the logged-in user
+ */
+export async function fetchStarredItemsApi(userId) {
     try {
         const response = await axios.get(`${BACKEND_URL}/files`, {
             ...getAuthHeaders(),
-            params: { isStarred: true } 
+            params: { 
+                isStarred: true, 
+                userId: userId, 
+                all: "true" 
+            } 
         });
-        return {
-            files: response.data.files || [],
-            folders: [] // Adding empty folders array to prevent map errors
-        };
+        return response.data;
     } catch (error) {
-        throw new Error(error.response?.data?.message || 'Failed to fetch starred items.');
+        console.error("Fetch starred error:", error);
+        throw new Error('Failed to fetch starred items.');
     }
 }

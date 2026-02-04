@@ -57,11 +57,13 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
     const userDeptId = user?.departmentId || (isAdmin ? null : DEPARTMENT_ID);
     const currentUserId = user?._id || USER_ID;
 
+    // --- UPDATED LOAD CONTENT LOGIC ---
     const loadContent = useCallback(async (parentId) => {
         setItemsToTransfer({});
         
         let params = { 
             userId: currentUserId,
+            role: userRole, // CRITICAL: Passing role to backend
             parentId: parentId || "null",
             folderId: parentId || "null"
         };
@@ -79,28 +81,32 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
                 axios.get(`${BACKEND_URL}/api/files`, { params })
             ]);
 
-            const userFolders = (folderRes.data.folders || []).filter(f => 
-                (f.createdBy === currentUserId || f.uploadedBy === currentUserId || isAdmin) && 
-                (f.transferStatus === 'none' || !f.transferStatus)
+            // Simplified mapping: Backend now handles the permissions
+            const folders = (folderRes.data.folders || []).filter(f => 
+                f.transferStatus === 'none' || !f.transferStatus
             );
             
-            const userFiles = (fileRes.data.files || []).filter(f => 
-                (f.uploadedBy === currentUserId || isAdmin) && 
-                (f.transferStatus === 'none' || !f.transferStatus)
+            const files = (fileRes.data.files || []).filter(f => 
+                f.transferStatus === 'none' || !f.transferStatus
             );
 
-            setFoldersInCurrentView(userFolders);
-            setFilesInCurrentView(userFiles);
+            setFoldersInCurrentView(folders);
+            setFilesInCurrentView(files);
 
-            const stars = {};
-            [...userFolders, ...userFiles].forEach(item => {
-                if (item.isStarred) stars[item._id] = true;
-            });
-            setStarredItems(stars);
+         const stars = {};
+        const currentUserId = user._id; // Ensure you have access to the logged-in user object
+
+        files.forEach(file => {
+           // FIX: Check if the current user's ID exists in the isStarred array
+             if (Array.isArray(file.isStarred) && file.isStarred.includes(currentUserId)) {
+            stars[file._id] = true;
+           }
+        });
+setStarredItems(stars);
         } catch (err) { 
             console.error("Error loading content:", err); 
         }
-    }, [currentUserId, isAdmin, userDeptId, viewMode]);
+    }, [currentUserId, userRole, isAdmin, userDeptId, viewMode]);
 
     useEffect(() => {
         loadContent(currentFolderId);
@@ -136,23 +142,21 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
             const response = await axios.get(`${BACKEND_URL}/api/requests/received`, { params: { userId: currentUserId } });
             const rawData = response.data.data || { files: [], folders: [] };
             
-            // Map folders with role from database
             const folders = (rawData.folders || []).map(f => ({ 
                 ...f, 
                 isFolder: true, 
                 type: 'Folder', 
                 displayName: f.folderName || f.name, 
                 sender: f.senderId?.username || "System", 
-                senderRole: f.senderId?.role || "user" // Fetching role from senderId object
+                senderRole: f.senderId?.role || "user" 
             }));
 
-            // Map files with role from database
             const files = (rawData.files || []).map(f => ({ 
                 ...f, 
                 isFolder: false, 
                 displayName: f.originalName || f.filename, 
                 sender: f.senderId?.username || "System", 
-                senderRole: f.senderId?.role || "user" // Fetching role from senderId object
+                senderRole: f.senderId?.role || "user" 
             }));
 
             setReceivedItems([...folders, ...files]);
@@ -163,18 +167,34 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
         }
     };
 
-    const handleToggleStar = async (e, item) => {
-        e.stopPropagation();
-        if (item.isDisabled && !isAdmin) return;
-        if (item.type === 'Folder' || item.isFolder) return;
-        const newStarredState = !starredItems[item._id];
-        try {
-            await axios.patch(`${BACKEND_URL}/api/files/star/${item._id}`, { userId: currentUserId, isStarred: newStarredState });
-            setStarredItems(prev => ({ ...prev, [item._id]: newStarredState }));
-            if (viewMode === "important") loadContent(currentFolderId);
-        } catch (err) { alert("Could not update star status."); }
-    };
+  const handleToggleStar = async (e, item) => {
+    e.stopPropagation();
+    
+    // 1. Validation: Ensure the ID exists and is 24 characters long
+    // MongoDB ObjectIds must be exactly 24 hex characters
+    if (!currentUserId || currentUserId.length !== 24) {
+        console.error("Invalid User ID format. Cannot star file.");
+        return Swal.fire("Error", "User session invalid. Please re-login.", "error");
+    }
 
+    const isCurrentlyStarred = starredItems[item._id] || false;
+    const newStarredState = !isCurrentlyStarred;
+
+    // UI Optimistic Update
+    setStarredItems(prev => ({ ...prev, [item._id]: newStarredState }));
+
+    try {
+        // 2. Send the technical _id and the toggle flag
+        await axios.patch(`${BACKEND_URL}/api/files/star/${item._id}`, { 
+            userId: currentUserId, // Must be the 24-char ObjectId string
+            isStarred: newStarredState 
+        });
+    } catch (err) {
+        // Rollback on failure
+        setStarredItems(prev => ({ ...prev, [item._id]: isCurrentlyStarred }));
+        console.error("Star toggle failed:", err.response?.data || err.message);
+    }
+};
     const handleSelectAll = (e) => {
         const isChecked = e.target.checked;
         if (isChecked) {
@@ -200,7 +220,7 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
             try {
                 await axios.post(`${BACKEND_URL}/api/users/verify-password`, { userId: currentUserId, password: formValues.password });
                 await axios.post(`${BACKEND_URL}/api/requests/create`, { requestType: "delete", senderUsername: user?.username || "Unknown", senderRole: user?.role || "user", departmentId: userDeptId, fileIds: [item._id], reason: formValues.reason });
-                Swal.fire({ title: "Request Sent", text: "Your deletion request is pending admin approval.", icon: "success", background: isDark ? '#2d2d2d' : '#fff', color: isDark ? '#fff' : '#000' });
+                Swal.fire({ title: "Req.uest Sent", text: "Your deletion request is pending admin approval.", icon: "success", background: isDark ? '#2d2d2d' : '#fff', color: isDark ? '#fff' : '#000' });
             } catch (err) { Swal.fire("Error", "Incorrect password or submission error.", "error"); }
         }
     };

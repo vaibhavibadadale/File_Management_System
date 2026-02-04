@@ -1,4 +1,5 @@
 const express = require("express");
+const File = require("../models/File");
 const router = express.Router();
 const upload = require("../middlewares/upload.middleware");
 const fileController = require("../controllers/file.controller");
@@ -18,40 +19,13 @@ router.post("/upload", upload.single("file"), (req, res, next) => {
 /**
  * 2. GET: Fetch Files (With Starred Support)
  */
-router.get("/", async (req, res, next) => {
-    const { isStarred, userId } = req.query;
-    if (isStarred === "true") {
-        try {
-            let query = { isStarred: true, deletedAt: null };
-            if (userId) {
-                query.$or = [{ uploadedBy: userId }, { sharedWith: userId }];
-            }
-            const File = require("../models/File"); // Ensure File model is loaded
-            const files = await File.find(query)
-                .populate("uploadedBy", "name username")
-                .sort({ updatedAt: -1 });
-            return res.json({ files, success: true });
-        } catch (err) {
-            return res.status(500).json({ message: err.message, success: false });
-        }
-    }
-
-    if (fileController.getFilesByFolder) {
-        return fileController.getFilesByFolder(req, res, next);
-    }
-    res.status(500).json({ message: "Fetch handler not found in controller" });
-});
+router.get("/", fileController.getFilesByFolder);
 
 /**
  * 3. PATCH: Toggle Star Status
  */
-router.patch("/star/:id", (req, res, next) => {
-    if (fileController.toggleFileStar) {
-        return fileController.toggleFileStar(req, res, next);
-    }
-    return res.status(500).json({ message: "Star handler not found" });
-});
-
+// Example Express Backend Controller
+router.patch('/star/:id', fileController.toggleFileStar);
 /**
  * 4. NEW: PUT Toggle File Disable Status
  */
