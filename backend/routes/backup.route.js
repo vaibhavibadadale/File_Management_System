@@ -5,13 +5,16 @@ const backupController = require('../controllers/backup.controller');
 // Main backup trigger
 router.get('/system-backup', backupController.generateSystemBackup);
 
-// Validation routes (Fixes the 404 errors)
+// Validation routes
 router.get('/storage-stats', backupController.getSystemStats);
 router.get('/system-backup-check', backupController.getBackupCheck);
 
-// Schedule settings (Fixes the 404 for the Update Schedule button)
+// NEW: Admin History & Download
+router.get('/list', backupController.listBackups);
+router.get('/download/:filename', backupController.downloadBackupFile);
+
+// Schedule settings
 router.post('/settings', (req, res) => {
-    // This is where you would save the interval to your DB
     console.log("Setting backup interval to:", req.body.autoBackupInterval);
     res.json({ success: true, message: "Schedule updated successfully" });
 });

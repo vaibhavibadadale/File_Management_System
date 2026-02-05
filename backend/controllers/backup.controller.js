@@ -18,7 +18,58 @@ const getDirSize = (dirPath) => {
     return size;
 };
 
-// NEW: Fixes 404 for /api/files/storage-stats
+// NEW: List all backups for Admin History
+exports.listBackups = async (req, res) => {
+    try {
+        const { role } = req.query;
+        // Strict Role Check
+        if (!["admin", "superadmin"].includes(role?.toLowerCase())) {
+            return res.status(403).json({ success: false, message: "Unauthorized" });
+        }
+
+        const backupsDir = path.join(__dirname, '../backups');
+        if (!fs.existsSync(backupsDir)) return res.json({ success: true, backups: [] });
+
+        const files = fs.readdirSync(backupsDir)
+            .filter(file => file.endsWith('.json') || file.endsWith('.zip'))
+            .map(file => {
+                const stats = fs.statSync(path.join(backupsDir, file));
+                return {
+                    name: file,
+                    size: (stats.size / (1024 * 1024)).toFixed(2) + " MB",
+                    createdAt: stats.birthtime
+                };
+            })
+            .sort((a, b) => b.createdAt - a.createdAt); // Newest first
+
+        res.json({ success: true, backups: files });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+};
+
+// NEW: Download a specific file from the server folder
+exports.downloadBackupFile = async (req, res) => {
+    try {
+        const { filename } = req.params;
+        const { role } = req.query;
+
+        if (!["admin", "superadmin"].includes(role?.toLowerCase())) {
+            return res.status(403).send("Unauthorized access");
+        }
+
+        const filePath = path.join(__dirname, '../backups', filename);
+
+        if (fs.existsSync(filePath)) {
+            res.download(filePath);
+        } else {
+            res.status(404).send("Backup file no longer exists on server.");
+        }
+    } catch (err) {
+        res.status(500).send(err.message);
+    }
+};
+
 exports.getSystemStats = async (req, res) => {
     try {
         const uploadsDir = path.join(__dirname, '../uploads');
@@ -31,13 +82,11 @@ exports.getSystemStats = async (req, res) => {
     }
 };
 
-// NEW: Fixes 404 for /api/files/system-backup-check
 exports.getBackupCheck = async (req, res) => {
     try {
         const stats = await mongoose.connection.db.stats();
         const uploadsDir = path.join(__dirname, '../uploads');
         const uploadSize = getDirSize(uploadsDir);
-        // Estimate size with 5% compression margin
         const backupSize = (uploadSize + stats.dataSize) * 0.95;
         res.json({ backupSize });
     } catch (err) {
@@ -45,7 +94,6 @@ exports.getBackupCheck = async (req, res) => {
     }
 };
 
-// EXISTING: Your original backup logic
 exports.generateSystemBackup = async (req, res) => {
     try {
         const fileName = `system-backup-full-${Date.now()}.zip`;

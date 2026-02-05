@@ -2,7 +2,9 @@ const File = require("../models/File");
 const Folder = require("../models/Folder");
 const Log = require("../models/Log");
 const path = require("path");
+const fs = require("fs");
 
+// 1. UPLOAD FILE
 exports.uploadFile = async (req, res) => {
     try {
         const { folderId, uploadedBy, departmentId, username } = req.body;
@@ -44,30 +46,28 @@ exports.uploadFile = async (req, res) => {
     }
 };
 
+// 2. GET FILES
 exports.getFilesByFolder = async (req, res) => {
     try {
-        const { folderId, userId, all, isStarred } = req.query; 
+        const { folderId, userId, all, isStarred, role, departmentId } = req.query; 
         
-        // 1. Validation: Ensure we have a valid userId
         if (!userId || userId === "null" || userId === "undefined") {
             return res.status(400).json({ success: false, message: "User context missing." });
         }
 
-        // 2. Base query: skip deleted files
         let query = { deletedAt: null };
+        const userRole = (role || "").toLowerCase();
+        const isAdminOrHOD = ["admin", "superadmin", "hod"].includes(userRole);
 
         if (isStarred === "true") {
-            // FIX: Search for files where THIS user's ID is inside the star array
-            // This achieves your "simple requirement" of individual importance
             query.isStarred = { $in: [userId] }; 
+        } else if (isAdminOrHOD) {
+            if (departmentId) query.departmentId = departmentId;
+            if (all !== "true") {
+                query.folder = (!folderId || folderId === "null") ? null : folderId;
+            }
         } else {
-            // REGULAR BROWSING: Show my files OR files shared with me
-            query.$or = [
-                { uploadedBy: userId },
-                { sharedWith: userId }
-            ];
-
-            // Folder nesting logic
+            query.$or = [{ uploadedBy: userId }, { sharedWith: userId }];
             if (all !== "true") {
                 query.folder = (!folderId || folderId === "null") ? null : folderId;
             }
@@ -78,36 +78,22 @@ exports.getFilesByFolder = async (req, res) => {
             .sort({ createdAt: -1 });
 
         return res.json({ files, success: true });
-
     } catch (error) {
-        console.error("Fetch Error:", error);
         return res.status(500).json({ error: error.message, success: false });
     }
 };
 
+// 3. TRACK VIEW
 exports.trackView = async (req, res) => {
     try {
         const { fileId, userId } = req.body;
-        
         if (!fileId) return res.status(400).json({ success: false, message: "File ID required" });
 
-        const updateData = { 
-            $set: { lastViewedAt: new Date() }
-        };
+        const updateData = { $set: { lastViewedAt: new Date() } };
+        if (userId) updateData.$addToSet = { viewedBy: userId };
 
-        if (userId) {
-            updateData.$addToSet = { viewedBy: userId };
-        }
-
-        const updatedFile = await File.findByIdAndUpdate(
-            fileId, 
-            updateData,
-            { new: true }
-        );
-
-        if (!updatedFile) {
-            return res.status(404).json({ success: false, message: "File not found" });
-        }
+        const updatedFile = await File.findByIdAndUpdate(fileId, updateData, { new: true });
+        if (!updatedFile) return res.status(404).json({ success: false, message: "File not found" });
 
         res.status(200).json({ success: true, lastViewedAt: updatedFile.lastViewedAt });
     } catch (err) {
@@ -115,52 +101,34 @@ exports.trackView = async (req, res) => {
     }
 };
 
+// 4. TOGGLE STAR
 exports.toggleFileStar = async (req, res) => {
     try {
-        const { id } = req.params; // File ID
-        const { userId, isStarred } = req.body; 
+        const { id } = req.params; 
+        const { userId, isStarred } = req.body;
+        const file = await File.findById(id);
+        if (!file) return res.status(404).json({ message: "File not found" });
 
-        // 1. Double check the incoming userId is valid to prevent CastErrors
-        if (!userId || userId.length !== 24) {
-            return res.status(400).json({ message: "Invalid User ID format" });
-        }
-
-        // 2. The Logic Switch
-        // If isStarred is true, we ADD the userId to the list
-        // If isStarred is false, we REMOVE the userId from the list
         const update = isStarred 
             ? { $addToSet: { isStarred: userId } } 
             : { $pull: { isStarred: userId } };
 
-        // 3. Execution
-        const updatedFile = await File.findByIdAndUpdate(
-            id, 
-            update, 
-            { new: true }
-        );
-
-        if (!updatedFile) {
-            return res.status(404).json({ message: "File not found" });
-        }
-
+        const updatedFile = await File.findByIdAndUpdate(id, update, { new: true });
         res.json({ 
             success: true, 
-            count: updatedFile.isStarred.length // Useful for debugging
+            count: updatedFile.isStarred.length,
+            isStarred: updatedFile.isStarred.includes(userId)
         });
-
     } catch (error) {
-        console.error("❌ Backend Star Error:", error);
         res.status(500).json({ success: false, error: error.message });
     }
 };
 
+// 5. SOFT DELETE
 exports.softDeleteFile = async (req, res) => {
     try {
         const { userId } = req.body;
-        const file = await File.findByIdAndUpdate(req.params.id, {
-            deletedAt: new Date()
-        });
-
+        const file = await File.findByIdAndUpdate(req.params.id, { deletedAt: new Date() });
         if (file) {
             await Log.create({
                 userId: userId,
@@ -169,10 +137,62 @@ exports.softDeleteFile = async (req, res) => {
                 details: `Deleted file: ${file.originalName}`
             });
         }
-
         res.json({ message: "File deleted successfully", success: true });
     } catch (error) {
         res.status(500).json({ error: error.message, success: false });
     }
 };
 
+// 6. TOGGLE STATUS (FIXED)
+exports.toggleFileStatus = async (req, res) => {
+    console.log("--- REQUEST RECEIVED: Toggle Status ---");
+    try {
+        const { id } = req.params;
+        const { isDisabled, adminId } = req.body;
+
+        const updatedFile = await File.findByIdAndUpdate(
+            id, 
+            { isDisabled: isDisabled }, 
+            { new: true }
+        );
+
+        if (!updatedFile) {
+            return res.status(404).json({ success: false, message: "File not found" });
+        }
+
+        const logUserId = adminId && adminId !== "null" ? adminId : updatedFile.uploadedBy;
+
+        await Log.create({
+            userId: logUserId,
+            action: isDisabled ? "FILE_DISABLED" : "FILE_ENABLED",
+            fileId: id,
+            details: `${isDisabled ? 'Disabled' : 'Enabled'} file: ${updatedFile.originalName}`
+        });
+
+        console.log(`✅ Status updated for ${updatedFile.originalName}: ${isDisabled}`);
+        return res.json({ success: true, message: "Status updated", file: updatedFile });
+    } catch (error) {
+        console.error("❌ Toggle Status Error:", error.message);
+        return res.status(500).json({ success: false, error: error.message });
+    }
+};
+
+// 7. BACKUP
+exports.runInternalSystemBackup = async () => {
+    try {
+        const backupDir = path.join(__dirname, "../backups");
+        if (!fs.existsSync(backupDir)) fs.mkdirSync(backupDir, { recursive: true });
+
+        const data = {
+            files: await File.find({}),
+            folders: await Folder.find({}),
+            logs: await Log.find({})
+        };
+
+        const fileName = `auto-backup-${Date.now()}.json`;
+        fs.writeFileSync(path.join(backupDir, fileName), JSON.stringify({ metadata: { generatedAt: new Date() }, data }, null, 2));
+        return { success: true };
+    } catch (error) {
+        return { success: false, error: error.message };
+    }
+};

@@ -25,95 +25,62 @@ const UserFilesView = ({ currentTheme, user }) => {
   const fetchUserDataAndLogs = async () => {
     try {
       setLoading(true);
-      // 1. Get User Profile
       const userRes = await axios.get(`http://localhost:5000/api/users/${userId}`);
-      const profile = userRes.data;
-
-      if (profile) {
-        setUserData(profile);
-        // 2. Get Files using the correct query parameter logic from your backend
-        // We use all=true to see all files regardless of folder depth
-        const fileRes = await axios.get(`http://localhost:5000/api/files?userId=${profile._id}&all=true`);
-        
-        // Extract the array from { files: [...] }
+      if (userRes.data) {
+        setUserData(userRes.data);
+        const fileRes = await axios.get(`http://localhost:5000/api/files?userId=${userRes.data._id}&all=true`);
+        // Handle both object with files array or direct array
         const fileData = fileRes.data.files ? fileRes.data.files : fileRes.data;
         setFiles(Array.isArray(fileData) ? fileData : []);
       }
     } catch (err) {
-      console.error("Error loading profile or files:", err);
+      console.error("Load Error:", err);
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => {
-    if (userId) fetchUserDataAndLogs();
-  }, [userId]);
+  useEffect(() => { if (userId) fetchUserDataAndLogs(); }, [userId]);
 
   const handleViewFile = (file) => {
     if (file.isDisabled && !canManageFiles) {
-      Swal.fire({ 
-        ...swalConfig, 
-        icon: "error", 
-        title: "Access Denied", 
-        text: "This file has been disabled by an administrator." 
-      });
+      Swal.fire({ ...swalConfig, icon: "error", title: "Access Denied", text: "File disabled by admin." });
       return;
     }
-    const fileUrl = `http://localhost:5000/uploads/${userData?.username}/${file.name || file.filename}`;
+    const fileUrl = `http://localhost:5000/uploads/${userData?.username}/${file.filename}`;
     window.open(fileUrl, "_blank");
   };
 
-  const toggleFileStatus = async (fileId, currentStatus) => {
-    if (!fileId || fileId === "undefined") {
-      return Swal.fire({ 
-        ...swalConfig, 
-        icon: "error", 
-        title: "Error", 
-        text: "File ID is missing. Please refresh the page." 
-      });
-    }
-
-    const action = currentStatus ? "enable" : "disable";
+  const toggleFileStatus = async (fileId, currentIsDisabled) => {
+    const action = currentIsDisabled ? "enable" : "disable";
     const result = await Swal.fire({
       ...swalConfig,
-      title: `${action.charAt(0).toUpperCase() + action.slice(1)} File?`,
+      title: `${action.toUpperCase()} File?`,
       text: `Are you sure you want to ${action} this file?`,
       icon: "warning",
       showCancelButton: true,
-      confirmButtonText: `Yes, ${action} it!`,
+      confirmButtonColor: currentIsDisabled ? "#198754" : "#dc3545",
+      confirmButtonText: `Yes, ${action}!`,
     });
 
     if (result.isConfirmed) {
       try {
+        // Send the toggled value: if it was disabled (true), set to false (enabled)
         await axios.put(`http://localhost:5000/api/files/toggle-status/${fileId}`, {
-          isDisabled: !currentStatus,
-          adminId: user?._id || user?.id, 
+          isDisabled: !currentIsDisabled, 
+          adminId: user?._id || user?.id,
         });
         
-        Swal.fire({ 
-          ...swalConfig, 
-          icon: "success", 
-          title: "Success", 
-          text: `File ${action}d successfully.`, 
-          timer: 1500, 
-          showConfirmButton: false 
-        });
+        Swal.fire({ ...swalConfig, icon: "success", title: "Updated!", timer: 1500, showConfirmButton: false });
         fetchUserDataAndLogs(); 
       } catch (err) {
-        Swal.fire({ 
-          ...swalConfig, 
-          icon: "error", 
-          title: "Error", 
-          text: err.response?.data?.message || "Failed to update file status." 
-        });
+        console.error("Update Error:", err);
+        Swal.fire({ ...swalConfig, icon: "error", title: "Failed", text: "Error updating status." });
       }
     }
   };
 
-  const filteredFiles = files.filter((file) =>
-    (file.originalName || file.name || "").toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredFiles = files.filter(f => (f.originalName || "").toLowerCase().includes(searchTerm.toLowerCase()));
 
   return (
     <Container fluid className={`py-4 ${isDark ? "bg-secondary" : "bg-light"}`} style={{ minHeight: "100vh" }}>
@@ -122,61 +89,39 @@ const UserFilesView = ({ currentTheme, user }) => {
           <ArrowBack className="me-2" /> Back
         </Button>
 
+        {/* User Profile Overview */}
         <Card className={`mb-4 shadow-sm border-0 ${isDark ? "bg-dark text-white" : ""}`}>
           <Card.Body className="p-4">
-            {loading ? (
-              <div className="text-center"><Spinner animation="border" variant="primary" /></div>
-            ) : userData ? (
+            {loading ? <Spinner animation="border" /> : userData && (
               <Row className="align-items-center">
                 <Col md={2} className="text-center border-end">
-                  <div className="bg-primary bg-opacity-10 rounded-circle d-inline-flex p-4 mb-2">
-                    <Person style={{ fontSize: "60px", color: "#0d6efd" }} />
-                  </div>
+                  <Person style={{ fontSize: "60px", color: "#0d6efd" }} />
                   <h5 className="mb-0 fw-bold">{userData.name}</h5>
-                  <small className={isDark ? "text-light opacity-75" : "text-muted"}>@{userData.username}</small>
+                  <small className="text-muted">@{userData.username}</small>
                 </Col>
                 <Col md={10} className="ps-md-5">
-                  <h4 className="mb-4">Profile Overview</h4>
                   <Row>
-                    <Col md={4} className="mb-3">
-                      <Email className="text-primary me-2" />
-                      <small className={`d-block ${isDark ? "text-light opacity-75" : "text-muted"}`}>Email</small>
-                      <strong>{userData.email}</strong>
-                    </Col>
-                    <Col md={4} className="mb-3">
-                      <BadgeIcon className="text-primary me-2" />
-                      <small className={`d-block ${isDark ? "text-light opacity-75" : "text-muted"}`}>System Role</small>
-                      <Badge bg="info" className="text-dark">{userData.role}</Badge>
-                    </Col>
-                    <Col md={4} className="mb-3">
-                      <Business className="text-primary me-2" />
-                      <small className={`d-block ${isDark ? "text-light opacity-75" : "text-muted"}`}>Department</small>
-                      <strong>{userData.department || userData.departmentId?.departmentName || "General"}</strong>
-                    </Col>
+                    <Col md={4}><Email className="text-primary" /> <strong>{userData.email}</strong></Col>
+                    <Col md={4}><BadgeIcon className="text-primary" /> <Badge bg="info">{userData.role}</Badge></Col>
+                    <Col md={4}><Business className="text-primary" /> <strong>{userData.department || "General"}</strong></Col>
                   </Row>
                 </Col>
               </Row>
-            ) : <p className="text-center">Staff information not found.</p>}
+            )}
           </Card.Body>
         </Card>
 
+        {/* Files Table */}
         <Card className={`shadow-sm border-0 ${isDark ? "bg-dark text-white" : ""}`}>
           <Card.Header className={`py-3 ${isDark ? "bg-dark border-secondary" : "bg-white"}`}>
             <Row className="align-items-center">
-              <Col md={6}>
-                <h5 className="mb-0 d-flex align-items-center">
-                  <Storage className="me-2 text-primary" /> Storage History
-                </h5>
-              </Col>
+              <Col md={6}><h5 className="mb-0"><Storage className="me-2 text-primary" /> User Storage</h5></Col>
               <Col md={6}>
                 <InputGroup>
-                  <InputGroup.Text className={isDark ? "bg-dark text-white border-secondary" : ""}>
-                    <Search fontSize="small" />
-                  </InputGroup.Text>
+                  <InputGroup.Text className={isDark ? "bg-dark text-white border-secondary" : ""}><Search /></InputGroup.Text>
                   <Form.Control 
                     className={isDark ? "bg-dark text-white border-secondary" : ""}
-                    placeholder="Search files..." 
-                    value={searchTerm} 
+                    placeholder="Search user files..." 
                     onChange={(e) => setSearchTerm(e.target.value)} 
                   />
                 </InputGroup>
@@ -184,59 +129,47 @@ const UserFilesView = ({ currentTheme, user }) => {
             </Row>
           </Card.Header>
           <Card.Body className="p-0">
-            {loading ? <div className="text-center p-5"><Spinner animation="border" /></div> : (
-              <Table hover className={`mb-0 ${isDark ? "table-dark" : ""}`}>
-                <thead>
-                  <tr>
-                    <th className="ps-4">#</th>
-                    <th>File Name</th>
-                    <th>Size</th>
-                    <th>Date Created</th>
-                    <th className="text-center">Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredFiles.length > 0 ? filteredFiles.map((file, idx) => (
-                    <tr 
-                      key={file._id || idx} 
-                      className="align-middle" 
-                      style={{ opacity: file.isDisabled ? 0.7 : 1 }}
-                    >
-                      <td className="ps-4 text-muted">{idx + 1}</td>
-                      <td className={file.isDisabled ? "text-muted text-decoration-line-through" : "fw-bold"}>
-                        {file.originalName || file.name} 
-                        {file.isDisabled && <Badge bg="danger" className="ms-2">Disabled</Badge>}
-                      </td>
-                      <td>{file.size ? (file.size / 1024).toFixed(2) + " KB" : "0 KB"}</td>
-                      <td>{file.createdAt ? new Date(file.createdAt).toLocaleString() : "N/A"}</td>
-                      <td className="text-center">
-                        <div className="d-flex justify-content-center gap-2">
+            <Table hover className={`mb-0 ${isDark ? "table-dark" : ""}`}>
+              <thead>
+                <tr>
+                  <th className="ps-4">#</th>
+                  <th>File Name</th>
+                  <th>Size</th>
+                  <th className="text-center">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredFiles.map((file, idx) => (
+                  <tr key={file._id} style={{ opacity: file.isDisabled ? 0.6 : 1 }}>
+                    <td className="ps-4 text-muted">{idx + 1}</td>
+                    <td className={file.isDisabled ? "text-decoration-line-through text-muted" : "fw-bold"}>
+                      {file.originalName} {file.isDisabled && <Badge bg="danger" className="ms-2">Disabled</Badge>}
+                    </td>
+                    <td>{(file.size / 1024).toFixed(2)} KB</td>
+                    <td className="text-center">
+                      <div className="d-flex justify-content-center gap-2">
+                        <Button variant="outline-primary" size="sm" onClick={() => handleViewFile(file)}><Visibility fontSize="small" /></Button>
+                        {canManageFiles && (
                           <Button 
-                            variant="outline-primary" 
+                            variant={file.isDisabled ? "outline-success" : "outline-danger"} 
                             size="sm" 
-                            onClick={() => handleViewFile(file)}
-                            title="View File"
+                            onClick={() => toggleFileStatus(file._id, file.isDisabled)}
+                            title={file.isDisabled ? "Enable File" : "Disable File"}
                           >
-                            <Visibility fontSize="small" />
+                            {file.isDisabled ? <CheckCircle fontSize="small" /> : <Block fontSize="small" />}
                           </Button>
-
-                          {canManageFiles && (
-                            <Button 
-                              variant={file.isDisabled ? "outline-success" : "outline-danger"} 
-                              size="sm" 
-                              onClick={() => toggleFileStatus(file._id, file.isDisabled)}
-                              title={file.isDisabled ? "Enable File" : "Disable File"}
-                            >
-                              {file.isDisabled ? <CheckCircle fontSize="small" /> : <Block fontSize="small" />}
-                            </Button>
-                          )}
-                        </div>
-                      </td>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {filteredFiles.length === 0 && !loading && (
+                    <tr>
+                        <td colSpan="4" className="text-center py-4 text-muted">No files found for this user.</td>
                     </tr>
-                  )) : <tr><td colSpan="5" className="text-center py-5">No files found for this user.</td></tr>}
-                </tbody>
-              </Table>
-            )}
+                )}
+              </tbody>
+            </Table>
           </Card.Body>
         </Card>
       </div>

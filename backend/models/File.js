@@ -16,10 +16,10 @@ const FileSchema = new mongoose.Schema(
     uploadedAt: { type: Date, default: Date.now },
     departmentId: { type: mongoose.Schema.Types.ObjectId, ref: "Department" },
     isStarred: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User', default: [] }],
-    isDisabled: { type: Boolean, default: false }, // For toggle functionality
+    isDisabled: { type: Boolean, default: false }, // For admin toggle functionality
     deletedAt: { type: Date, default: null },
 
-    // --- NEW FIELDS FOR TRANSFER LOGIC ---
+    // --- TRANSFER LOGIC FIELDS ---
     transferStatus: { 
       type: String, 
       enum: ['none', 'pending', 'received'], 
