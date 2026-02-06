@@ -3,7 +3,7 @@ import axios from 'axios';
 import { Badge, Row, Col, Spinner, Card } from 'react-bootstrap';
 import { Eye, FileEarmarkText, BookmarkStarFill, ArrowLeftRight, Database, Activity } from 'react-bootstrap-icons'; 
 import '../styles/FileDashboard.css';
-import '../styles/VenturesPage.css'; // Importing this to use existing dark mode styles
+import '../styles/VenturesPage.css'; 
 
 const BACKEND_URL = "http://localhost:5000"; 
 
@@ -13,18 +13,18 @@ const FileDashboard = ({ user, currentTheme }) => {
     
     const isDarkMode = currentTheme === 'dark';
 
-    // Updated theme to align with VenturesPage style
     const theme = {
         textMain: isDarkMode ? '#ffffff' : '#212529',
         textMuted: isDarkMode ? '#a0a0a0' : '#6c757d',
-        cardBg: isDarkMode ? '#212529' : '#ffffff', // Matches card bg in Ventures
+        cardBg: isDarkMode ? '#212529' : '#ffffff',
         border: isDarkMode ? '#383838' : '#f0f0f0',
-        wrapperBg: isDarkMode ? '#121212' : '#f8f9fa' // Deep dark background
+        wrapperBg: isDarkMode ? '#121212' : '#f8f9fa'
     };
 
     const fetchData = useCallback(async () => {
         if (!user?._id) return; 
         try {
+            // Fetching files directly to get accurate counts
             const response = await axios.get(`${BACKEND_URL}/api/files?all=true&userId=${user._id}`);
             if (response.data.success) {
                 setUploadedFiles(response.data.files);
@@ -39,49 +39,56 @@ const FileDashboard = ({ user, currentTheme }) => {
     useEffect(() => { fetchData(); }, [fetchData]);
 
     const handleViewFile = async (file) => {
-        if (!file.path) return;
+        if (!file.filename) return;
         try {
-            const trackRes = await axios.post(`${BACKEND_URL}/api/files/track-view`, { 
+            await axios.post(`${BACKEND_URL}/api/files/track-view`, { 
                 fileId: file._id, 
                 userId: user?._id 
             });
-
-            const finalPath = file.path.startsWith('/uploads') ? file.path : `/uploads/${file.path}`;
-            window.open(`${BACKEND_URL}${finalPath.replace(/\\/g, '/')}`, '_blank');
-            
-            if (trackRes.data.success) {
-                fetchData(); 
-            }
+            const ownerName = file.username || file.uploadedByUsername || "Admin";
+            window.open(`${BACKEND_URL}/uploads/${ownerName}/${encodeURIComponent(file.filename)}`, '_blank');
+            fetchData(); 
         } catch (err) {
-            console.error("Error opening file:", err);
+            const ownerName = file.username || file.uploadedByUsername || "Admin";
+            window.open(`${BACKEND_URL}/uploads/${ownerName}/${encodeURIComponent(file.filename)}`, '_blank');
         }
     };
 
+    // Calculate stats based on fetched data
+    const stats = useMemo(() => {
+        // Filter to count only files belonging to this user or department
+        const totalFiles = uploadedFiles.length;
+        const totalSize = uploadedFiles.reduce((acc, f) => acc + (Number(f.size) || 0), 0);
+        
+        // Count starred files (matches star logic in UploadFilePage)
+        const impCount = uploadedFiles.filter(f => 
+            Array.isArray(f.isStarred) ? f.isStarred.includes(user?._id) : f.isStarred
+        ).length;
+
+        return { 
+            totalFiles, 
+            totalMB: (totalSize / (1024 * 1024)).toFixed(2), 
+            impCount 
+        };
+    }, [uploadedFiles, user?._id]);
+
     const recentlyViewed = useMemo(() => {
         return [...uploadedFiles]
-            .filter(f => f.lastViewedAt !== null && f.lastViewedAt !== undefined) 
+            .filter(f => f.lastViewedAt) 
             .sort((a, b) => new Date(b.lastViewedAt) - new Date(a.lastViewedAt))
             .slice(0, 8);
     }, [uploadedFiles]);
 
     const recentlyTransferred = useMemo(() => {
         return [...uploadedFiles]
-            .filter(f => f.sharedWith?.includes(user._id) || (f.uploadedBy?._id === user._id && f.username !== user.username))
+            .filter(f => f.transferStatus === 'received')
             .sort((a, b) => new Date(b.updatedAt || b.createdAt) - new Date(a.updatedAt || a.createdAt))
             .slice(0, 8);
-    }, [uploadedFiles, user._id, user.username]);
-
-    const stats = useMemo(() => {
-        const totalFiles = uploadedFiles.length;
-        const totalSize = uploadedFiles.reduce((acc, f) => acc + (Number(f.size) || 0), 0);
-        const impCount = uploadedFiles.filter(f => f.isStarred).length;
-        return { totalFiles, totalMB: (totalSize / (1024 * 1024)).toFixed(2), impCount };
     }, [uploadedFiles]);
 
     if (loading) return <div className="p-5 text-center"><Spinner animation="border" variant="primary" /></div>;
 
     return (
-        /* Added 'p-4' and theme-based styling to match VenturesPage layout */
         <div className={`dashboard-wrapper pb-5 ${isDarkMode ? 'bg-dark' : ''}`} 
              style={{ backgroundColor: theme.wrapperBg, minHeight: '100vh', color: theme.textMain }}> 
             
@@ -110,12 +117,11 @@ const FileDashboard = ({ user, currentTheme }) => {
                 </Row>
 
                 <Row className="g-4 align-items-stretch">
-                    {/* LEFT COLUMN: RECENTLY VIEWED */}
                     <Col lg={8} className="d-flex">
                         <Card className={`border-0 shadow-sm w-100 ${isDarkMode ? 'bg-dark border border-secondary' : ''}`} 
                               style={{ backgroundColor: theme.cardBg }}>
                             <Card.Header className={`bg-transparent border-0 pt-3 ${isDarkMode ? 'border-bottom border-secondary' : ''}`}>
-                                <h6 className={`fw-bold ${isDarkMode ? 'text-white' : ''}`} style={{ color: !isDarkMode ? theme.textMain : '' }}><Eye className="me-2 text-primary" /> Recently Viewed</h6>
+                                <h6 className={`fw-bold ${isDarkMode ? 'text-white' : ''}`}><Eye className="me-2 text-primary" /> Recently Viewed</h6>
                             </Card.Header>
                             <Card.Body className="px-0 pt-0">
                                 {recentlyViewed.length > 0 ? recentlyViewed.map(file => (
@@ -125,8 +131,7 @@ const FileDashboard = ({ user, currentTheme }) => {
                                         <div className="d-flex align-items-center">
                                             <FileEarmarkText className="me-3 text-primary" size={20} />
                                             <div>
-                                                {/* FIXED: Applied text-white class for dark mode to ensure file name is visible */}
-                                                <div className={`fw-semibold small ${isDarkMode ? 'text-white' : 'text-dark'}`}>{file.originalName}</div>
+                                                <div className={`fw-semibold small ${isDarkMode ? 'text-white' : 'text-dark'}`}>{file.originalName || file.filename}</div>
                                                 <div style={{ fontSize: '0.7rem', color: theme.textMuted }}>
                                                     Viewed: {new Date(file.lastViewedAt).toLocaleString()}
                                                 </div>
@@ -139,7 +144,6 @@ const FileDashboard = ({ user, currentTheme }) => {
                         </Card>
                     </Col>
 
-                    {/* RIGHT COLUMN: RECENT TRANSFERS */}
                     <Col lg={4} className="d-flex">
                         <Card className={`border-0 shadow-sm w-100 ${isDarkMode ? 'bg-dark border border-secondary' : ''}`} 
                               style={{ backgroundColor: theme.cardBg }}>
@@ -152,13 +156,12 @@ const FileDashboard = ({ user, currentTheme }) => {
                                          style={{ cursor: 'pointer' }}
                                          onClick={() => handleViewFile(file)}>
                                         <div className="d-flex justify-content-between align-items-center">
-                                            {/* FIXED: Applied text-white for dark mode here as well */}
-                                            <span className={`fw-semibold small text-truncate ${isDarkMode ? 'text-white' : 'text-dark'}`} style={{ maxWidth: '70%' }}>{file.originalName}</span>
+                                            <span className={`fw-semibold small text-truncate ${isDarkMode ? 'text-white' : 'text-dark'}`} style={{ maxWidth: '70%' }}>{file.originalName || file.filename}</span>
                                             <Badge bg="info" style={{ fontSize: '0.6rem' }}>RECEIVED</Badge>
                                         </div>
                                         <div className="mt-1 d-flex justify-content-between" style={{ fontSize: '0.65rem', color: theme.textMuted }}>
-                                            <span>From: {file.username}</span>
-                                            <span>{new Date(file.createdAt).toLocaleDateString()}</span>
+                                            <span>From: {file.username || "System"}</span>
+                                            <span>{new Date(file.updatedAt || file.createdAt).toLocaleDateString()}</span>
                                         </div>
                                     </div>
                                 )) : <div className="text-center py-5 small" style={{ color: theme.textMuted }}>No recent transfers.</div>}

@@ -51,16 +51,6 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
     const [starredItems, setStarredItems] = useState({});
     const [isDeleting, setIsDeleting] = useState(false);
     const [refreshTrigger, setRefreshTrigger] = useState(0);
-const triggerRefresh = () => {
-    // Clear the current view so the user sees something is happening
-    setFoldersInCurrentView([]); 
-    setFilesInCurrentView([]);
-    
-    // Wait 500ms before triggering the fetch to allow backend to catch up
-    setTimeout(() => {
-        setRefreshTrigger(prev => prev + 1);
-    }, 500); 
-};
 
     const isDark = currentTheme === "dark";
     const userRole = (user?.role || "").toLowerCase();
@@ -68,10 +58,16 @@ const triggerRefresh = () => {
     const userDeptId = user?.departmentId || (isAdmin ? null : DEPARTMENT_ID);
     const currentUserId = user?._id || USER_ID;
 
-    // --- UPDATED LOAD CONTENT LOGIC ---
-const loadContent = useCallback(async (parentId) => {
+    const triggerRefresh = () => {
+        setFoldersInCurrentView([]); 
+        setFilesInCurrentView([]);
+        setTimeout(() => {
+            setRefreshTrigger(prev => prev + 1);
+        }, 500); 
+    };
+
+    const loadContent = useCallback(async (parentId) => {
         setItemsToTransfer({});
-        
         let params = { 
             userId: currentUserId,
             role: userRole, 
@@ -103,7 +99,6 @@ const loadContent = useCallback(async (parentId) => {
 
             const stars = {};
             const uid = user?._id || currentUserId;
-
             files.forEach(file => {
                 if (Array.isArray(file.isStarred) && file.isStarred.includes(uid)) {
                     stars[file._id] = true;
@@ -115,47 +110,29 @@ const loadContent = useCallback(async (parentId) => {
         }
     }, [currentUserId, userRole, isAdmin, userDeptId, viewMode, user?._id]);
 
-    // --- EFFECT: DATA FETCHING & POLLING ---
     useEffect(() => {
         loadContent(currentFolderId);
-
-        // Polling to catch Admin Approvals/Denials for the "Confirmation Notification"
-        const interval = setInterval(() => {
-            loadContent(currentFolderId);
-        }, 30000); 
-
-        return () => clearInterval(interval);
     }, [currentFolderId, loadContent, refreshTrigger]);
 
-   const handleFileUpload = async () => {
-    // FIX: Use the 'selectedFile' state instead of 'e'
-    if (!selectedFile) {
-        alert("Please select a file first");
-        return;
-    }
+    const handleFileUpload = async () => {
+        if (!selectedFile) return alert("Please select a file first");
+        const formData = new FormData();
+        formData.append("file", selectedFile);
+        formData.append("folderId", currentFolderId || "null");
+        formData.append("userId", currentUserId);
+        formData.append("username", user.username);
+        if (userDeptId) formData.append("departmentId", userDeptId);
 
-    const formData = new FormData();
-    formData.append("file", selectedFile); // Use state variable
-    formData.append("folderId", currentFolderId || "null");
-    formData.append("userId", currentUserId);
-    formData.append("username", user.username);
-    
-    if (userDeptId) {
-        formData.append("departmentId", userDeptId);
-    }
-
-    try {
-        await axios.post(`${BACKEND_URL}/api/files/upload`, formData, {
-            headers: { "Content-Type": "multipart/form-data" }
-        });
-        
-        setSelectedFile(null); // Clear the selection after success
-        triggerRefresh();// Refresh the list
-    } catch (err) {
-        console.error("Upload Error:", err.response?.data || err.message);
-        alert("Upload failed: " + (err.response?.data?.error || err.message));
-    }
-};
+        try {
+            await axios.post(`${BACKEND_URL}/api/files/upload`, formData, {
+                headers: { "Content-Type": "multipart/form-data" }
+            });
+            setSelectedFile(null);
+            triggerRefresh();
+        } catch (err) {
+            alert("Upload failed: " + (err.response?.data?.error || err.message));
+        }
+    };
 
     const fetchReceivedFiles = async () => {
         try {
@@ -163,59 +140,36 @@ const loadContent = useCallback(async (parentId) => {
             const rawData = response.data.data || { files: [], folders: [] };
             
             const folders = (rawData.folders || []).map(f => ({ 
-                ...f, 
-                isFolder: true, 
-                type: 'Folder', 
-                displayName: f.folderName || f.name, 
-                sender: f.senderId?.username || "System", 
-                senderRole: f.senderId?.role || "user" 
+                ...f, isFolder: true, type: 'Folder', displayName: f.folderName || f.name, 
+                sender: f.senderId?.username || "System", senderRole: f.senderId?.role || "user" 
             }));
 
             const files = (rawData.files || []).map(f => ({ 
-                ...f, 
-                isFolder: false, 
-                displayName: f.originalName || f.filename, 
-                sender: f.senderId?.username || "System", 
-                senderRole: f.senderId?.role || "user" 
+                ...f, isFolder: false, displayName: f.originalName || f.filename, 
+                sender: f.senderId?.username || "System", senderRole: f.senderId?.role || "user" 
             }));
 
             setReceivedItems([...folders, ...files]);
             setIsReceivedModalOpen(true);
         } catch (err) { 
-            console.error("Fetch Received Error:", err); 
             Swal.fire("Error", "Could not load received files.", "error"); 
         }
     };
 
-  const handleToggleStar = async (e, item) => {
-    e.stopPropagation();
-    
-    // 1. Validation: Ensure the ID exists and is 24 characters long
-    // MongoDB ObjectIds must be exactly 24 hex characters
-    if (!currentUserId || currentUserId.length !== 24) {
-        console.error("Invalid User ID format. Cannot star file.");
-        return Swal.fire("Error", "User session invalid. Please re-login.", "error");
-    }
+    const handleToggleStar = async (e, item) => {
+        e.stopPropagation();
+        const isCurrentlyStarred = starredItems[item._id] || false;
+        const newStarredState = !isCurrentlyStarred;
+        setStarredItems(prev => ({ ...prev, [item._id]: newStarredState }));
+        try {
+            await axios.patch(`${BACKEND_URL}/api/files/star/${item._id}`, { 
+                userId: currentUserId, isStarred: newStarredState 
+            });
+        } catch (err) {
+            setStarredItems(prev => ({ ...prev, [item._id]: isCurrentlyStarred }));
+        }
+    };
 
-    const isCurrentlyStarred = starredItems[item._id] || false;
-    const newStarredState = !isCurrentlyStarred;
-
-    // UI Optimistic Update
-    setStarredItems(prev => ({ ...prev, [item._id]: newStarredState }));
-
-    try {
-        // 2. Send the technical _id and the toggle flag
-        await axios.patch(`${BACKEND_URL}/api/files/star/${item._id}`, { 
-            userId: currentUserId, // Must be the 24-char ObjectId string
-            isStarred: newStarredState 
-        });
-       
-    } catch (err) {
-        // Rollback on failure
-        setStarredItems(prev => ({ ...prev, [item._id]: isCurrentlyStarred }));
-        console.error("Star toggle failed:", err.response?.data || err.message);
-    }
-};
     const handleSelectAll = (e) => {
         const isChecked = e.target.checked;
         if (isChecked) {
@@ -228,8 +182,11 @@ const loadContent = useCallback(async (parentId) => {
     const handleDeleteItemTrigger = async (item) => {
         const { value: formValues } = await Swal.fire({
             title: 'Request Deletion',
-            html: `<p class="small text-muted">Requesting to delete: <b>${item.displayName || item.originalName}</b></p>` + `<input id="swal-password" type="password" class="swal2-input" placeholder="Confirm Password">` + `<textarea id="swal-reason" class="swal2-textarea" placeholder="Reason for deletion..."></textarea>`,
-            focusConfirm: false, showCancelButton: true, confirmButtonText: 'Submit Request', confirmButtonColor: '#dc3545', background: isDark ? '#2d2d2d' : '#fff', color: isDark ? '#fff' : '#000',
+            html: `<p class="small text-muted">Requesting to delete: <b>${item.displayName}</b></p>` + 
+                 `<input id="swal-password" type="password" class="swal2-input" placeholder="Confirm Password">` + 
+                 `<textarea id="swal-reason" class="swal2-textarea" placeholder="Reason for deletion..."></textarea>`,
+            focusConfirm: false, showCancelButton: true, confirmButtonText: 'Submit Request', confirmButtonColor: '#dc3545',
+            background: isDark ? '#2d2d2d' : '#fff', color: isDark ? '#fff' : '#000',
             preConfirm: () => {
                 const password = document.getElementById('swal-password').value;
                 const reason = document.getElementById('swal-reason').value;
@@ -240,26 +197,26 @@ const loadContent = useCallback(async (parentId) => {
         if (formValues) {
             try {
                 await axios.post(`${BACKEND_URL}/api/users/verify-password`, { userId: currentUserId, password: formValues.password });
-                await axios.post(`${BACKEND_URL}/api/requests/create`, { requestType: "delete", senderUsername: user?.username || "Unknown", senderRole: user?.role || "user", departmentId: userDeptId, fileIds: [item._id], reason: formValues.reason });
-
+                await axios.post(`${BACKEND_URL}/api/requests/create`, { 
+                    requestType: "delete", senderUsername: user?.username, senderRole: user?.role, 
+                    departmentId: userDeptId, fileIds: [item._id], reason: formValues.reason 
+                });
                 triggerRefresh();
-
-                Swal.fire({ title: "Req.uest Sent", text: "Your deletion request is pending admin approval.", icon: "success", background: isDark ? '#2d2d2d' : '#fff', color: isDark ? '#fff' : '#000' });
+                Swal.fire("Success", "Deletion request pending admin approval.", "success");
             } catch (err) { Swal.fire("Error", "Incorrect password or submission error.", "error"); }
         }
     };
 
     const executeBulkDeleteRequest = async () => {
         const selectedIds = Object.keys(itemsToTransfer).filter(id => itemsToTransfer[id]);
-        if (selectedIds.length === 0) return Swal.fire("Info", "No items selected.", "info");
+        if (selectedIds.length === 0) return;
         const { value: formValues } = await Swal.fire({
-            title: 'Confirm Bulk Deletion Request',
-            html: `<p class="small text-muted">Requesting to delete <b>${selectedIds.length}</b> items</p>` + `<input id="bulk-swal-password" type="password" class="swal2-input" placeholder="Confirm Password">` + `<textarea id="bulk-swal-reason" class="swal2-textarea" placeholder="Reason for bulk deletion..."></textarea>`,
-            focusConfirm: false, showCancelButton: true, confirmButtonText: 'Send Bulk Request', confirmButtonColor: '#dc3545', background: isDark ? '#2d2d2d' : '#fff', color: isDark ? '#fff' : '#000',
+            title: 'Confirm Bulk Deletion',
+            html: `<input id="bulk-pw" type="password" class="swal2-input" placeholder="Password"><textarea id="bulk-re" class="swal2-textarea" placeholder="Reason..."></textarea>`,
             preConfirm: () => {
-                const password = document.getElementById('bulk-swal-password').value;
-                const reason = document.getElementById('bulk-swal-reason').value;
-                if (!password || !reason) { Swal.showValidationMessage('Password and reason are required'); return false; }
+                const password = document.getElementById('bulk-pw').value;
+                const reason = document.getElementById('bulk-re').value;
+                if (!password || !reason) { Swal.showValidationMessage('Required'); return false; }
                 return { password, reason };
             }
         });
@@ -267,27 +224,30 @@ const loadContent = useCallback(async (parentId) => {
             setIsDeleting(true);
             try {
                 await axios.post(`${BACKEND_URL}/api/users/verify-password`, { userId: currentUserId, password: formValues.password });
-                await axios.post(`${BACKEND_URL}/api/requests/create`, { requestType: "delete", senderUsername: user?.username || "Admin", senderRole: user?.role || "user", departmentId: userDeptId, fileIds: selectedIds, reason: formValues.reason });
-                Swal.fire({ title: "Success", text: "Bulk deletion request submitted.", icon: "success", background: isDark ? '#2d2d2d' : '#fff', color: isDark ? '#fff' : '#000' });
-                setItemsToTransfer({}); loadContent(currentFolderId);
-            } catch (err) { Swal.fire("Error", "Error submitting request.", "error"); } finally { setIsDeleting(false); }
+                await axios.post(`${BACKEND_URL}/api/requests/create`, { 
+                    requestType: "delete", senderUsername: user?.username, senderRole: user?.role, 
+                    departmentId: userDeptId, fileIds: selectedIds, reason: formValues.reason 
+                });
+                setItemsToTransfer({});
+                triggerRefresh();
+                Swal.fire("Sent", "Bulk request submitted.", "success");
+            } catch (err) { Swal.fire("Error", "Action failed", "error"); } finally { setIsDeleting(false); }
         }
     };
 
     const handleViewFile = async (file) => {
-        if (file.isDisabled && !isAdmin) return Swal.fire({ icon: 'error', title: 'File Restricted', text: 'This file is disabled.', background: isDark ? '#2d2d2d' : '#fff', color: isDark ? '#fff' : '#000' });
+        if (file.isDisabled && !isAdmin) return Swal.fire("Restricted", "File disabled", "error");
         try {
             await axios.post(`${BACKEND_URL}/api/files/track-view`, { fileId: file._id, userId: currentUserId });
-            const ownerName = file.username || file.uploadedByUsername || file.senderUsername || "Admin";
-            window.open(`${BACKEND_URL}/uploads/${ownerName}/${encodeURIComponent(file.filename)}`, '_blank');
+            const owner = file.username || file.uploadedByUsername || "Admin";
+            window.open(`${BACKEND_URL}/uploads/${owner}/${encodeURIComponent(file.filename)}`, '_blank');
         } catch (err) { 
-            const ownerName = file.username || file.uploadedByUsername || file.senderUsername || "Admin";
-            window.open(`${BACKEND_URL}/uploads/${ownerName}/${encodeURIComponent(file.filename)}`, '_blank'); 
+            const owner = file.username || file.uploadedByUsername || "Admin";
+            window.open(`${BACKEND_URL}/uploads/${owner}/${encodeURIComponent(file.filename)}`, '_blank'); 
         }
     };
 
     const handleDownload = async (file) => {
-        if (file.isDisabled && !isAdmin) return Swal.fire({ icon: 'error', title: 'Restricted', text: 'File disabled.' });
         try {
             const response = await axios({ url: `${BACKEND_URL}/api/files/download/${file._id}`, method: 'GET', responseType: 'blob' });
             const url = window.URL.createObjectURL(new Blob([response.data]));
@@ -297,41 +257,26 @@ const loadContent = useCallback(async (parentId) => {
         } catch (err) { alert("Download failed."); }
     };
 
-  const handleCreateFolder = async () => {
-    if (!folderName) return alert("Enter name");
-    
-    const username = user?.username || "";
-    const isSpecialUser = username.startsWith("s-") || username.startsWith("a-");
+    const handleCreateFolder = async () => {
+        if (!folderName) return;
+        try {
+            await axios.post(`${BACKEND_URL}/api/folders/create`, { 
+                name: folderName, parent: currentFolderId, createdBy: currentUserId, 
+                departmentId: userDeptId, username: user.username 
+            });
+            setFolderName(""); triggerRefresh();
+        } catch (err) { alert("Error creating folder"); }
+    };
 
-    // If Admin/SuperAdmin, you MUST provide a placeholder Dept ID if the model is strict
-    const deptToSubmit = isSpecialUser ? (userDeptId || "000000000000000000000000") : userDeptId;
-
-    try {
-        const payload = { 
-            name: folderName, // Sent as 'name', backend controller maps to 'folderName'
-            parent: currentFolderId || null, 
-            createdBy: currentUserId, 
-            departmentId: deptToSubmit, // MUST be a 24-char hex string
-            username: username // To help the backend identify flags
-        };
-
-        await axios.post(`${BACKEND_URL}/api/folders/create`, payload);
-        setFolderName(""); 
-        triggerRefresh();
-    } catch (err) { 
-        console.error("Creation Error:", err.response?.data?.error); 
-    }
-};
     const handleFolderClick = (folder) => {
         setCurrentFolderId(folder._id);
-        setCurrentPath((prev) => [...prev, { _id: folder._id, name: folder.folderName || folder.name }]);
+        setCurrentPath(prev => [...prev, { _id: folder._id, name: folder.displayName }]);
     };
 
     const handlePathClick = (item) => {
         const index = currentPath.findIndex(p => p._id === item._id);
         if (index !== -1) {
-            const newPath = currentPath.slice(0, index + 1);
-            setCurrentPath(newPath);
+            setCurrentPath(currentPath.slice(0, index + 1));
             setCurrentFolderId(item._id);
         }
     };
@@ -348,7 +293,7 @@ const loadContent = useCallback(async (parentId) => {
     const handleSelectItem = (id) => { setItemsToTransfer(prev => ({ ...prev, [id]: !prev[id] })); };
 
     const foldersMapped = foldersInCurrentView.map(f => ({ ...f, type: 'Folder', displayName: f.folderName || f.name }));
-    const filesMapped = filesInCurrentView.map(f => ({ ...f, type: f.mimeType || 'File', displayName: f.originalName || f.filename || "Unnamed" }));
+    const filesMapped = filesInCurrentView.map(f => ({ ...f, type: f.mimeType || 'File', displayName: f.originalName || f.filename }));
     let combinedItems = [...foldersMapped, ...filesMapped];
     if (searchQuery) combinedItems = combinedItems.filter(item => item.displayName.toLowerCase().includes(searchQuery.toLowerCase()));
     const selectedCount = Object.values(itemsToTransfer).filter(Boolean).length;
@@ -357,68 +302,64 @@ const loadContent = useCallback(async (parentId) => {
     return (
         <div className={`file-explorer-app-single-pane ${isDark ? "dark-theme" : "light-theme"}`}>
             <main className="main-content">
-              <header className="main-header mb-2"> {/* Reduced margin from mb-4 to mb-2 */}
-    <div className="d-flex align-items-center justify-content-between w-100">
-        <h3 className="text-dashboard-style">
-            {/* REMOVED ICON AS REQUESTED */}
-            {viewMode === "important" ? "Important Files" : "File Manager"}
-        </h3>
-        
-        {viewMode !== "important" && (
-            <button className={`btn ${isDark ? 'btn-outline-light' : 'btn-outline-primary'} border-2 fw-bold px-4 rounded-pill`} onClick={fetchReceivedFiles}>
-                <i className="fas fa-inbox me-2"></i> Received
-            </button>
-        )}
-    </div>
-</header>
+                <header className="main-header mb-2">
+                    <div className="d-flex align-items-center justify-content-between w-100">
+                        <h3 className="text-dashboard-style">
+                            {viewMode === "important" ? "Important Files" : "File Manager"}
+                        </h3>
+                        {viewMode !== "important" && (
+                            <button className={`btn ${isDark ? 'btn-outline-light' : 'btn-outline-primary'} border-2 fw-bold px-4 rounded-pill`} onClick={fetchReceivedFiles}>
+                                <i className="fas fa-inbox me-2"></i> Received
+                            </button>
+                        )}
+                    </div>
+                </header>
 
-<div className={`main-actions-toolbar ${isDark ? 'dark-toolbar' : ''} mb-3`}>
-    {viewMode !== "important" ? (
-        <>
-            <div className="action-group create-group d-flex align-items-center has-right-border">
-                <button className={`btn btn-sm ${isDark ? 'btn-secondary text-white' : 'btn-outline-secondary'} me-2`} onClick={handleGoBack} disabled={currentFolderId === null}>
-                    <i className="fas fa-arrow-left"></i>
-                </button>
-                <input type="text" placeholder="New folder..." value={folderName} onChange={(e) => setFolderName(e.target.value)} className="create-input" />
-                <button onClick={handleCreateFolder} className="create-btn">Create</button>
-            </div>
-            
-            {currentFolderId !== null && (
-                <div className="action-group upload-group d-flex align-items-center ms-2">
-                    <label className="btn btn-sm btn-outline-primary mb-0 py-1 px-2 d-flex align-items-center justify-content-center" htmlFor="file-input" style={{ fontSize: '0.85rem', cursor: 'pointer', height: '31px', minWidth: '90px' }}>
-                        <i className="fas fa-plus-circle me-1"></i> {selectedFile ? "Ready" : "Add File"}
-                    </label>
-                    <input id="file-input" type="file" onChange={(e) => setSelectedFile(e.target.files[0])} hidden />
-                    <button onClick={handleFileUpload} disabled={!selectedFile} className="btn btn-sm btn-primary ms-1 py-1 px-2" style={{ fontSize: '0.85rem', height: '31px' }}>Upload</button>
+                <div className={`main-actions-toolbar ${isDark ? 'dark-toolbar' : ''} mb-3`}>
+                    {viewMode !== "important" ? (
+                        <>
+                            <div className="action-group create-group d-flex align-items-center has-right-border">
+                                <button className={`btn btn-sm ${isDark ? 'btn-secondary text-white' : 'btn-outline-secondary'} me-2`} onClick={handleGoBack} disabled={currentFolderId === null}>
+                                    <i className="fas fa-arrow-left"></i>
+                                </button>
+                                <input type="text" placeholder="New folder..." value={folderName} onChange={(e) => setFolderName(e.target.value)} className="create-input" />
+                                <button onClick={handleCreateFolder} className="create-btn">Create</button>
+                            </div>
+                            {currentFolderId !== null && (
+                                <div className="action-group upload-group d-flex align-items-center ms-2">
+                                    <label className="btn btn-sm btn-outline-primary mb-0 py-1 px-2 d-flex align-items-center" htmlFor="file-input" style={{ cursor: 'pointer', height: '31px' }}>
+                                        <i className="fas fa-plus-circle me-1"></i> {selectedFile ? "Ready" : "Add File"}
+                                    </label>
+                                    <input id="file-input" type="file" onChange={(e) => setSelectedFile(e.target.files[0])} hidden />
+                                    <button onClick={handleFileUpload} disabled={!selectedFile} className="btn btn-sm btn-primary ms-1" style={{ height: '31px' }}>Upload</button>
+                                </div>
+                            )}
+                        </>
+                    ) : (
+                        <div className="action-group d-flex align-items-center">
+                            <i className="fas fa-star text-warning me-2"></i>
+                            <span className={isDark ? "text-light-50 small" : "text-muted small"}>Starred items from all folders.</span>
+                        </div>
+                    )}
+                    <div className="action-group search-group ms-auto">
+                        <i className="fas fa-search search-icon ms-2"></i>
+                        <input type="text" placeholder="Search..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="search-input" />
+                    </div>
                 </div>
-            )}
-        </>
-    ) : (
-        <div className="action-group d-flex align-items-center">
-            <i className="fas fa-star text-warning me-2"></i>
-            <span className={isDark ? "text-light-50 small" : "text-muted small"}>Starred items from all folders.</span>
-        </div>
-    )}
-    <div className="action-group search-group ms-auto">
-        <i className="fas fa-search search-icon ms-2"></i>
-        <input type="text" placeholder="Search..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="search-input" />
-    </div>
-</div>
 
-{/* Breadcrumb now appears AFTER the toolbar to reduce the title-to-toolbar gap */}
-{viewMode !== "important" && (
-    <div className="breadcrumb-container px-1">
-        <nav aria-label="breadcrumb">
-            <ol className="breadcrumb mb-0 py-2"> {/* Thinner padding */}
-                {currentPath.map((item, index) => (
-                    <li key={item._id || index} className={`breadcrumb-item ${index === currentPath.length - 1 ? 'active' : ''}`} onClick={() => handlePathClick(item)} style={{ cursor: 'pointer' }}>
-                        {item.name}
-                    </li>
-                ))}
-            </ol>
-        </nav>
-    </div>
-)}
+                {viewMode !== "important" && (
+                    <div className="breadcrumb-container px-1">
+                        <nav aria-label="breadcrumb">
+                            <ol className="breadcrumb mb-0 py-2">
+                                {currentPath.map((item, index) => (
+                                    <li key={item._id || index} className={`breadcrumb-item ${index === currentPath.length - 1 ? 'active' : ''}`} onClick={() => handlePathClick(item)} style={{ cursor: 'pointer' }}>
+                                        {item.name}
+                                    </li>
+                                ))}
+                            </ol>
+                        </nav>
+                    </div>
+                )}
 
                 <div className="list-toolbar mt-1 d-flex justify-content-between align-items-center">
                     <h5 className="mb-0 fw-bold">{viewMode === "important" ? "Starred Content" : currentFolderId === null ? "Folders & Files" : "Files & Folders"}</h5>
@@ -452,7 +393,7 @@ const loadContent = useCallback(async (parentId) => {
                                     <td>{viewMode !== "important" && <input type="checkbox" checked={!!itemsToTransfer[item._id]} onChange={() => handleSelectItem(item._id)} className="form-check-input" />}</td>
                                     <td className={item.type === 'Folder' ? 'folder-row' : ''}>
                                         <div className="d-flex align-items-center">
-                                            <i className={`${item.type === 'Folder' ? 'fas fa-folder text-warning' : getFileIcon(item.type || item.mimeType)} file-icon me-3 fs-5`}></i>
+                                            <i className={`${item.type === 'Folder' ? 'fas fa-folder text-warning' : getFileIcon(item.type)} file-icon me-3 fs-5`}></i>
                                             <span className={`text-truncate ${item.isDisabled ? 'text-decoration-line-through text-muted' : ''}`} style={{ maxWidth: '250px' }}>{item.displayName}</span>
                                             {item.isDisabled && <span className="badge bg-danger ms-2" style={{ fontSize: '0.65rem' }}>Disabled</span>}
                                             {item.type !== 'Folder' && !item.isDisabled && (
@@ -465,9 +406,9 @@ const loadContent = useCallback(async (parentId) => {
                                     <td className="text-muted small">{item.type === 'Folder' ? '—' : formatBytes(item.size)}</td>
                                     <td className="text-end">
                                         <div className="d-flex gap-3 justify-content-end align-items-center">
-                                            {item.type !== 'Folder' && (
-                                                <button className="btn btn-link btn-sm p-0" onClick={() => handleViewFile(item)} style={{ cursor: item.isDisabled && !isAdmin ? 'not-allowed' : 'pointer' }}>
-                                                    <i className={`fas fa-eye ${item.isDisabled ? 'text-muted' : 'text-primary'}`}></i>
+                                            {item.type !== 'Folder' && !item.isDisabled && (
+                                                <button className="btn btn-link btn-sm p-0" onClick={() => handleViewFile(item)}>
+                                                    <i className="fas fa-eye text-primary"></i>
                                                 </button>
                                             )}
                                             <button className="btn btn-link btn-sm p-0" onClick={() => handleDeleteItemTrigger(item)}><i className="fas fa-trash text-danger"></i></button>
@@ -482,6 +423,7 @@ const loadContent = useCallback(async (parentId) => {
                 </div>
             </main>
 
+            {/* RECEIVED FILES MODAL */}
             {isReceivedModalOpen && (
                 <div className="modal-overlay">
                     <div className="received-files-modal shadow-lg" style={{ maxWidth: '900px', width: '95%', borderRadius: '12px', background: isDark ? '#2d2d2d' : 'white' }}>
@@ -516,11 +458,7 @@ const loadContent = useCallback(async (parentId) => {
                                             </td>
                                             <td className={isDark ? 'text-white-50' : 'text-muted'}><span className="fw-bold">{item.sender}</span></td>
                                             <td>
-                                                <span className={`badge ${
-                                                    ['superadmin', 'admin', 'hod'].includes(item.senderRole?.toLowerCase()) 
-                                                    ? 'bg-danger' 
-                                                    : 'bg-info'
-                                                } text-dark`}>
+                                                <span className={`badge ${['superadmin', 'admin', 'hod'].includes(item.senderRole?.toLowerCase()) ? 'bg-danger' : 'bg-info'} text-dark`}>
                                                     {(item.senderRole || 'User').toUpperCase()}
                                                 </span>
                                             </td>
@@ -528,8 +466,12 @@ const loadContent = useCallback(async (parentId) => {
                                                 <div className="d-flex gap-3 justify-content-end">
                                                     {!item.isFolder && (
                                                         <>
-                                                            <i className={`fas fa-eye action-icon ${item.isDisabled ? 'text-muted' : 'text-primary'}`} style={{ cursor: item.isDisabled && !isAdmin ? 'not-allowed' : 'pointer' }} onClick={() => handleViewFile(item)}></i>
-                                                            <i className={`fas fa-download action-icon ${item.isDisabled ? 'text-muted' : 'text-success'}`} style={{ cursor: item.isDisabled && !isAdmin ? 'not-allowed' : 'pointer' }} onClick={() => handleDownload(item)}></i>
+                                                            {!item.isDisabled && (
+                                                                <i className="fas fa-eye action-icon text-primary" style={{ cursor: 'pointer' }} onClick={() => handleViewFile(item)}></i>
+                                                            )}
+                                                            <i className={`fas fa-download action-icon ${item.isDisabled ? 'text-muted' : 'text-success'}`} 
+                                                               style={{ cursor: item.isDisabled && !isAdmin ? 'not-allowed' : 'pointer' }} 
+                                                               onClick={() => handleDownload(item)}></i>
                                                         </>
                                                     )}
                                                     <i className="fas fa-trash text-danger action-icon" style={{ cursor: 'pointer' }} onClick={() => handleDeleteItemTrigger(item)}></i>
