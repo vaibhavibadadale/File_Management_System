@@ -86,6 +86,52 @@ body, #root {
 .create-btn:hover {
     background-color: #1d4ed8;
 }
+/* Exact styles to match the Dashboard header from your screenshot */
+.text-dashboard-style {
+    color: #212529 !important;
+    font-size: 27px !important;
+    font-weight: 500 !important; /* Not bold */
+    letter-spacing: -0.5px;
+    margin-bottom: 10px !important; /* Tightened gap below title */
+}
+
+.main-actions-toolbar {
+    margin-bottom: 10px !important; /* Tightened gap below toolbar */
+    padding: 8px 20px !important; /* Slimmer toolbar */
+}
+
+.breadcrumb {
+    box-shadow: none !important; /* Cleaner look to reduce visual bulk */
+    background: transparent !important; 
+    padding-left: 0 !important;
+    margin-bottom: 5px !important;
+}
+/* Remove the large gap between Breadcrumb and Table Header */
+.breadcrumb-container {
+    margin-top: 0 !important;
+    margin-bottom: 5px !important;
+}
+
+.breadcrumb {
+    padding: 5px 0 !important; /* Thinner padding for Home bar */
+    margin-bottom: 0 !important;
+}
+
+/* Tighten the "Folders & Files" header area */
+.list-toolbar {
+    margin-top: 5px !important;
+    margin-bottom: 5px !important;
+    padding-top: 0 !important;
+}
+
+.file-table-container {
+    margin-top: 5px !important; /* Pulls the table closer to the header */
+}
+
+/* Ensure the main header doesn't push everything down */
+.main-header {
+    margin-bottom: 10px !important;
+}
 
 /* Upload File Group */
 .upload-group {
@@ -264,6 +310,7 @@ body, #root {
 .file-table tbody tr:hover {
     background-color: #f1f5f9;
 }
+
 
 /* ICON STYLING */
 .file-table .file-icon, .file-table .folder-icon {
