@@ -50,6 +50,17 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
     const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
     const [starredItems, setStarredItems] = useState({});
     const [isDeleting, setIsDeleting] = useState(false);
+    const [refreshTrigger, setRefreshTrigger] = useState(0);
+const triggerRefresh = () => {
+    // Clear the current view so the user sees something is happening
+    setFoldersInCurrentView([]); 
+    setFilesInCurrentView([]);
+    
+    // Wait 500ms before triggering the fetch to allow backend to catch up
+    setTimeout(() => {
+        setRefreshTrigger(prev => prev + 1);
+    }, 500); 
+};
 
     const isDark = currentTheme === "dark";
     const userRole = (user?.role || "").toLowerCase();
@@ -82,13 +93,11 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
             ]);
 
             // Simplified mapping: Backend now handles the permissions
-            const folders = (folderRes.data.folders || []).filter(f => 
-                f.transferStatus === 'none' || !f.transferStatus
-            );
+           const folders = (folderRes.data.folders || []).filter(f => 
+                f.transferStatus === 'none' || f.transferStatus === 'received' || !f.transferStatus);
             
             const files = (fileRes.data.files || []).filter(f => 
-                f.transferStatus === 'none' || !f.transferStatus
-            );
+                f.transferStatus === 'none' || f.transferStatus === 'received' || !f.transferStatus);
 
             setFoldersInCurrentView(folders);
             setFilesInCurrentView(files);
@@ -102,40 +111,46 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
             stars[file._id] = true;
            }
         });
-setStarredItems(stars);
-        } catch (err) { 
+        setStarredItems(stars);
+            } catch (err) { 
             console.error("Error loading content:", err); 
         }
     }, [currentUserId, userRole, isAdmin, userDeptId, viewMode]);
 
     useEffect(() => {
-        loadContent(currentFolderId);
-    }, [currentFolderId, loadContent]);
+        
+    loadContent(currentFolderId);
+}, [currentFolderId, loadContent, refreshTrigger]);
 
-    const handleFileUpload = async () => {
-        if (!selectedFile) return alert("Select a file.");
-        const formData = new FormData();
-        formData.append("username", user?.username || "Admin");
-        formData.append("folderId", currentFolderId || "null");
-        formData.append("uploadedBy", currentUserId);
-        formData.append("departmentId", userDeptId || "");
-        formData.append("file", selectedFile);
-        formData.append("transferStatus", "none");
+   const handleFileUpload = async () => {
+    // FIX: Use the 'selectedFile' state instead of 'e'
+    if (!selectedFile) {
+        alert("Please select a file first");
+        return;
+    }
 
-        try {
-            await axios.post(`${BACKEND_URL}/api/files/upload`, formData);
-            setSelectedFile(null); 
-            const fileInput = document.getElementById('file-input');
-            if (fileInput) fileInput.value = "";
-            
-            setTimeout(() => loadContent(currentFolderId), 500);
-            
-            Swal.fire({ title: "Success", text: "File uploaded successfully.", icon: "success", timer: 1500, showConfirmButton: false });
-        } catch (err) { 
-            console.error(err);
-            alert("Upload failed."); 
-        }
-    };
+    const formData = new FormData();
+    formData.append("file", selectedFile); // Use state variable
+    formData.append("folderId", currentFolderId || "null");
+    formData.append("userId", currentUserId);
+    formData.append("username", user.username);
+    
+    if (userDeptId) {
+        formData.append("departmentId", userDeptId);
+    }
+
+    try {
+        await axios.post(`${BACKEND_URL}/api/files/upload`, formData, {
+            headers: { "Content-Type": "multipart/form-data" }
+        });
+        
+        setSelectedFile(null); // Clear the selection after success
+        triggerRefresh();// Refresh the list
+    } catch (err) {
+        console.error("Upload Error:", err.response?.data || err.message);
+        alert("Upload failed: " + (err.response?.data?.error || err.message));
+    }
+};
 
     const fetchReceivedFiles = async () => {
         try {
@@ -189,6 +204,7 @@ setStarredItems(stars);
             userId: currentUserId, // Must be the 24-char ObjectId string
             isStarred: newStarredState 
         });
+       
     } catch (err) {
         // Rollback on failure
         setStarredItems(prev => ({ ...prev, [item._id]: isCurrentlyStarred }));
@@ -220,6 +236,9 @@ setStarredItems(stars);
             try {
                 await axios.post(`${BACKEND_URL}/api/users/verify-password`, { userId: currentUserId, password: formValues.password });
                 await axios.post(`${BACKEND_URL}/api/requests/create`, { requestType: "delete", senderUsername: user?.username || "Unknown", senderRole: user?.role || "user", departmentId: userDeptId, fileIds: [item._id], reason: formValues.reason });
+
+                triggerRefresh();
+
                 Swal.fire({ title: "Req.uest Sent", text: "Your deletion request is pending admin approval.", icon: "success", background: isDark ? '#2d2d2d' : '#fff', color: isDark ? '#fff' : '#000' });
             } catch (err) { Swal.fire("Error", "Incorrect password or submission error.", "error"); }
         }
@@ -273,14 +292,31 @@ setStarredItems(stars);
         } catch (err) { alert("Download failed."); }
     };
 
-    const handleCreateFolder = async () => {
-        if (!folderName) return alert("Enter name");
-        try {
-            await axios.post(`${BACKEND_URL}/api/folders/create`, { name: folderName, parent: currentFolderId || null, createdBy: currentUserId, uploadedBy: currentUserId, departmentId: userDeptId || null, transferStatus: 'none' });
-            setFolderName(""); await loadContent(currentFolderId);
-        } catch (err) { console.error(err); }
-    };
+  const handleCreateFolder = async () => {
+    if (!folderName) return alert("Enter name");
+    
+    const username = user?.username || "";
+    const isSpecialUser = username.startsWith("s-") || username.startsWith("a-");
 
+    // If Admin/SuperAdmin, you MUST provide a placeholder Dept ID if the model is strict
+    const deptToSubmit = isSpecialUser ? (userDeptId || "000000000000000000000000") : userDeptId;
+
+    try {
+        const payload = { 
+            name: folderName, // Sent as 'name', backend controller maps to 'folderName'
+            parent: currentFolderId || null, 
+            createdBy: currentUserId, 
+            departmentId: deptToSubmit, // MUST be a 24-char hex string
+            username: username // To help the backend identify flags
+        };
+
+        await axios.post(`${BACKEND_URL}/api/folders/create`, payload);
+        setFolderName(""); 
+        triggerRefresh();
+    } catch (err) { 
+        console.error("Creation Error:", err.response?.data?.error); 
+    }
+};
     const handleFolderClick = (folder) => {
         setCurrentFolderId(folder._id);
         setCurrentPath((prev) => [...prev, { _id: folder._id, name: folder.folderName || folder.name }]);
@@ -316,65 +352,70 @@ setStarredItems(stars);
     return (
         <div className={`file-explorer-app-single-pane ${isDark ? "dark-theme" : "light-theme"}`}>
             <main className="main-content">
-                <header className="main-header mb-4">
-                    <div className="d-flex align-items-center justify-content-between w-100">
-                        <h1 className="mb-0">{viewMode === "important" ? "⭐ Important Files" : "📁 File Manager"}</h1>
-                        {viewMode !== "important" && (
-                            <button className={`btn ${isDark ? 'btn-outline-light' : 'btn-outline-primary'} border-2 fw-bold px-4 rounded-pill`} onClick={fetchReceivedFiles}>
-                                <i className="fas fa-inbox me-2"></i> Received
-                            </button>
-                        )}
-                    </div>
-                </header>
+              <header className="main-header mb-2"> {/* Reduced margin from mb-4 to mb-2 */}
+    <div className="d-flex align-items-center justify-content-between w-100">
+        <h3 className="text-dashboard-style">
+            {/* REMOVED ICON AS REQUESTED */}
+            {viewMode === "important" ? "Important Files" : "File Manager"}
+        </h3>
+        
+        {viewMode !== "important" && (
+            <button className={`btn ${isDark ? 'btn-outline-light' : 'btn-outline-primary'} border-2 fw-bold px-4 rounded-pill`} onClick={fetchReceivedFiles}>
+                <i className="fas fa-inbox me-2"></i> Received
+            </button>
+        )}
+    </div>
+</header>
 
-                <div className={`main-actions-toolbar ${isDark ? 'dark-toolbar' : ''}`}>
-                    {viewMode !== "important" ? (
-                        <>
-                            <div className="action-group create-group d-flex align-items-center has-right-border">
-                                <button className={`btn btn-sm ${isDark ? 'btn-secondary text-white' : 'btn-outline-secondary'} me-2`} onClick={handleGoBack} disabled={currentFolderId === null}>
-                                    <i className="fas fa-arrow-left"></i>
-                                </button>
-                                <input type="text" placeholder="New folder..." value={folderName} onChange={(e) => setFolderName(e.target.value)} className="create-input" />
-                                <button onClick={handleCreateFolder} className="create-btn">Create</button>
-                            </div>
-                            
-                            {currentFolderId !== null && (
-                                <div className="action-group upload-group d-flex align-items-center ms-2">
-                                    <label className="btn btn-sm btn-outline-primary mb-0 py-1 px-2 d-flex align-items-center justify-content-center" htmlFor="file-input" style={{ fontSize: '0.85rem', cursor: 'pointer', height: '31px', minWidth: '90px' }}>
-                                        <i className="fas fa-plus-circle me-1"></i> {selectedFile ? "Ready" : "Add File"}
-                                    </label>
-                                    <input id="file-input" type="file" onChange={(e) => setSelectedFile(e.target.files[0])} hidden />
-                                    <button onClick={handleFileUpload} disabled={!selectedFile} className="btn btn-sm btn-primary ms-1 py-1 px-2" style={{ fontSize: '0.85rem', height: '31px' }}>Upload</button>
-                                </div>
-                            )}
-                        </>
-                    ) : (
-                        <div className="action-group d-flex align-items-center">
-                            <i className="fas fa-star text-warning me-2"></i>
-                            <span className={isDark ? "text-light-50 small" : "text-muted small"}>Starred items from all folders.</span>
-                        </div>
-                    )}
-                    <div className="action-group search-group ms-auto">
-                        <i className="fas fa-search search-icon ms-2"></i>
-                        <input type="text" placeholder="Search..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="search-input" />
-                    </div>
+<div className={`main-actions-toolbar ${isDark ? 'dark-toolbar' : ''} mb-3`}>
+    {viewMode !== "important" ? (
+        <>
+            <div className="action-group create-group d-flex align-items-center has-right-border">
+                <button className={`btn btn-sm ${isDark ? 'btn-secondary text-white' : 'btn-outline-secondary'} me-2`} onClick={handleGoBack} disabled={currentFolderId === null}>
+                    <i className="fas fa-arrow-left"></i>
+                </button>
+                <input type="text" placeholder="New folder..." value={folderName} onChange={(e) => setFolderName(e.target.value)} className="create-input" />
+                <button onClick={handleCreateFolder} className="create-btn">Create</button>
+            </div>
+            
+            {currentFolderId !== null && (
+                <div className="action-group upload-group d-flex align-items-center ms-2">
+                    <label className="btn btn-sm btn-outline-primary mb-0 py-1 px-2 d-flex align-items-center justify-content-center" htmlFor="file-input" style={{ fontSize: '0.85rem', cursor: 'pointer', height: '31px', minWidth: '90px' }}>
+                        <i className="fas fa-plus-circle me-1"></i> {selectedFile ? "Ready" : "Add File"}
+                    </label>
+                    <input id="file-input" type="file" onChange={(e) => setSelectedFile(e.target.files[0])} hidden />
+                    <button onClick={handleFileUpload} disabled={!selectedFile} className="btn btn-sm btn-primary ms-1 py-1 px-2" style={{ fontSize: '0.85rem', height: '31px' }}>Upload</button>
                 </div>
+            )}
+        </>
+    ) : (
+        <div className="action-group d-flex align-items-center">
+            <i className="fas fa-star text-warning me-2"></i>
+            <span className={isDark ? "text-light-50 small" : "text-muted small"}>Starred items from all folders.</span>
+        </div>
+    )}
+    <div className="action-group search-group ms-auto">
+        <i className="fas fa-search search-icon ms-2"></i>
+        <input type="text" placeholder="Search..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="search-input" />
+    </div>
+</div>
 
-                {viewMode !== "important" && (
-                    <div className="breadcrumb-container mt-3 px-1">
-                        <nav aria-label="breadcrumb">
-                            <ol className="breadcrumb mb-0">
-                                {currentPath.map((item, index) => (
-                                    <li key={item._id || index} className={`breadcrumb-item ${index === currentPath.length - 1 ? 'active' : ''}`} onClick={() => handlePathClick(item)} style={{ cursor: 'pointer' }}>
-                                        {item.name}
-                                    </li>
-                                ))}
-                            </ol>
-                        </nav>
-                    </div>
-                )}
+{/* Breadcrumb now appears AFTER the toolbar to reduce the title-to-toolbar gap */}
+{viewMode !== "important" && (
+    <div className="breadcrumb-container px-1">
+        <nav aria-label="breadcrumb">
+            <ol className="breadcrumb mb-0 py-2"> {/* Thinner padding */}
+                {currentPath.map((item, index) => (
+                    <li key={item._id || index} className={`breadcrumb-item ${index === currentPath.length - 1 ? 'active' : ''}`} onClick={() => handlePathClick(item)} style={{ cursor: 'pointer' }}>
+                        {item.name}
+                    </li>
+                ))}
+            </ol>
+        </nav>
+    </div>
+)}
 
-                <div className="list-toolbar mt-4 d-flex justify-content-between align-items-center">
+                <div className="list-toolbar mt-1 d-flex justify-content-between align-items-center">
                     <h5 className="mb-0 fw-bold">{viewMode === "important" ? "Starred Content" : currentFolderId === null ? "Folders & Files" : "Files & Folders"}</h5>
                     {viewMode !== "important" && selectedCount > 0 && (
                         <div className="selection-action-bar d-flex align-items-center gap-2 p-2 px-3 rounded-pill shadow-sm" style={{ background: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)', border: '1px solid #ddd' }}>
@@ -514,7 +555,7 @@ setStarredItems(stars);
                     onSuccess={async () => {
                         setItemsToTransfer({});
                         setIsTransferModalOpen(false);
-                        await loadContent(currentFolderId);
+                        triggerRefresh();
                     }}
                 />
             )}

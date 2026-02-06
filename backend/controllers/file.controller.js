@@ -7,42 +7,66 @@ const fs = require("fs");
 // 1. UPLOAD FILE
 exports.uploadFile = async (req, res) => {
     try {
-        const { folderId, uploadedBy, departmentId, username } = req.body;
-        const targetUserFolder = username || "Admin";
-        const targetFolderId = (!folderId || folderId === "null") ? null : folderId;
-
-        let nestedPath = "";
-        if (targetFolderId) {
-            const folderDoc = await Folder.findById(targetFolderId);
-            if (folderDoc && folderDoc.path) {
-                nestedPath = folderDoc.path.endsWith('/') ? folderDoc.path : `${folderDoc.path}/`;
-            }
+        if (!req.file) {
+            return res.status(400).json({ error: "No file uploaded." });
         }
 
-        const finalDbPath = `/uploads/${targetUserFolder}/${nestedPath}${req.file.filename}`;
+        const { folderId, userId, departmentId, username } = req.body;
 
-        const newFile = await File.create({
+        // Clean IDs: Ensure we don't send empty strings or the literal string "null"
+        const cleanFolderId = (!folderId || folderId === "null" || folderId === "undefined") ? null : folderId;
+        
+        // CRITICAL: If your model requires departmentId, it must be a valid 24-char ObjectId hex string.
+        // If an admin (a- or s-) doesn't have a department, it MUST be null.
+        const cleanDeptId = (!departmentId || departmentId === "null" || departmentId === "undefined" || departmentId === "") ? null : departmentId;
+
+        const newFile = new File({
             originalName: req.file.originalname,
-            filename: req.file.filename,
-            folder: targetFolderId,
-            uploadedBy: uploadedBy,
-            username: targetUserFolder,
-            departmentId: departmentId,
-            size: req.file.size,
+            filename: req.file.filename, 
             mimeType: req.file.mimetype,
-            path: finalDbPath 
+            size: req.file.size,
+            path: req.file.path,
+            username: username || "Admin",
+            folder: cleanFolderId,
+            uploadedBy: userId,
+            departmentId: cleanDeptId,
+            transferStatus: 'none',
+            isStarred: [],
+            viewedBy: []
         });
 
-        await Log.create({
-            userId: uploadedBy,
-            action: "FILE_UPLOADED",
-            fileId: newFile._id,
-            details: `Uploaded ${req.file.originalname} to ${targetUserFolder}'s folder`
-        });
+        await newFile.save();
+        res.status(201).json({ success: true, file: newFile });
 
-        res.status(201).json({ message: "File Saved", file: newFile, success: true });
     } catch (error) {
-        res.status(500).json({ error: error.message, success: false });
+        // If it still fails, this log will tell us exactly why (e.g., Cast to ObjectId failed)
+        console.error("❌ File Upload DB Error:", error.message);
+        res.status(500).json({ error: error.message });
+    }
+};
+
+const handleFileUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("folderId", currentFolderId || "null");
+    formData.append("userId", currentUserId);
+    formData.append("username", user.username); // CRITICAL for your a-/s- logic
+    
+    // Ensure departmentId is a valid hex string or don't append if null
+    if (userDeptId) {
+        formData.append("departmentId", userDeptId);
+    }
+
+    try {
+        await axios.post(`${BACKEND_URL}/api/files/upload`, formData, {
+            headers: { "Content-Type": "multipart/form-data" }
+        });
+        await loadContent(currentFolderId);
+    } catch (err) {
+        console.error("Upload Error:", err.response?.data || err.message);
     }
 };
 
@@ -67,7 +91,13 @@ exports.getFilesByFolder = async (req, res) => {
                 query.folder = (!folderId || folderId === "null") ? null : folderId;
             }
         } else {
-            query.$or = [{ uploadedBy: userId }, { sharedWith: userId }];
+            // FIX: Added senderId so the person who sent the file can still see it
+            query.$or = [
+                { uploadedBy: userId }, 
+                { sharedWith: userId }, 
+                { senderId: userId } 
+            ];
+            
             if (all !== "true") {
                 query.folder = (!folderId || folderId === "null") ? null : folderId;
             }

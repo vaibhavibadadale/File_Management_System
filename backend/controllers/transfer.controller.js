@@ -36,6 +36,7 @@ exports.createRequest = async (req, res) => {
             reason,
             requestType,
             departmentId,
+            senderId: senderUser?._id, // Store sender ID for reference
             senderDeptName: sDept?.name || sDept?.departmentName || "N/A",
             receiverDeptName: rDept?.name || rDept?.departmentName || "N/A",
             status: isAutoApprove ? "completed" : "pending"
@@ -46,11 +47,15 @@ exports.createRequest = async (req, res) => {
                 await handleMoveToTrash(fileIds, senderUsername, "AUTO-ADMIN", departmentId);
             } else if (requestType === "transfer") {
                 // Change ownership immediately for Auto-Approve
-                // We update 'uploadedBy' and 'updatedAt' so it appears in "Recent Transfers"
                 await File.updateMany(
                     { _id: { $in: fileIds } },
                     { 
-                        $set: { uploadedBy: recipientId, updatedAt: new Date() }, 
+                        $set: { 
+                            uploadedBy: recipientId, 
+                            senderId: senderUser?._id, // Keep original owner in senderId
+                            updatedAt: new Date(),
+                            transferStatus: 'received' 
+                        }, 
                         $addToSet: { sharedWith: recipientId } 
                     }
                 );
@@ -60,7 +65,7 @@ exports.createRequest = async (req, res) => {
                 );
             }
         } else {
-            // NOTIFY ADMINS/HOD OF NEW REQUEST
+            // NOTIFY ADMINS/HOD
             const staffToNotify = await User.find({
                 $or: [
                     { role: { $in: ['Admin', 'SuperAdmin', 'ADMIN', 'SUPERADMIN'] } },
@@ -76,9 +81,7 @@ exports.createRequest = async (req, res) => {
                         title: 'New Request Pending',
                         message: `A new ${requestType} request has been created by ${senderUsername}.`,
                         type: 'REQUEST_NEW',
-                        targetRoles: [staff.role],
-                        isRead: false,
-                        createdAt: new Date()
+                        isRead: false
                     }));
                 await Notification.insertMany(notificationEntries);
             }
@@ -174,15 +177,21 @@ exports.approveTransfer = async (req, res) => {
         const transfer = await Transfer.findById(transferId);
         if (!transfer) return res.status(404).json({ message: "Request not found" });
 
+        const senderUser = await User.findOne({ username: transfer.senderUsername });
+
         if (transfer.requestType === "delete") {
             await handleMoveToTrash(transfer.fileIds, transfer.senderUsername, approverUsername || "Authorized User", transfer.departmentId);
         } else {
-            // CHANGE OWNERSHIP TO RECIPIENT
-            // Explicitly updating updatedAt ensures this appears as a "Recent Transfer" for the recipient
+            // THE FIX: When transferring, we update the uploadedBy but keep the senderId
             await File.updateMany(
                 { _id: { $in: transfer.fileIds } },
                 { 
-                    $set: { uploadedBy: transfer.recipientId, updatedAt: new Date() }, 
+                    $set: { 
+                        uploadedBy: transfer.recipientId, 
+                        senderId: senderUser?._id, // IMPORTANT: Allows sender to still see it
+                        updatedAt: new Date(),
+                        transferStatus: 'received' // This prevents it from being hidden by the 'none' filter
+                    }, 
                     $addToSet: { sharedWith: transfer.recipientId } 
                 }
             );
