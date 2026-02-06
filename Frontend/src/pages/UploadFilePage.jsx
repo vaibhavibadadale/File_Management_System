@@ -327,7 +327,18 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
                             </div>
                             {currentFolderId !== null && (
                                 <div className="action-group upload-group d-flex align-items-center ms-2">
-                                    <label className="btn btn-sm btn-outline-primary mb-0 py-1 px-2 d-flex align-items-center" htmlFor="file-input" style={{ cursor: 'pointer', height: '31px' }}>
+                                    {/* UPDATED LABEL BUTTON FOR ADD FILE */}
+                                    <label 
+                                        className="btn btn-sm btn-outline-primary mb-0 py-1 px-2 d-flex align-items-center justify-content-center" 
+                                        htmlFor="file-input" 
+                                        style={{ 
+                                            cursor: 'pointer', 
+                                            minHeight: '31px', 
+                                            fontSize: '0.85rem',
+                                            whiteSpace: 'nowrap',
+                                            lineHeight: '1'
+                                        }}
+                                    >
                                         <i className="fas fa-plus-circle me-1"></i> {selectedFile ? "Ready" : "Add File"}
                                     </label>
                                     <input id="file-input" type="file" onChange={(e) => setSelectedFile(e.target.files[0])} hidden />
