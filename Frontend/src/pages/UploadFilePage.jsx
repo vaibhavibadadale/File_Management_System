@@ -69,12 +69,12 @@ const triggerRefresh = () => {
     const currentUserId = user?._id || USER_ID;
 
     // --- UPDATED LOAD CONTENT LOGIC ---
-    const loadContent = useCallback(async (parentId) => {
+const loadContent = useCallback(async (parentId) => {
         setItemsToTransfer({});
         
         let params = { 
             userId: currentUserId,
-            role: userRole, // CRITICAL: Passing role to backend
+            role: userRole, 
             parentId: parentId || "null",
             folderId: parentId || "null"
         };
@@ -92,8 +92,7 @@ const triggerRefresh = () => {
                 axios.get(`${BACKEND_URL}/api/files`, { params })
             ]);
 
-            // Simplified mapping: Backend now handles the permissions
-           const folders = (folderRes.data.folders || []).filter(f => 
+            const folders = (folderRes.data.folders || []).filter(f => 
                 f.transferStatus === 'none' || f.transferStatus === 'received' || !f.transferStatus);
             
             const files = (fileRes.data.files || []).filter(f => 
@@ -102,25 +101,31 @@ const triggerRefresh = () => {
             setFoldersInCurrentView(folders);
             setFilesInCurrentView(files);
 
-         const stars = {};
-        const currentUserId = user._id; // Ensure you have access to the logged-in user object
+            const stars = {};
+            const uid = user?._id || currentUserId;
 
-        files.forEach(file => {
-           // FIX: Check if the current user's ID exists in the isStarred array
-             if (Array.isArray(file.isStarred) && file.isStarred.includes(currentUserId)) {
-            stars[file._id] = true;
-           }
-        });
-        setStarredItems(stars);
-            } catch (err) { 
+            files.forEach(file => {
+                if (Array.isArray(file.isStarred) && file.isStarred.includes(uid)) {
+                    stars[file._id] = true;
+                }
+            });
+            setStarredItems(stars);
+        } catch (err) { 
             console.error("Error loading content:", err); 
         }
-    }, [currentUserId, userRole, isAdmin, userDeptId, viewMode]);
+    }, [currentUserId, userRole, isAdmin, userDeptId, viewMode, user?._id]);
 
+    // --- EFFECT: DATA FETCHING & POLLING ---
     useEffect(() => {
-        
-    loadContent(currentFolderId);
-}, [currentFolderId, loadContent, refreshTrigger]);
+        loadContent(currentFolderId);
+
+        // Polling to catch Admin Approvals/Denials for the "Confirmation Notification"
+        const interval = setInterval(() => {
+            loadContent(currentFolderId);
+        }, 30000); 
+
+        return () => clearInterval(interval);
+    }, [currentFolderId, loadContent, refreshTrigger]);
 
    const handleFileUpload = async () => {
     // FIX: Use the 'selectedFile' state instead of 'e'
