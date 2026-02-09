@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import axios from 'axios';
 import { Badge, Row, Col, Spinner, Card } from 'react-bootstrap';
-import { Eye, FileEarmarkText, BookmarkStarFill, ArrowLeftRight, Database, Activity } from 'react-bootstrap-icons'; 
+import { Eye, FileEarmarkText, BookmarkStarFill, ArrowLeftRight, Database, Activity, ShieldLock } from 'react-bootstrap-icons'; 
 import '../styles/FileDashboard.css';
 import '../styles/VenturesPage.css'; 
 
@@ -56,19 +56,22 @@ const FileDashboard = ({ user, currentTheme }) => {
 
     // Calculate stats based on fetched data
     const stats = useMemo(() => {
-        // Filter to count only files belonging to this user or department
         const totalFiles = uploadedFiles.length;
         const totalSize = uploadedFiles.reduce((acc, f) => acc + (Number(f.size) || 0), 0);
         
-        // Count starred files (matches star logic in UploadFilePage)
+        // Count starred files
         const impCount = uploadedFiles.filter(f => 
             Array.isArray(f.isStarred) ? f.isStarred.includes(user?._id) : f.isStarred
         ).length;
 
+        // NEW: Count disabled files
+        const disabledCount = uploadedFiles.filter(f => f.isDisabled === true).length;
+
         return { 
             totalFiles, 
             totalMB: (totalSize / (1024 * 1024)).toFixed(2), 
-            impCount 
+            impCount,
+            disabledCount // Exporting this for use in the UI
         };
     }, [uploadedFiles, user?._id]);
 
@@ -99,9 +102,11 @@ const FileDashboard = ({ user, currentTheme }) => {
                     {[
                         { label: 'My Total Files', val: stats.totalFiles, icon: <Database/>, color: 'primary' },
                         { label: 'My Storage', val: `${stats.totalMB} MB`, icon: <Activity/>, color: 'success' },
-                        { label: 'Important', val: stats.impCount, icon: <BookmarkStarFill/>, color: 'warning' }
+                        { label: 'Important', val: stats.impCount, icon: <BookmarkStarFill/>, color: 'warning' },
+                        // ADDED: Disabled Files Card
+                        { label: 'Disabled Files', val: stats.disabledCount, icon: <ShieldLock/>, color: 'danger' }
                     ].map((card, i) => (
-                        <Col key={i} md={4}>
+                        <Col key={i} md={3}> {/* Changed from md={4} to md={3} to fit 4 cards */}
                             <Card className={`border-0 shadow-sm p-3 ${isDarkMode ? 'bg-dark border border-secondary' : ''}`} 
                                   style={{ backgroundColor: isDarkMode ? '#1e1e1e' : '#ffffff', color: theme.textMain }}>
                                 <div className="d-flex justify-content-between align-items-center">
@@ -126,12 +131,14 @@ const FileDashboard = ({ user, currentTheme }) => {
                             <Card.Body className="px-0 pt-0">
                                 {recentlyViewed.length > 0 ? recentlyViewed.map(file => (
                                     <div key={file._id} className={`d-flex justify-content-between px-3 py-3 border-bottom hover-row ${isDarkMode ? 'border-secondary' : ''}`} 
-                                         style={{ cursor: 'pointer', transition: '0.2s' }}
+                                         style={{ cursor: 'pointer', transition: '0.2s', opacity: file.isDisabled ? 0.6 : 1 }}
                                          onClick={() => handleViewFile(file)}>
                                         <div className="d-flex align-items-center">
-                                            <FileEarmarkText className="me-3 text-primary" size={20} />
+                                            <FileEarmarkText className={`me-3 ${file.isDisabled ? 'text-muted' : 'text-primary'}`} size={20} />
                                             <div>
-                                                <div className={`fw-semibold small ${isDarkMode ? 'text-white' : 'text-dark'}`}>{file.originalName || file.filename}</div>
+                                                <div className={`fw-semibold small ${isDarkMode ? 'text-white' : 'text-dark'} ${file.isDisabled ? 'text-decoration-line-through' : ''}`}>
+                                                    {file.originalName || file.filename}
+                                                </div>
                                                 <div style={{ fontSize: '0.7rem', color: theme.textMuted }}>
                                                     Viewed: {new Date(file.lastViewedAt).toLocaleString()}
                                                 </div>
@@ -153,10 +160,12 @@ const FileDashboard = ({ user, currentTheme }) => {
                             <Card.Body className="pt-3">
                                 {recentlyTransferred.length > 0 ? recentlyTransferred.map(file => (
                                     <div key={file._id} className={`mb-3 p-2 rounded border hover-row ${isDarkMode ? 'border-secondary bg-dark' : ''}`} 
-                                         style={{ cursor: 'pointer' }}
+                                         style={{ cursor: 'pointer', opacity: file.isDisabled ? 0.6 : 1 }}
                                          onClick={() => handleViewFile(file)}>
                                         <div className="d-flex justify-content-between align-items-center">
-                                            <span className={`fw-semibold small text-truncate ${isDarkMode ? 'text-white' : 'text-dark'}`} style={{ maxWidth: '70%' }}>{file.originalName || file.filename}</span>
+                                            <span className={`fw-semibold small text-truncate ${isDarkMode ? 'text-white' : 'text-dark'} ${file.isDisabled ? 'text-decoration-line-through' : ''}`} style={{ maxWidth: '70%' }}>
+                                                {file.originalName || file.filename}
+                                            </span>
                                             <Badge bg="info" style={{ fontSize: '0.6rem' }}>RECEIVED</Badge>
                                         </div>
                                         <div className="mt-1 d-flex justify-content-between" style={{ fontSize: '0.65rem', color: theme.textMuted }}>

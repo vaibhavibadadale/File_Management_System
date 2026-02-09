@@ -14,16 +14,19 @@ router.get("/", fileController.getFilesByFolder);
 // 3. Star
 router.patch('/star/:id', fileController.toggleFileStar);
 
-// 4. Status Toggle (Matches Frontend Axios call)
+// 4. Status Toggle
 router.put("/toggle-status/:id", fileController.toggleFileStatus);
 
 // 5. Track View
 router.post("/track-view", fileController.trackView);
 
-// 6. Delete
+// 6. Bulk Delete
+router.post("/bulk-delete", fileController.bulkDelete);
+
+// 7. Delete (Single)
 router.delete("/:id", fileController.softDeleteFile);
 
-// 7. Transfer
+// 8. Transfer
 router.post("/transfer", (req, res, next) => {
     const method = transferController.secureTransfer || transferController.createRequest;
     if (method) {
@@ -32,7 +35,7 @@ router.post("/transfer", (req, res, next) => {
     res.status(500).send("Transfer handler missing");
 });
 
-// 8. Backup
+// 9. Backup
 router.get('/system-backup', backupController.generateSystemBackup);
 
 module.exports = router;

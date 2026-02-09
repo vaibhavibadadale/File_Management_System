@@ -15,6 +15,7 @@ const { getRecipientsForRequest, notifyApprovers, sendEmail } = require("../util
 const templates = require("../utils/emailTemplates");
 
 // --- HELPERS ---
+
 async function handleMoveToTrash(files, sender, approver, deptId) {
     for (const fileId of files) {
         const actualId = fileId._id || fileId;
@@ -84,6 +85,7 @@ async function handleOwnershipTransfer(fileIds, recipientId, senderUsername, rec
 }
 
 // --- CONTROLLERS ---
+
 exports.createRequest = async (req, res) => {
     try {
         const { senderUsername, recipientId, fileIds, reason, requestType } = req.body;
@@ -181,7 +183,7 @@ exports.approveFromEmail = async (req, res) => {
 
         const recipients = await getRecipientsForRequest(request.senderRole, request.departmentId);
         const updateHtml = `<h3>Request Approved</h3>
-                           <p>The ${request.requestType} request from <b>${request.senderUsername}</b> has been approved via email link.</p>`;
+                            <p>The ${request.requestType} request from <b>${request.senderUsername}</b> has been approved via email link.</p>`;
 
         await sendEmail(recipients, `Update: Request Approved`, updateHtml, "FOLLOW_UP");
 
@@ -206,8 +208,8 @@ exports.denyFromEmail = async (req, res) => {
 
         const recipients = await getRecipientsForRequest(request.senderRole, request.departmentId);
         const updateHtml = `<h3>Request Denied</h3>
-                           <p>The ${request.requestType} request from <b>${request.senderUsername}</b> was denied.</p>
-                           <p><b>Reason:</b> ${request.denialReason}</p>`;
+                            <p>The ${request.requestType} request from <b>${request.senderUsername}</b> was denied.</p>
+                            <p><b>Reason:</b> ${request.denialReason}</p>`;
 
         await sendEmail(recipients, `Update: Request Denied`, updateHtml, "FOLLOW_UP");
 
@@ -243,7 +245,6 @@ exports.secureAction = async (req, res) => {
 
         await request.save();
 
-        // EXECUTE LOGIC
         if (isApproved) {
             if (request.requestType === "delete") {
                 await handleMoveToTrash(request.fileIds, request.senderUsername, approver.username, request.departmentId);
@@ -252,7 +253,6 @@ exports.secureAction = async (req, res) => {
             }
         }
 
-        // --- ADDED BROADCAST LOGIC HERE ---
         const staff = await getRecipientsForRequest(request.senderRole, request.departmentId, request.senderUsername);
         const sender = await User.findOne({ username: request.senderUsername });
         
@@ -276,7 +276,6 @@ exports.secureAction = async (req, res) => {
                 await sendEmail(person.email, emailSubject, emailHtml);
             }
         }
-        // ---------------------------------
 
         res.status(200).json({ message: `Request ${request.status} successfully.` });
     } catch (err) {
@@ -317,25 +316,18 @@ exports.approveRequest = async (req, res) => {
         await request.save();
 
         // 2. BROADCAST UPDATES TO ALL STAKEHOLDERS
-        // Find Admins using case-insensitive search to ensure they are NOT missed
         const allAdmins = await User.find({ role: { $regex: /admin/i } });
-        // Find the specific HOD/Approvers for the department
         const staffRecipients = await getRecipientsForRequest(request.senderRole, request.departmentId, request.senderUsername);
-        // Find the sender
         const sender = await User.findOne({ username: request.senderUsername });
 
-        // Merge all potential stakeholders
         let finalRecipientList = [...allAdmins, ...staffRecipients];
         if (sender) finalRecipientList.push(sender);
 
-        // Deduplicate by email and remove only the person who performed the action
         const seenEmails = new Set();
         const peopleToNotify = finalRecipientList.filter(u => {
             const email = u.email?.toLowerCase().trim();
             if (!email || seenEmails.has(email)) return false;
             seenEmails.add(email);
-            
-            // Do not send to the person who just clicked 'Approve'
             return u.username?.toLowerCase() !== approverUsername?.toLowerCase();
         });
 
@@ -358,13 +350,12 @@ exports.approveRequest = async (req, res) => {
         for (const person of peopleToNotify) {
             try {
                 await sendEmail(person.email, emailSubject, emailHtml);
-                console.log(`- Success: Email sent to ${person.email} (${person.role})`);
+                console.log(`- Success: Email sent to ${person.email}`);
             } catch (mailErr) {
                 console.error(`- Failed: Email to ${person.email}:`, mailErr.message);
             }
         }
 
-        // 3. IN-APP NOTIFICATION FOR SENDER
         if (sender) {
             await Notification.create({
                 recipientId: sender._id,
@@ -403,7 +394,6 @@ exports.denyRequest = async (req, res) => {
             await Transfer.findOneAndUpdate({ senderUsername: request.senderUsername, status: "pending" }, logUpdate, { sort: { createdAt: -1 } });
         }
 
-        // 2. BROADCAST DENIAL TO ALL STAKEHOLDERS
         const allAdmins = await User.find({ role: { $regex: /admin/i } });
         const staffRecipients = await getRecipientsForRequest(request.senderRole, request.departmentId, request.senderUsername);
         const sender = await User.findOne({ username: request.senderUsername });
@@ -463,19 +453,16 @@ exports.getPendingDashboard = async (req, res) => {
         const skipP = (parseInt(pPage) - 1) * parseInt(limit);
         const skipH = (parseInt(hPage) - 1) * parseInt(limit);
 
-        // --- FILTER LOGIC ---
         let pendingFilter = { status: "pending" };
         let historyFilter = { status: { $in: ["completed", "denied", "rejected"] } };
 
         const upperRole = role?.toUpperCase();
 
         if (upperRole === "HOD") {
-            // HOD Pending: See dept employees' requests or their own
             pendingFilter.$or = [
                 { departmentId: departmentId, senderRole: { $in: ["EMPLOYEE", "USER"] }, status: "pending" },
                 { senderUsername: username, status: "pending" }
             ];
-            // HOD History: See their own history or history of their department
             historyFilter.$and = [
                 { status: { $in: ["completed", "denied", "rejected"] } },
                 { 
@@ -487,22 +474,17 @@ exports.getPendingDashboard = async (req, res) => {
             ];
         } 
         else if (!["ADMIN", "SUPERADMIN", "SUPER_ADMIN"].includes(upperRole)) {
-            // Employee Pending: Only their own
             pendingFilter = { senderUsername: username, status: "pending" };
-            // Employee History: Only their own
             historyFilter = { 
                 senderUsername: username, 
                 status: { $in: ["completed", "denied", "rejected"] } 
             };
         }
-        // If Admin/SuperAdmin, historyFilter stays as the global default (everything)
 
-        // --- SEARCH LOGIC (Only applied to Pending as per your original code) ---
         if (search) {
             pendingFilter.reason = { $regex: search, $options: "i" };
         }
 
-        // --- DATABASE QUERIES (Keep your existing Promise.all logic) ---
         const [mainRequests, totalPending, logs, totalHistory] = await Promise.all([
             Request.find(pendingFilter)
                 .sort({ createdAt: -1 }).skip(skipP).limit(parseInt(limit))
@@ -577,7 +559,6 @@ exports.permanentDelete = async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 };
 
-// UPDATED CONTROLLER: Added 'role' to populate calls
 exports.getReceivedFiles = async (req, res) => {
     try {
         const { userId } = req.query;
@@ -594,11 +575,11 @@ exports.getReceivedFiles = async (req, res) => {
 
         const [files, folders] = await Promise.all([
             File.find(filter)
-                .populate('senderId', 'username email role') // Added 'role' here
+                .populate('senderId', 'username email role') 
                 .sort({ lastTransferDate: -1 })
                 .lean(),
             Folder.find(filter)
-                .populate('senderId', 'username email role') // Added 'role' here
+                .populate('senderId', 'username email role') 
                 .sort({ lastTransferDate: -1 })
                 .lean()
         ]);

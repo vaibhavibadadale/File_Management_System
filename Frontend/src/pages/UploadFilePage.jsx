@@ -114,6 +114,100 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
         loadContent(currentFolderId);
     }, [currentFolderId, loadContent, refreshTrigger]);
 
+    // --- Deletion Logic Helpers ---
+
+    const executeImmediateDelete = async (item) => {
+        try {
+            const endpoint = item.type === 'Folder' ? `folders/${item._id}` : `files/${item._id}`;
+            await axios.delete(`${BACKEND_URL}/api/${endpoint}`, { data: { userId: currentUserId } });
+            Swal.fire("Deleted", `${item.displayName} has been deleted.`, "success");
+            triggerRefresh();
+        } catch (err) {
+            Swal.fire("Error", "Could not delete item.", "error");
+        }
+    };
+
+    const handleDeleteItemTrigger = async (item) => {
+        const isFolder = item.type === 'Folder';
+        let shouldRequest = false;
+
+        if (userRole === 'superadmin') {
+            const confirm = await Swal.fire({
+                title: 'Are you sure?',
+                text: `Directly delete ${item.displayName}?`,
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#dc3545'
+            });
+            if (confirm.isConfirmed) await executeImmediateDelete(item);
+            return;
+        }
+
+        if (isFolder) {
+            try {
+                const res = await axios.get(`${BACKEND_URL}/api/folders/check-content/${item._id}`);
+                const { hasContent } = res.data;
+                if (hasContent) {
+                    shouldRequest = true;
+                } else {
+                    const confirm = await Swal.fire({
+                        title: 'Delete Empty Folder?',
+                        text: "This folder is empty and will be deleted immediately.",
+                        icon: 'info',
+                        showCancelButton: true
+                    });
+                    if (confirm.isConfirmed) await executeImmediateDelete(item);
+                    return;
+                }
+            } catch (err) {
+                console.error("Content check failed", err);
+                shouldRequest = true; 
+            }
+        } else {
+            shouldRequest = true;
+        }
+
+        if (shouldRequest) {
+            const { value: formValues } = await Swal.fire({
+                title: 'Request Deletion',
+                html: `<p class="small text-muted">This item contains content or is protected. Requesting deletion for: <b>${item.displayName}</b></p>` + 
+                     `<input id="swal-password" type="password" class="swal2-input" placeholder="Confirm Password">` + 
+                     `<textarea id="swal-reason" class="swal2-textarea" placeholder="Reason for deletion..."></textarea>`,
+                focusConfirm: false, showCancelButton: true, confirmButtonText: 'Submit Request', confirmButtonColor: '#dc3545',
+                background: isDark ? '#2d2d2d' : '#fff', color: isDark ? '#fff' : '#000',
+                preConfirm: () => {
+                    const password = document.getElementById('swal-password').value;
+                    const reason = document.getElementById('swal-reason').value;
+                    if (!password || !reason) { Swal.showValidationMessage('Please enter both password and reason'); return false; }
+                    return { password, reason };
+                }
+            });
+
+            if (formValues) {
+                try {
+                    await axios.post(`${BACKEND_URL}/api/users/verify-password`, { userId: currentUserId, password: formValues.password });
+                    
+                    let targetRoles = [];
+                    if (userRole === "employee" || userRole === "user") targetRoles = ["hod", "admin", "superadmin"];
+                    else if (userRole === "hod") targetRoles = ["admin", "superadmin"];
+                    else if (userRole === "admin") targetRoles = ["superadmin"];
+
+                    await axios.post(`${BACKEND_URL}/api/requests/create`, { 
+                        requestType: "delete", 
+                        senderUsername: user?.username, 
+                        senderRole: user?.role, 
+                        departmentId: userDeptId, 
+                        fileIds: [item._id], 
+                        reason: formValues.reason,
+                        targetRoles: targetRoles
+                    });
+                    triggerRefresh();
+                    Swal.fire("Success", "Deletion request pending approval from higher authorities.", "success");
+                } catch (err) { Swal.fire("Error", "Incorrect password or submission error.", "error"); }
+            }
+        }
+    };
+
     const handleFileUpload = async () => {
         if (!selectedFile) return alert("Please select a file first");
         const formData = new FormData();
@@ -179,40 +273,41 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
         } else { setItemsToTransfer({}); }
     };
 
-    const handleDeleteItemTrigger = async (item) => {
-        const { value: formValues } = await Swal.fire({
-            title: 'Request Deletion',
-            html: `<p class="small text-muted">Requesting to delete: <b>${item.displayName}</b></p>` + 
-                 `<input id="swal-password" type="password" class="swal2-input" placeholder="Confirm Password">` + 
-                 `<textarea id="swal-reason" class="swal2-textarea" placeholder="Reason for deletion..."></textarea>`,
-            focusConfirm: false, showCancelButton: true, confirmButtonText: 'Submit Request', confirmButtonColor: '#dc3545',
-            background: isDark ? '#2d2d2d' : '#fff', color: isDark ? '#fff' : '#000',
-            preConfirm: () => {
-                const password = document.getElementById('swal-password').value;
-                const reason = document.getElementById('swal-reason').value;
-                if (!password || !reason) { Swal.showValidationMessage('Please enter both password and reason'); return false; }
-                return { password, reason };
-            }
-        });
-        if (formValues) {
-            try {
-                await axios.post(`${BACKEND_URL}/api/users/verify-password`, { userId: currentUserId, password: formValues.password });
-                await axios.post(`${BACKEND_URL}/api/requests/create`, { 
-                    requestType: "delete", senderUsername: user?.username, senderRole: user?.role, 
-                    departmentId: userDeptId, fileIds: [item._id], reason: formValues.reason 
-                });
-                triggerRefresh();
-                Swal.fire("Success", "Deletion request pending admin approval.", "success");
-            } catch (err) { Swal.fire("Error", "Incorrect password or submission error.", "error"); }
-        }
-    };
-
     const executeBulkDeleteRequest = async () => {
         const selectedIds = Object.keys(itemsToTransfer).filter(id => itemsToTransfer[id]);
         if (selectedIds.length === 0) return;
+        
+        // Superadmin bypass
+        if (userRole === 'superadmin') {
+            const confirm = await Swal.fire({ 
+                title: 'Bulk Delete?', 
+                text: `Delete ${selectedIds.length} items (files and folders) permanently?`, 
+                icon: 'warning', 
+                showCancelButton: true,
+                confirmButtonColor: '#dc3545'
+            });
+            if (!confirm.isConfirmed) return;
+            setIsDeleting(true);
+            try {
+                // Backend needs to handle both file and folder IDs in bulk-delete
+                await axios.post(`${BACKEND_URL}/api/files/bulk-delete`, { ids: selectedIds, userId: currentUserId });
+                setItemsToTransfer({});
+                triggerRefresh();
+                Swal.fire("Deleted", "Items removed.", "success");
+            } catch (err) { Swal.fire("Error", "Bulk delete failed", "error"); }
+            finally { setIsDeleting(false); }
+            return;
+        }
+
+        // Non-superadmin: Request Authority
         const { value: formValues } = await Swal.fire({
-            title: 'Confirm Bulk Deletion',
-            html: `<input id="bulk-pw" type="password" class="swal2-input" placeholder="Password"><textarea id="bulk-re" class="swal2-textarea" placeholder="Reason..."></textarea>`,
+            title: 'Confirm Bulk Deletion Request',
+            html: `<p class="small text-muted">Requesting deletion for ${selectedIds.length} items.</p>` +
+                  `<input id="bulk-pw" type="password" class="swal2-input" placeholder="Password">` +
+                  `<textarea id="bulk-re" class="swal2-textarea" placeholder="Reason for bulk deletion..."></textarea>`,
+            background: isDark ? '#2d2d2d' : '#fff', 
+            color: isDark ? '#fff' : '#000',
+            showCancelButton: true,
             preConfirm: () => {
                 const password = document.getElementById('bulk-pw').value;
                 const reason = document.getElementById('bulk-re').value;
@@ -220,18 +315,31 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
                 return { password, reason };
             }
         });
+
         if (formValues) {
             setIsDeleting(true);
             try {
                 await axios.post(`${BACKEND_URL}/api/users/verify-password`, { userId: currentUserId, password: formValues.password });
+                
+                let targetRoles = [];
+                if (userRole === "employee" || userRole === "user") targetRoles = ["hod", "admin", "superadmin"];
+                else if (userRole === "hod") targetRoles = ["admin", "superadmin"];
+                else if (userRole === "admin") targetRoles = ["superadmin"];
+
                 await axios.post(`${BACKEND_URL}/api/requests/create`, { 
-                    requestType: "delete", senderUsername: user?.username, senderRole: user?.role, 
-                    departmentId: userDeptId, fileIds: selectedIds, reason: formValues.reason 
+                    requestType: "delete", 
+                    senderUsername: user?.username, 
+                    senderRole: user?.role, 
+                    departmentId: userDeptId, 
+                    fileIds: selectedIds, // This now contains both file and folder IDs
+                    reason: formValues.reason,
+                    targetRoles: targetRoles
                 });
                 setItemsToTransfer({});
                 triggerRefresh();
-                Swal.fire("Sent", "Bulk request submitted.", "success");
-            } catch (err) { Swal.fire("Error", "Action failed", "error"); } finally { setIsDeleting(false); }
+                Swal.fire("Sent", "Bulk request submitted to authorities.", "success");
+            } catch (err) { Swal.fire("Error", "Action failed. Check password or permissions.", "error"); } 
+            finally { setIsDeleting(false); }
         }
     };
 
@@ -327,17 +435,10 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
                             </div>
                             {currentFolderId !== null && (
                                 <div className="action-group upload-group d-flex align-items-center ms-2">
-                                    {/* UPDATED LABEL BUTTON FOR ADD FILE */}
                                     <label 
                                         className="btn btn-sm btn-outline-primary mb-0 py-1 px-2 d-flex align-items-center justify-content-center" 
                                         htmlFor="file-input" 
-                                        style={{ 
-                                            cursor: 'pointer', 
-                                            minHeight: '31px', 
-                                            fontSize: '0.85rem',
-                                            whiteSpace: 'nowrap',
-                                            lineHeight: '1'
-                                        }}
+                                        style={{ cursor: 'pointer', minHeight: '31px', fontSize: '0.85rem', whiteSpace: 'nowrap', lineHeight: '1' }}
                                     >
                                         <i className="fas fa-plus-circle me-1"></i> {selectedFile ? "Ready" : "Add File"}
                                     </label>
@@ -405,7 +506,7 @@ function UploadFilePage({ user, viewMode, currentTheme }) {
                                     <td className={item.type === 'Folder' ? 'folder-row' : ''}>
                                         <div className="d-flex align-items-center">
                                             <i className={`${item.type === 'Folder' ? 'fas fa-folder text-warning' : getFileIcon(item.type)} file-icon me-3 fs-5`}></i>
-                                            <span className={`text-truncate ${item.isDisabled ? 'text-decoration-line-through text-muted' : ''}`} style={{ maxWidth: '250px' }}>{item.displayName}</span>
+                                            <span className={`text-truncate ${item.isDisabled ? 'text-decoration-line-through text-muted' : ''}`} style={{ maxWidth: '250px', cursor: item.type === 'Folder' ? 'pointer' : 'default' }}>{item.displayName}</span>
                                             {item.isDisabled && <span className="badge bg-danger ms-2" style={{ fontSize: '0.65rem' }}>Disabled</span>}
                                             {item.type !== 'Folder' && !item.isDisabled && (
                                                 <i className={`${starredItems[item._id] ? 'fas fa-star text-warning' : 'far fa-star text-muted'} ms-3`} style={{ cursor: 'pointer', fontSize: '0.9rem' }} onClick={(e) => handleToggleStar(e, item)}></i>

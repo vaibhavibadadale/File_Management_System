@@ -1,8 +1,11 @@
 const File = require("../models/File");
 const Folder = require("../models/Folder");
 const Log = require("../models/Log");
+const Notification = require("../models/Notification");
+const User = require("../models/User"); // Added User model for admin lookup
 const path = require("path");
 const fs = require("fs");
+const { sendEmail, notifyUserOfFileStatus } = require("../utils/emailHelper"); // Imported helpers
 
 // 1. UPLOAD FILE
 exports.uploadFile = async (req, res) => {
@@ -13,11 +16,7 @@ exports.uploadFile = async (req, res) => {
 
         const { folderId, userId, departmentId, username } = req.body;
 
-        // Clean IDs: Ensure we don't send empty strings or the literal string "null"
         const cleanFolderId = (!folderId || folderId === "null" || folderId === "undefined") ? null : folderId;
-        
-        // CRITICAL: If your model requires departmentId, it must be a valid 24-char ObjectId hex string.
-        // If an admin (a- or s-) doesn't have a department, it MUST be null.
         const cleanDeptId = (!departmentId || departmentId === "null" || departmentId === "undefined" || departmentId === "") ? null : departmentId;
 
         const newFile = new File({
@@ -39,34 +38,8 @@ exports.uploadFile = async (req, res) => {
         res.status(201).json({ success: true, file: newFile });
 
     } catch (error) {
-        // If it still fails, this log will tell us exactly why (e.g., Cast to ObjectId failed)
         console.error("❌ File Upload DB Error:", error.message);
         res.status(500).json({ error: error.message });
-    }
-};
-
-const handleFileUpload = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    const formData = new FormData();
-    formData.append("file", file);
-    formData.append("folderId", currentFolderId || "null");
-    formData.append("userId", currentUserId);
-    formData.append("username", user.username); // CRITICAL for your a-/s- logic
-    
-    // Ensure departmentId is a valid hex string or don't append if null
-    if (userDeptId) {
-        formData.append("departmentId", userDeptId);
-    }
-
-    try {
-        await axios.post(`${BACKEND_URL}/api/files/upload`, formData, {
-            headers: { "Content-Type": "multipart/form-data" }
-        });
-        await loadContent(currentFolderId);
-    } catch (err) {
-        console.error("Upload Error:", err.response?.data || err.message);
     }
 };
 
@@ -91,7 +64,6 @@ exports.getFilesByFolder = async (req, res) => {
                 query.folder = (!folderId || folderId === "null") ? null : folderId;
             }
         } else {
-            // FIX: Added senderId so the person who sent the file can still see it
             query.$or = [
                 { uploadedBy: userId }, 
                 { sharedWith: userId }, 
@@ -104,7 +76,7 @@ exports.getFilesByFolder = async (req, res) => {
         }
 
         const files = await File.find(query)
-            .populate("uploadedBy", "name username")
+            .populate("uploadedBy", "name username email") 
             .sort({ createdAt: -1 });
 
         return res.json({ files, success: true });
@@ -154,7 +126,7 @@ exports.toggleFileStar = async (req, res) => {
     }
 };
 
-// 5. SOFT DELETE
+// 5. SOFT DELETE (Single)
 exports.softDeleteFile = async (req, res) => {
     try {
         const { userId } = req.body;
@@ -173,36 +145,70 @@ exports.softDeleteFile = async (req, res) => {
     }
 };
 
-// 6. TOGGLE STATUS (FIXED)
+// 6. TOGGLE STATUS (Updated to fetch Admin details from DB)
 exports.toggleFileStatus = async (req, res) => {
-    console.log("--- REQUEST RECEIVED: Toggle Status ---");
     try {
         const { id } = req.params;
         const { isDisabled, adminId } = req.body;
 
+        // Populate uploadedBy to get the user's email and name
         const updatedFile = await File.findByIdAndUpdate(
             id, 
             { isDisabled: isDisabled }, 
             { new: true }
-        );
+        ).populate("uploadedBy");
 
         if (!updatedFile) {
             return res.status(404).json({ success: false, message: "File not found" });
         }
 
-        const logUserId = adminId && adminId !== "null" ? adminId : updatedFile.uploadedBy;
+        // FETCH ADMIN/HOD DETAILS FROM DATABASE
+        let actionByDisplay = "Administrator";
+        if (adminId && adminId !== "null") {
+            const adminUser = await User.findById(adminId);
+            if (adminUser) {
+                // Formatting: "John Doe (HOD)"
+                actionByDisplay = `${adminUser.name || adminUser.username} (${adminUser.role.toUpperCase()})`;
+            }
+        }
 
+        const logUserId = adminId && adminId !== "null" ? adminId : updatedFile.uploadedBy?._id;
         await Log.create({
             userId: logUserId,
             action: isDisabled ? "FILE_DISABLED" : "FILE_ENABLED",
             fileId: id,
-            details: `${isDisabled ? 'Disabled' : 'Enabled'} file: ${updatedFile.originalName}`
+            details: `${isDisabled ? 'Disabled' : 'Enabled'} file: ${updatedFile.originalName} by ${actionByDisplay}`
         });
 
-        console.log(`✅ Status updated for ${updatedFile.originalName}: ${isDisabled}`);
-        return res.json({ success: true, message: "Status updated", file: updatedFile });
+        // Notify the user
+        if (updatedFile.uploadedBy) {
+            const owner = updatedFile.uploadedBy;
+
+            // 1. Create In-App Notification
+            await Notification.create({
+                recipientId: owner._id,
+                title: isDisabled ? "File Disabled" : "File Enabled",
+                message: `Your file "${updatedFile.originalName}" has been ${isDisabled ? 'disabled' : 'enabled'} by ${actionByDisplay}.`,
+                type: isDisabled ? "FILE_DISABLED" : "FILE_ENABLED",
+                relatedId: id,
+                isRead: false
+            });
+
+            // 2. Send Email Notification using the specialized helper
+            if (owner.email) {
+                await notifyUserOfFileStatus(
+                    owner.email,
+                    owner.name || owner.username,
+                    updatedFile.originalName,
+                    isDisabled,
+                    actionByDisplay
+                );
+            }
+        }
+
+        return res.json({ success: true, message: "Status updated and user notified", file: updatedFile });
     } catch (error) {
-        console.error("❌ Toggle Status Error:", error.message);
+        console.error("Toggle Status Error:", error);
         return res.status(500).json({ success: false, error: error.message });
     }
 };
@@ -224,5 +230,51 @@ exports.runInternalSystemBackup = async () => {
         return { success: true };
     } catch (error) {
         return { success: false, error: error.message };
+    }
+};
+
+// 8. BULK DELETE
+exports.bulkDelete = async (req, res) => {
+    try {
+        const { ids, userId } = req.body;
+        if (!ids || !Array.isArray(ids)) {
+            return res.status(400).json({ success: false, error: "Invalid IDs provided" });
+        }
+
+        const deletionDate = new Date();
+        const results = { folders: 0, files: 0 };
+
+        for (const id of ids) {
+            const folder = await Folder.findById(id);
+            if (folder) {
+                folder.deletedAt = deletionDate;
+                await folder.save();
+                const subFiles = await File.updateMany(
+                    { folder: id, deletedAt: null },
+                    { $set: { deletedAt: deletionDate } }
+                );
+                results.folders++;
+                results.files += subFiles.modifiedCount;
+            } else {
+                const file = await File.findByIdAndUpdate(id, { 
+                    $set: { deletedAt: deletionDate } 
+                });
+                if (file) results.files++;
+            }
+        }
+
+        await Log.create({
+            userId: userId,
+            action: "BULK_DELETE",
+            details: `Bulk deleted ${results.folders} folders and ${results.files} total files.`
+        });
+
+        res.json({ 
+            success: true, 
+            message: `Successfully deleted ${results.folders} folders and ${results.files} files.` 
+        });
+    } catch (error) {
+        console.error("❌ Bulk Delete Error:", error.message);
+        res.status(500).json({ success: false, error: error.message });
     }
 };

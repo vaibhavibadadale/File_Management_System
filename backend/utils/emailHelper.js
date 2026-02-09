@@ -15,42 +15,38 @@ const transporter = nodemailer.createTransport({
 exports.transporter = transporter;
 
 // 3. YOUR TEMPLATES AND FUNCTIONS
+
+/**
+ * EXISTING LOGIC: Finds Admins and HODs for notification
+ */
 exports.getRecipientsForRequest = async (senderRole, departmentId, senderUsername) => {
     try {
         console.log(`--- DEBUG: Finding Recipients ---`);
         console.log(`Sender: ${senderUsername}, Dept: ${departmentId}`);
 
-        // 1. Find Admins using case-insensitive regex
-        // This finds "ADMIN", "Admin", "admin", "SUPERADMIN", etc.
         const admins = await User.find({
             role: { $regex: /admin/i }, 
             email: { $exists: true, $ne: "" }
         });
-        console.log(`Admins Found: ${admins.length}`);
 
-        // 2. Find HOD for this specific department
         const hods = departmentId ? await User.find({
             role: { $regex: /^hod$/i },
             departmentId: departmentId,
             email: { $exists: true, $ne: "" }
         }) : [];
-        console.log(`HODs Found: ${hods.length}`);
 
-        // 3. Merge and deduplicate
         const combined = [...admins, ...hods];
         const uniqueList = [];
         const seenEmails = new Set();
 
         combined.forEach(user => {
             const email = user.email.toLowerCase().trim();
-            // Only add if not seen and NOT the person who sent the request
             if (!seenEmails.has(email) && user.username !== senderUsername) {
                 seenEmails.add(email);
                 uniqueList.push(user);
             }
         });
 
-        console.log(`Final Notification List: ${uniqueList.map(u => u.email).join(', ')}`);
         return uniqueList;
     } catch (err) {
         console.error("Error in getRecipientsForRequest:", err);
@@ -58,6 +54,9 @@ exports.getRecipientsForRequest = async (senderRole, departmentId, senderUsernam
     }
 };
 
+/**
+ * EXISTING LOGIC: Notifies Admins/HODs of a new request
+ */
 exports.notifyApprovers = async (staffArray, requestData) => {
     const uniqueRecipients = new Map();
     staffArray.forEach(staff => {
@@ -98,6 +97,9 @@ exports.notifyApprovers = async (staffArray, requestData) => {
     await Promise.all(emailPromises);
 };
 
+/**
+ * EXISTING LOGIC: Notifies a user when their request is approved/denied
+ */
 exports.notifyUserOfAction = async (userEmail, action, requestData, comment) => {
     const isApproved = action === 'approve';
     const statusColor = isApproved ? '#28a745' : '#dc3545';
@@ -127,15 +129,50 @@ exports.notifyUserOfAction = async (userEmail, action, requestData, comment) => 
     });
 };
 
-exports.sendEmail = async (to, subject, html) => {
-    // Ensure 'to' is an array
-    const recipientList = Array.isArray(to) ? to : [to];
+/**
+ * UPDATED LOGIC: Notifies a specific user when their file status changes
+ */
+exports.notifyUserOfFileStatus = async (userEmail, userName, fileName, isDisabled, actionBy) => {
+    const statusText = isDisabled ? 'DISABLED' : 'ENABLED';
+    const statusColor = isDisabled ? '#dc3545' : '#28a745';
+    const subject = isDisabled ? 'Security Alert: File Disabled' : 'Update: File Re-enabled';
 
-    // Map through the list and create individual sending tasks
+    return transporter.sendMail({
+        from: `"Aaryan System" <${process.env.EMAIL_USER}>`,
+        to: userEmail,
+        subject: subject,
+        html: `
+            <div style="font-family: sans-serif; padding: 20px; border: 1px solid #eee; border-radius: 8px; max-width: 500px; margin: auto;">
+                <h2 style="color: ${statusColor}; text-align: center;">File Status Update</h2>
+                <p>Hello <strong>${userName}</strong>,</p>
+                <p>This is an automated security alert regarding your account activity.</p>
+                
+                <div style="background: ${isDisabled ? '#fff5f5' : '#f8f9fa'}; padding: 15px; border-left: 5px solid ${statusColor}; margin: 20px 0;">
+                    <p style="margin: 0;"><strong>File Name:</strong> ${fileName}</p>
+                    <p style="margin: 5px 0 0 0;"><strong>Status:</strong> <span style="color: ${statusColor}; font-weight: bold;">${statusText}</span></p>
+                    <p style="margin: 5px 0 0 0;"><strong>Action By:</strong> ${actionBy}</p>
+                </div>
+                
+                ${isDisabled ? 
+                    `<p style="color: #666;">As a result, this file is no longer accessible or visible in your active directory. If you believe this is a mistake, please contact your Department Head (HOD).</p>` : 
+                    `<p style="color: #666;">This file has been re-enabled and is now accessible in your directory.</p>`
+                }
+                
+                <p style="font-size: 12px; color: #999; text-align: center; margin-top: 30px;">Aaryan Security System &copy; 2026</p>
+            </div>
+        `
+    });
+};
+
+/**
+ * CORE FUNCTION: General Purpose Email Sender
+ */
+exports.sendEmail = async (to, subject, html) => {
+    const recipientList = Array.isArray(to) ? to : [to];
     const sendTasks = recipientList.map(email => {
         return transporter.sendMail({
             from: `"Aaryan System" <${process.env.EMAIL_USER}>`,
-            to: email, // Direct 'To' header (no BCC)
+            to: email, 
             subject: subject,
             html: html
         });
@@ -150,6 +187,9 @@ exports.sendEmail = async (to, subject, html) => {
     }
 };
 
+/**
+ * EXISTING LOGIC: Password Reset Template
+ */
 exports.passwordResetTemplate = (data) => {
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
     const resetUrl = `${frontendUrl}/reset-password/${data.token}`;

@@ -12,7 +12,6 @@ function LoginPage({ onLogin }) {
   const [isLoading, setIsLoading] = useState(false); 
   const [deptList, setDeptList] = useState([]);
   
-  // --- 2FA & Setup State ---
   const [isOtpStep, setIsOtpStep] = useState(false); 
   const [otpToken, setOtpToken] = useState("");      
   const [tempUserId, setTempUserId] = useState(null); 
@@ -24,10 +23,10 @@ function LoginPage({ onLogin }) {
 
   const navigate = useNavigate();
 
-  // Fetch departments on load
   useEffect(() => {
     const fetchDepartments = async () => {
       try {
+        // Fetch only active departments for the dropdown
         const response = await axios.get("http://localhost:5000/api/departments"); 
         setDeptList(response.data);
       } catch (error) {
@@ -37,7 +36,6 @@ function LoginPage({ onLogin }) {
     fetchDepartments();
   }, []);
 
-  // --- AUTOMATIC VERIFICATION LOGIC ---
   useEffect(() => {
     const sanitized = String(otpToken).replace(/\D/g, "");
     if (sanitized.length === 6) {
@@ -54,10 +52,23 @@ function LoginPage({ onLogin }) {
         });
 
         if (response.data.success || response.data.user) {
+            // NEW LOGIC: Check if the user's department is active before finishing login
+            const userData = response.data.user;
+            
+            // If department is deactivated (and user is not SuperAdmin), block access
+            if (userData.role !== 'superadmin' && userData.deptDetails && userData.deptDetails.isActive === false) {
+                setErrorPopup({ 
+                    show: true, 
+                    message: `⚠️ Access Denied: The ${userData.department} department has been deactivated.`, 
+                    isSuccess: false 
+                });
+                handleBackToLogin();
+                return;
+            }
+
             setErrorPopup({ show: true, message: "✅ Verification Successful!", isSuccess: true });
             
             setTimeout(() => {
-                const userData = response.data.user;
                 sessionStorage.setItem("userSession", JSON.stringify(userData)); 
                 onLogin(userData); 
                 navigate("/"); 
@@ -72,9 +83,8 @@ function LoginPage({ onLogin }) {
     }
   };
 
-  // Handle Role Logic based on prefix
   const handleUsernameChange = (e) => {
-    const value = e.target.value; // Keep original casing for display, handle lowercase in submit
+    const value = e.target.value;
     setUsername(value);
 
     const lowerVal = value.toLowerCase();
@@ -99,7 +109,6 @@ function LoginPage({ onLogin }) {
     }
   };
 
-  // Step 1: Initial Login
   const handleSubmit = async (e) => {
     e.preventDefault();
 
@@ -115,11 +124,22 @@ function LoginPage({ onLogin }) {
     setIsLoading(true);
     try {
         const response = await axios.post("http://localhost:5000/api/users/login", {
-            // Normalize data before sending to backend
             username: username.trim().toLowerCase(),
             password: password,
             department: department.trim() 
         });
+
+        // NEW LOGIC: Check department status immediately on login attempt
+        // Note: Backend should send departmentStatus in the login response
+        if (response.data.departmentActive === false && activeRole !== 'superadmin') {
+            setErrorPopup({ 
+                show: true, 
+                message: `⚠️ The ${department} department is currently deactivated. Please contact the Super Admin.`, 
+                isSuccess: false 
+            });
+            setIsLoading(false);
+            return;
+        }
 
         if (response.data.requires2FA) {
             setTempUserId(response.data.userId);
@@ -135,7 +155,7 @@ function LoginPage({ onLogin }) {
             navigate("/"); 
         }
     } catch (error) {
-        console.error("Login Error Status:", error.response?.status);
+        // Specifically handle the "Deactivated" error message if sent from backend
         const serverMsg = error.response?.data?.message || "❌ Invalid Credentials!";
         setErrorPopup({ show: true, message: serverMsg, isSuccess: false });
     } finally {
@@ -143,7 +163,6 @@ function LoginPage({ onLogin }) {
     }
   };
 
-  // Step 2: Show QR Code Setup
   const handleShowSetup = async (idFromLogin = null) => {
     const targetId = idFromLogin || tempUserId;
     if (!targetId) return;
@@ -174,8 +193,6 @@ function LoginPage({ onLogin }) {
 
   return (
     <div className="login-container">
-      
-      {/* --- Notification Popup --- */}
       {errorPopup.show && (
         <div className="modal-overlay" onClick={() => !errorPopup.isSuccess && setErrorPopup({ ...errorPopup, show: false })}>
           <div className="fancy-popup" onClick={(e) => e.stopPropagation()}>
@@ -186,7 +203,7 @@ function LoginPage({ onLogin }) {
             }}>
                 <i className={`fa-solid ${errorPopup.isSuccess ? 'fa-circle-check' : 'fa-circle-exclamation'}`}></i>
             </div>
-            <h3>{errorPopup.isSuccess ? 'Success' : 'Authentication Error'}</h3>
+            <h3>{errorPopup.isSuccess ? 'Success' : 'Access Restricted'}</h3>
             <p>{errorPopup.message}</p>
             {!errorPopup.isSuccess && (
                 <button className="close-popup-btn" onClick={() => setErrorPopup({ ...errorPopup, show: false })}>Try Again</button>

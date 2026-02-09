@@ -3,26 +3,25 @@ const mongoose = require("mongoose");
 
 const checkIsAdmin = (role) => ["ADMIN", "SUPERADMIN"].includes(role?.toUpperCase());
 
+// GET NOTIFICATIONS
 exports.getNotifications = async (req, res) => {
     try {
         const { userId, role, department } = req.query;
         const roleUpper = role?.toUpperCase();
         const isAdmin = checkIsAdmin(roleUpper);
         
-        // 1. We primarily look for notifications assigned to this specific USER ID
-        // This covers the Admins, SuperAdmins, and HODs we targeted in the other controllers.
+        // 1. Primary Condition: Explicitly for this User
         let conditions = [
             { recipientId: userId && userId !== "undefined" ? userId : null }
         ];
 
-        // 2. Fallback: Role-based broadcast (for any general alerts not tied to an ID)
+        // 2. Role-based broadcast logic
         if (isAdmin) {
-            conditions.push({ targetRoles: { $in: ['ADMIN', 'SUPERADMIN'] }, recipientId: null });
+            conditions.push({ targetRoles: { $in: ['ADMIN', 'SUPERADMIN'] } });
         } else if (roleUpper === 'HOD') {
             conditions.push({ 
                 targetRoles: 'HOD', 
-                department: department,
-                recipientId: null
+                departmentId: department 
             });
         }
 
@@ -33,6 +32,7 @@ exports.getNotifications = async (req, res) => {
     }
 };
 
+// GET UNREAD COUNT
 exports.getUnreadCount = async (req, res) => {
     try {
         const { userId, role, department } = req.query;
@@ -44,7 +44,7 @@ exports.getUnreadCount = async (req, res) => {
         if (isAdmin) {
             conditions.push({ targetRoles: { $in: ['ADMIN', 'SUPERADMIN'] } });
         } else if (roleUpper === 'HOD') {
-            conditions.push({ targetRoles: 'HOD', department: department });
+            conditions.push({ targetRoles: 'HOD', departmentId: department });
         }
 
         const count = await Notification.countDocuments({
@@ -57,6 +57,7 @@ exports.getUnreadCount = async (req, res) => {
     }
 };
 
+// MARK ALL AS READ
 exports.markAllAsRead = async (req, res) => {
     try {
         const { userId, role, department } = req.body;
@@ -68,7 +69,7 @@ exports.markAllAsRead = async (req, res) => {
         if (isAdmin) {
             conditions.push({ targetRoles: { $in: ['ADMIN', 'SUPERADMIN'] } });
         } else if (roleUpper === 'HOD') {
-            conditions.push({ targetRoles: 'HOD', department: department });
+            conditions.push({ targetRoles: 'HOD', departmentId: department });
         }
 
         await Notification.updateMany(
@@ -81,6 +82,7 @@ exports.markAllAsRead = async (req, res) => {
     }
 };
 
+// MARK SINGLE AS READ
 exports.markAsRead = async (req, res) => {
     try {
         const { id } = req.params;
@@ -93,25 +95,23 @@ exports.markAsRead = async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 };
-// DELETE ALL NOTIFICATIONS (Persistent)
+
+// DELETE ALL NOTIFICATIONS
 exports.deleteAllNotifications = async (req, res) => {
     try {
         const { userId, role, department } = req.query;
         const roleUpper = role?.toUpperCase();
         const isAdmin = checkIsAdmin(roleUpper);
 
-        // Define which notifications this user is allowed to clear
         let conditions = [{ recipientId: userId && userId !== "undefined" ? userId : null }];
 
         if (isAdmin) {
             conditions.push({ targetRoles: { $in: ['ADMIN', 'SUPERADMIN'] } });
         } else if (roleUpper === 'HOD') {
-            conditions.push({ targetRoles: 'HOD', department: department });
+            conditions.push({ targetRoles: 'HOD', departmentId: department });
         }
 
-        // Permanently delete from the database
         const result = await Notification.deleteMany({ $or: conditions });
-
         res.status(200).json({ 
             message: "All notifications permanently deleted", 
             count: result.deletedCount 

@@ -7,7 +7,8 @@ import {
   PersonAdd, 
   SwapHoriz, 
   DeleteForever,
-  History
+  History,
+  FilePresent // Added for file-specific icons
 } from "@mui/icons-material";
 import axios from "axios";
 import Swal from "sweetalert2";
@@ -27,10 +28,29 @@ const NotificationsPage = ({ user, currentTheme }) => {
   const fetchNotifications = async () => {
     try {
       setLoading(true);
+      // We send the current user's ID and role to the backend
+      // The backend should already be filtering by recipientId, but we ensure it here
       const res = await axios.get(`http://localhost:5000/api/notifications`, {
-        params: { userId: user?._id, role: user?.role }
+        params: { 
+          userId: user?._id, 
+          role: user?.role,
+          username: user?.username // Added username to help identify file ownership
+        }
       });
-      setNotifications(res.data);
+
+      /* Logic: Filter notifications to ensure "Disabled File" alerts 
+         only show for the specific owner if the backend returns a general list.
+      */
+      const filteredNotifications = res.data.filter(n => {
+        const title = (n.title || "").toLowerCase();
+        // If it's a file status notification, ensure it's meant for this user
+        if (title.includes("file disabled") || title.includes("file restricted")) {
+          return n.recipientId === user?._id || n.message.includes(user?.username);
+        }
+        return true; // Allow other notification types (User creation, Transfers, etc.)
+      });
+
+      setNotifications(filteredNotifications);
     } catch (err) {
       console.error("Error fetching notifications:", err);
     } finally {
@@ -48,6 +68,7 @@ const NotificationsPage = ({ user, currentTheme }) => {
     if (lowerTitle.includes("user")) return <PersonAdd className="text-primary" />;
     if (lowerTitle.includes("transfer")) return <SwapHoriz className="text-warning" />;
     if (lowerTitle.includes("delete")) return <DeleteForever className="text-danger" />;
+    if (lowerTitle.includes("file")) return <FilePresent className="text-secondary" />; // Icon for file status
     return <NotificationImportant className="text-info" />;
   };
 
@@ -70,9 +91,11 @@ const NotificationsPage = ({ user, currentTheme }) => {
         ) {
             navigate('/pending'); 
         } 
+        else if (title.includes('file')) {
+            // Redirect to the user's file management or personal dashboard
+            navigate('/my-files'); 
+        }
         else {
-            // FALLBACK: If it's just a general info notification, stay on the page
-            // but refresh the list to show it's been read.
             fetchNotifications(); 
         }
 

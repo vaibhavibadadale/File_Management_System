@@ -20,16 +20,16 @@ const RequestActionPage = () => {
         e.preventDefault();
         
         if (!requestId || !userId) {
-        return Swal.fire('Error', 'Invalid link. Missing Request or User identification.', 'error');
-    }
+            return Swal.fire('Error', 'Invalid link. Missing Request or User identification.', 'error');
+        }
     
         const result = await Swal.fire({
-            title: `Confirm ${action}?`,
-            text: "This action will be logged in the security audit.",
+            title: `Confirm ${action?.toUpperCase()}?`,
+            text: "All files and folders in this request will be processed immediately.",
             icon: 'warning',
             showCancelButton: true,
             confirmButtonColor: action === 'approve' ? '#28a745' : '#d33',
-            confirmButtonText: 'Confirm'
+            confirmButtonText: 'Confirm Authorization'
         });
 
         if (!result.isConfirmed) return;
@@ -55,7 +55,7 @@ const RequestActionPage = () => {
                 <div className="card p-5 shadow border-0 text-center" style={{ width: '400px', borderRadius: '15px' }}>
                     <FaCheckCircle size={50} className="text-success mb-3 mx-auto" />
                     <h4>Action Complete</h4>
-                    <p className="text-muted">Notifications have been sent. You can close this tab.</p>
+                    <p className="text-muted">Database updated. Notifications have been sent. You can close this tab.</p>
                     <button className="btn btn-primary" onClick={() => window.close()}>Close Tab</button>
                 </div>
             </div>

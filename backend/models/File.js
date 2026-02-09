@@ -16,10 +16,9 @@ const FileSchema = new mongoose.Schema(
     uploadedAt: { type: Date, default: Date.now },
     departmentId: { type: mongoose.Schema.Types.ObjectId, ref: "Department" },
     isStarred: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User', default: [] }],
-    isDisabled: { type: Boolean, default: false }, // For admin toggle functionality
+    isDisabled: { type: Boolean, default: false }, 
     deletedAt: { type: Date, default: null },
 
-    // --- TRANSFER LOGIC FIELDS ---
     transferStatus: { 
       type: String, 
       enum: ['none', 'pending', 'received'], 
@@ -38,7 +37,6 @@ const FileSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-// Middleware to exclude soft-deleted files from queries
 FileSchema.pre(/^find/, function () {
   this.where({ deletedAt: null });
 });

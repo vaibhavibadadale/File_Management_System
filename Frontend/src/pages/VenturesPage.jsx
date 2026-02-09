@@ -29,6 +29,7 @@ const VenturesPage = ({ currentTheme, user }) => {
     const fetchDepts = async () => {
         try {
             setLoading(true);
+            // Fetch all departments including hidden/inactive ones for management
             const res = await axios.get(`http://localhost:5000/api/departments?hidden=all`); 
             setDepartments(res.data);
         } catch (err) {
@@ -76,11 +77,13 @@ const VenturesPage = ({ currentTheme, user }) => {
     };
 
     const handleToggleClick = async (deptId) => {
+        // Validation: Admin can toggle others, but logic for security is on backend
         if (!canCreateDept) {
             alert("Only Admins can change department status.");
             return;
         }
         try {
+            // Toggling isActive on the backend
             await axios.patch(`http://localhost:5000/api/departments/toggle-status/${deptId}`, {});
             fetchDepts(); 
         } catch (err) {

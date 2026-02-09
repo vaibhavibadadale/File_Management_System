@@ -7,7 +7,7 @@ import {
 import {
   FaCheck, FaTimes, FaHistory, FaHourglassHalf, FaArrowUp, FaArrowDown,
   FaTrashAlt, FaExchangeAlt, FaUserShield, FaSearch,
-  FaChevronLeft, FaChevronRight, FaSyncAlt
+  FaChevronLeft, FaChevronRight, FaSyncAlt, FaFolder, FaFile
 } from "react-icons/fa";
 
 const PendingRequestsPage = ({ user, currentTheme }) => {
@@ -85,7 +85,7 @@ const PendingRequestsPage = ({ user, currentTheme }) => {
   const handleApprove = async (id) => {
     const result = await Swal.fire({
       title: "Approve Request?",
-      text: "This will process the file transfer/deletion immediately.",
+      text: "This will process the items immediately.",
       icon: "warning",
       showCancelButton: true,
       confirmButtonColor: "#28a745",
@@ -170,7 +170,7 @@ const PendingRequestsPage = ({ user, currentTheme }) => {
         <Table responsive hover variant={isDark ? "dark" : "light"} className="text-center mb-0">
           <thead>
             <tr className="text-uppercase text-muted border-bottom" style={{ fontSize: "0.7rem" }}>
-              <th>Dir</th><th>Type</th><th>Sender Info</th><th>Receiver Info</th><th>Files</th><th>REASON & REMARKS</th><th>DATE</th><th>ACTION</th>
+              <th>Dir</th><th>Type</th><th>Sender Info</th><th>Receiver Info</th><th>Items (Files/Folders)</th><th>REASON & REMARKS</th><th>DATE</th><th>ACTION</th>
             </tr>
           </thead>
           <tbody>
@@ -185,6 +185,10 @@ const PendingRequestsPage = ({ user, currentTheme }) => {
                 else if (myRole === "ADMIN" && !["ADMIN", "SUPERADMIN", "SUPER_ADMIN"].includes(senderRole)) canApprove = true;
                 else if (myRole === "HOD" && ["EMPLOYEE", "USER"].includes(senderRole) && getCleanId(user.departmentId) === getCleanId(req.departmentId)) canApprove = true;
               }
+
+              // COMBINED LOGIC FOR FILE AND FOLDER NAMES
+              const files = req.fileIds || [];
+              const folders = req.folderIds || [];
 
               return (
                 <tr key={req._id} className="align-middle border-bottom">
@@ -211,12 +215,21 @@ const PendingRequestsPage = ({ user, currentTheme }) => {
                   </td>
 
                   <td className="text-start small">
-                    {req.fileIds?.map((f, i) => (
-                      <div key={i} className="text-truncate" style={{ maxWidth: "150px" }}>
-                        <span className="text-muted me-1">{i + 1}.</span>
-                        {f.fileName || f.originalName || f.name || "File"}
+                    {/* Render Folders First */}
+                    {folders.map((f, i) => (
+                      <div key={`fold-${i}`} className="text-truncate" style={{ maxWidth: "150px" }}>
+                        <FaFolder className="text-warning me-1" size={10}/>
+                        {f.folderName || f.name || "Unnamed Folder"}
                       </div>
                     ))}
+                    {/* Render Files */}
+                    {files.map((f, i) => (
+                      <div key={`file-${i}`} className="text-truncate" style={{ maxWidth: "150px" }}>
+                        <FaFile className="text-primary me-1" size={10}/>
+                        {f.originalName || f.fileName || f.name || "Unnamed File"}
+                      </div>
+                    ))}
+                    {folders.length === 0 && files.length === 0 && <span className="text-muted">No items</span>}
                   </td>
 
                   <td className="text-start small" style={{ minWidth: "220px" }}>
@@ -269,16 +282,15 @@ const PendingRequestsPage = ({ user, currentTheme }) => {
 
   return (
     <Container fluid className="mt-0 px-4 pt-3 pb-5">
-  {/* PAGE HEADING - Matched to File Dashboard Style */}
-  <h3 className={`mb-4 ${isDark ? "text-white" : "text-dark"}`} 
-      style={{ 
-        fontSize: "calc(1.3rem + .6vw)", 
-        fontWeight: "500",
-        fontFamily: "'Segoe UI', Roboto, Helvetica, Arial, sans-serif" ,
-        marginTop: "-5px"
-      }}>
-    Pending Requests
-  </h3>
+      <h3 className={`mb-4 ${isDark ? "text-white" : "text-dark"}`} 
+          style={{ 
+            fontSize: "calc(1.3rem + .6vw)", 
+            fontWeight: "500",
+            fontFamily: "'Segoe UI', Roboto, Helvetica, Arial, sans-serif" ,
+            marginTop: "-5px"
+          }}>
+        Pending Requests
+      </h3>
 
       {loading && data.mainRequests.length === 0 ? (
         <div className="text-center py-5"><Spinner animation="border" variant="primary" /></div>
@@ -289,7 +301,6 @@ const PendingRequestsPage = ({ user, currentTheme }) => {
         </>
       )}
 
-      {/* REJECTION MODAL */}
       <Modal show={showDenyModal} onHide={() => !isSubmitting && setShowDenyModal(false)} centered>
         <Modal.Header closeButton className={isDark ? "bg-dark text-white border-secondary" : ""}>
           <Modal.Title className="h6 text-danger fw-bold">Reject Request</Modal.Title>
