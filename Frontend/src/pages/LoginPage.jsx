@@ -22,19 +22,21 @@ function LoginPage({ onLogin }) {
   const [deptVisibilityFlag, setDeptVisibilityFlag] = useState(0);
 
   const navigate = useNavigate();
-
+  const API_BASE_URL = "https://likes-fields-dolls-such.trycloudflare.com";
+   
   useEffect(() => {
-    const fetchDepartments = async () => {
-      try {
-        // Fetch only active departments for the dropdown
-        const response = await axios.get("http://localhost:5000/api/departments"); 
-        setDeptList(response.data);
-      } catch (error) {
-        console.error("Error fetching departments:", error);
-      }
-    };
-    fetchDepartments();
-  }, []);
+  const fetchDepartments = async () => {
+    try {
+      // FIX: Ensure this uses the BACKEND tunnel link
+      const response = await axios.get(`${API_BASE_URL}/api/departments`); 
+      setDeptList(response.data);
+    } catch (error) {
+      console.error("Error fetching departments:", error);
+    }
+  };
+  fetchDepartments();
+}, [API_BASE_URL]);
+    
 
   useEffect(() => {
     const sanitized = String(otpToken).replace(/\D/g, "");
@@ -46,16 +48,15 @@ function LoginPage({ onLogin }) {
   const handleAutoVerify = async (token) => {
     setIsLoading(true);
     try {
-        const response = await axios.post("http://localhost:5000/api/users/verify-otp", {
+        // FIXED: Added backticks for template literal
+        const response = await axios.post(`${API_BASE_URL}/api/users/verify-otp`, {
             userId: tempUserId,
             token: token.trim() 
         });
 
         if (response.data.success || response.data.user) {
-            // NEW LOGIC: Check if the user's department is active before finishing login
             const userData = response.data.user;
             
-            // If department is deactivated (and user is not SuperAdmin), block access
             if (userData.role !== 'superadmin' && userData.deptDetails && userData.deptDetails.isActive === false) {
                 setErrorPopup({ 
                     show: true, 
@@ -123,14 +124,13 @@ function LoginPage({ onLogin }) {
 
     setIsLoading(true);
     try {
-        const response = await axios.post("http://localhost:5000/api/users/login", {
+        // FIXED: Added backticks for template literal
+        const response = await axios.post(`${API_BASE_URL}/api/users/login`, {
             username: username.trim().toLowerCase(),
             password: password,
             department: department.trim() 
         });
 
-        // NEW LOGIC: Check department status immediately on login attempt
-        // Note: Backend should send departmentStatus in the login response
         if (response.data.departmentActive === false && activeRole !== 'superadmin') {
             setErrorPopup({ 
                 show: true, 
@@ -155,7 +155,6 @@ function LoginPage({ onLogin }) {
             navigate("/"); 
         }
     } catch (error) {
-        // Specifically handle the "Deactivated" error message if sent from backend
         const serverMsg = error.response?.data?.message || "❌ Invalid Credentials!";
         setErrorPopup({ show: true, message: serverMsg, isSuccess: false });
     } finally {
@@ -168,7 +167,8 @@ function LoginPage({ onLogin }) {
     if (!targetId) return;
 
     try {
-      const response = await axios.post("http://localhost:5000/api/users/setup-2fa", {
+      // FIXED: Switched localhost to API_BASE_URL with backticks
+      const response = await axios.post(`${API_BASE_URL}/api/users/setup-2fa`, {
         userId: targetId
       });
       setQrCodeData(response.data.qrImageUrl);

@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const BACKEND_URL = "http://localhost:5000/api"; 
+const BACKEND_URL = "https://consulting-orbit-acceptance-prague.trycloudflare.com/"; 
 
 /**
  * Helper to get authentication headers from localStorage
