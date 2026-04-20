@@ -1,6 +1,12 @@
 import axios from 'axios';
 
-const BACKEND_URL = "http://localhost:5000/api"; 
+/**
+ * DETERMINING THE BASE URL
+ * Vercel will look for REACT_APP_BACKEND_URL in your environment variables.
+ * If it doesn't find it (like on your local machine), it defaults to localhost.
+ */
+const BASE_URL = process.env.REACT_APP_BACKEND_URL || "http://localhost:5000";
+const BACKEND_URL = `${BASE_URL}/api`; 
 
 /**
  * Helper to get authentication headers from localStorage
