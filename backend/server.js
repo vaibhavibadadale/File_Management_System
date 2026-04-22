@@ -23,7 +23,7 @@ app.use(express.urlencoded({ extended: true }));
 
 app.use(
   cors({
-    origin: 'https://filemanagement-h3n7z6186-aaryans-files-projects.vercel.app/',
+    origin: ["http://localhost:3000","https://filemanagement-h3n7z6186-aaryans-files-projects.vercel.app/"],
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE"], 
     credentials: true,
   })
@@ -71,6 +71,7 @@ app.use((err, req, res, next) => {
 
 // ================= DATABASE =================
 const connectWithRetry = () => {
+  console.log("⏳ Attempting to connect to MongoDB Atlas...");
   mongoose
     .connect(MONGO_URI)
     .then(() => console.log("✅ MongoDB connected to Aaryans File Management System"))
