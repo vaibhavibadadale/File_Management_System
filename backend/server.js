@@ -10,7 +10,8 @@ const app = express();
 // ================= CONFIG =================
 const PORT = process.env.PORT || 5000;
 const UPLOADS_DIR = path.join(__dirname, "uploads");
-const MONGO_URI = process.env.MONGO_URI || "mongodb+srv://gauri_16:gauri1608@cluster0.yv8ytgi.mongodb.net/aaryans_file_system?retryWrites=true&w=majority";
+// Prioritize the .env variable; only use hardcoded for local fallback if absolutely necessary
+const MONGO_URI = process.env.MONGO_URI;
 
 // ================= ENSURE UPLOADS DIR =================
 if (!fs.existsSync(UPLOADS_DIR)) {
@@ -18,21 +19,23 @@ if (!fs.existsSync(UPLOADS_DIR)) {
 }
 
 // ================= MIDDLEWARE =================
+app.use(cors({
+  origin: [
+    "http://localhost:3000",
+    "https://filemanagement-h3n7z6186-aaryans-files-projects.vercel.app"
+  ],
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
+  credentials: true,
+}));
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-
-app.use(
-  cors({
-    origin: ["http://localhost:3000","https://filemanagement-h3n7z6186-aaryans-files-projects.vercel.app/"],
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE"], 
-    credentials: true,
-  })
-);
 
 // ================= STATIC FILES =================
 app.use("/uploads", express.static(UPLOADS_DIR));
 
 // ================= ROUTES =================
+// Note: Ensure these files actually exist in your /routes folder
 const userRoutes = require("./routes/user.routes");
 const departmentRoutes = require("./routes/department.routes");
 const folderRoutes = require("./routes/folder.routes");
@@ -49,49 +52,45 @@ app.use("/api/files", fileRoutes);
 app.use("/api/logs", logRoutes);
 app.use("/api/transfer", transferRoutes);
 app.use("/api/notifications", notificationRoutes);
-app.use("/api/requests", requestRoutes); // Points to routes/request.routes.js
-
-// ================= GLOBAL ERROR HANDLER (ADD THIS HERE) =================
-app.use((err, req, res, next) => {
-    console.error("❌ BACKEND CRASH DETECTED:");
-    console.error("Path:", req.path);
-    console.error("Method:", req.method);
-    
-    // This will print the exact file and line number in your VS Code terminal
-    console.error(err.stack); 
-
-    res.status(500).json({
-        success: false,
-        message: "Internal Server Error",
-        error: err.message,
-        // Optional: show stack trace only in development
-        stack: process.env.NODE_ENV === 'development' ? err.stack : undefined 
-    });
-});
-
-// ================= DATABASE =================
-const connectWithRetry = () => {
-  console.log("⏳ Attempting to connect to MongoDB Atlas...");
-  mongoose
-    .connect(MONGO_URI)
-    .then(() => console.log("✅ MongoDB connected to Aaryans File Management System"))
-    .catch((err) => {
-      console.error("❌ MongoDB connection error:", err.message);
-      console.log("🔁 Retrying MongoDB connection in 5 seconds...");
-      setTimeout(connectWithRetry, 5000);
-    });
-};
-
-connectWithRetry();
+app.use("/api/requests", requestRoutes);
 
 // ================= DEFAULT ROUTE =================
 app.get("/", (req, res) => {
   res.send("🚀 Aaryans File Management System Backend is running");
 });
 
-// ================= 404 HANDLER =================
+// ================= DATABASE CONNECTION =================
+const connectDB = async () => {
+  try {
+    if (!MONGO_URI) {
+      throw new Error("MONGO_URI is missing from environment variables.");
+    }
+    
+    await mongoose.connect(MONGO_URI);
+    console.log("✅ MongoDB Atlas connected successfully");
+  } catch (err) {
+    console.error("❌ MongoDB connection error:", err.message);
+    console.log("🔁 Retrying in 5 seconds...");
+    setTimeout(connectDB, 5000);
+  }
+};
+
+connectDB();
+
+// ================= ERROR HANDLING =================
+// 404 Handler
 app.use((req, res) => {
-  res.status(404).json({ message: "Route not found" });
+  res.status(404).json({ success: false, message: "Route not found" });
+});
+
+// Global Error Handler
+app.use((err, req, res, next) => {
+  console.error("❌ SERVER ERROR:", err.stack);
+  res.status(err.status || 500).json({
+    success: false,
+    message: err.message || "Internal Server Error",
+    stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+  });
 });
 
 // ================= START SERVER =================
