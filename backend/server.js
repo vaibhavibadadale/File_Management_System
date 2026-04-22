@@ -21,8 +21,8 @@ if (!fs.existsSync(UPLOADS_DIR)) {
 // ================= MIDDLEWARE =================
 app.use(cors({
   origin: [
-    "http://localhost:3000",
-    "https://filemanagement-h3n7z6186-aaryans-files-projects.vercel.app"
+    
+    "https://filemanagement-five.vercel.app",
   ],
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
   credentials: true,
