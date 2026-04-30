@@ -22,7 +22,7 @@ if (!fs.existsSync(UPLOADS_DIR)) {
 app.use(cors({
   origin: [
     
-    "https://filemanagement-five.vercel.app",
+    "http://localhost:3000","https://filemanagement-five.vercel.app",
   ],
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
   credentials: true,

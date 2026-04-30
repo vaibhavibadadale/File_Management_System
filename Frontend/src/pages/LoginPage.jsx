@@ -23,7 +23,6 @@ function LoginPage({ onLogin }) {
   const [deptVisibilityFlag, setDeptVisibilityFlag] = useState(0);
 
   const navigate = useNavigate();
-  const otpInputRef = useRef(null);
 
   // Fetch departments on load
   useEffect(() => {
@@ -39,7 +38,6 @@ function LoginPage({ onLogin }) {
   }, []);
 
   // --- AUTOMATIC VERIFICATION LOGIC ---
-  // This watches the otpToken and submits as soon as 6 digits are reached
   useEffect(() => {
     const sanitized = String(otpToken).replace(/\D/g, "");
     if (sanitized.length === 6) {
@@ -52,7 +50,7 @@ function LoginPage({ onLogin }) {
     try {
         const response = await axios.post("http://localhost:5000/api/users/verify-otp", {
             userId: tempUserId,
-            token: token 
+            token: token.trim() 
         });
 
         if (response.data.success || response.data.user) {
@@ -66,7 +64,7 @@ function LoginPage({ onLogin }) {
             }, 1200);
         }
     } catch (error) {
-        setOtpToken(""); // Clear on error
+        setOtpToken(""); 
         const serverMsg = error.response?.data?.message || "Invalid OTP Code!";
         setErrorPopup({ show: true, message: `⚠️ ${serverMsg}`, isSuccess: false });
     } finally {
@@ -76,20 +74,21 @@ function LoginPage({ onLogin }) {
 
   // Handle Role Logic based on prefix
   const handleUsernameChange = (e) => {
-    const value = e.target.value.toLowerCase();
+    const value = e.target.value; // Keep original casing for display, handle lowercase in submit
     setUsername(value);
 
-    if (value.startsWith("e-")) {
+    const lowerVal = value.toLowerCase();
+    if (lowerVal.startsWith("e-")) {
       setActiveRole("employee");
       setDeptVisibilityFlag(0);
-    } else if (value.startsWith("h-")) {
+    } else if (lowerVal.startsWith("h-")) {
       setActiveRole("hod");
       setDeptVisibilityFlag(0);
-    } else if (value.startsWith("a-")) {
+    } else if (lowerVal.startsWith("a-")) {
       setActiveRole("admin");
       setDeptVisibilityFlag(1);
       setDepartment("All");
-    } else if (value.startsWith("s-")) {
+    } else if (lowerVal.startsWith("s-")) {
       setActiveRole("superadmin");
       setDeptVisibilityFlag(1);
       setDepartment("All");
@@ -116,9 +115,10 @@ function LoginPage({ onLogin }) {
     setIsLoading(true);
     try {
         const response = await axios.post("http://localhost:5000/api/users/login", {
-            username: username.trim(),
+            // Normalize data before sending to backend
+            username: username.trim().toLowerCase(),
             password: password,
-            department: department 
+            department: department.trim() 
         });
 
         if (response.data.requires2FA) {
@@ -135,6 +135,7 @@ function LoginPage({ onLogin }) {
             navigate("/"); 
         }
     } catch (error) {
+        console.error("Login Error Status:", error.response?.status);
         const serverMsg = error.response?.data?.message || "❌ Invalid Credentials!";
         setErrorPopup({ show: true, message: serverMsg, isSuccess: false });
     } finally {
@@ -194,8 +195,6 @@ function LoginPage({ onLogin }) {
         </div>
       )}
 
-      {/* --- QR & OTP Unified Flow --- */}
-      {/* We combine the QR and the Input so scan + type is one flow */}
       <div className="login-card">
         <div className="login-header">
           <div className="role-logo-wrapper">
@@ -257,7 +256,6 @@ function LoginPage({ onLogin }) {
           </form>
         ) : (
           <div className="login-form">
-            {/* Show QR inside the form card if setup is needed */}
             {showQrModal && qrCodeData && (
               <div className="qr-setup-area text-center mb-4">
                 <div className="qr-image-wrapper p-2 bg-white d-inline-block rounded shadow-sm">

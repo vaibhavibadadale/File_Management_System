@@ -1,51 +1,33 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect } from "react";
 import axios from "axios";
 
-function Enable2FA({ userId, isAlreadyEnabled, onResetSuccess }) {
+function Enable2FA({ userId, userRole, isAlreadyEnabled, onResetSuccess }) {
   const [qrCode, setQrCode] = useState("");
   const [otp, setOtp] = useState("");
-  // Initialize step based on prop
-  const [step, setStep] = useState(isAlreadyEnabled ? 3 : 1);
+  const [step, setStep] = useState(isAlreadyEnabled ? 3 : 1); 
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
+  // Get current logged-in admin info from your storage
   const currentAdmin = JSON.parse(sessionStorage.getItem("userSession"));
   const canReset = ["Admin", "SuperAdmin", "ADMIN", "SUPERADMIN"].includes(currentAdmin?.role);
 
-  // Use useCallback to prevent unnecessary re-renders
-  const handleStartSetup = useCallback(async () => {
+  // Step 1: Get the QR Code from Backend
+  const handleStartSetup = async () => {
     setError("");
-    setLoading(true);
     try {
-      // Ensure the URL matches your environment
       const res = await axios.post("http://localhost:5000/api/users/setup-2fa", { userId });
-      
-      if (res.data.qrCodeUrl) {
-        setQrCode(res.data.qrCodeUrl);
-        setStep(2);
-      } else {
-        setError("Backend did not return a QR code URL.");
-      }
+      setQrCode(res.data.qrCodeUrl);
+      setStep(2);
     } catch (err) {
-      setError(err.response?.data?.message || "Failed to start setup.");
-    } finally {
-      setLoading(false);
+      setError("Failed to start setup.");
     }
-  }, [userId]);
+  };
 
-  // If the user is in step 2 but QR is missing (e.g., state lost), re-trigger setup
-  useEffect(() => {
-    if (step === 2 && !qrCode) {
-      handleStartSetup();
-    }
-  }, [step, qrCode, handleStartSetup]);
-
+  // Step 2: Verify the first code to "Lock" 2FA
   const handleVerifyAndEnable = async (e) => {
     e.preventDefault();
-    if (otp.length !== 6) return setError("Please enter a 6-digit code.");
-    
     setError("");
-    setLoading(true);
     try {
       const res = await axios.post("http://localhost:5000/api/users/confirm-2fa", {
         userId,
@@ -55,12 +37,11 @@ function Enable2FA({ userId, isAlreadyEnabled, onResetSuccess }) {
         setStep(3);
       }
     } catch (err) {
-      setError("Invalid code. Please check your app and try again.");
-    } finally {
-      setLoading(false);
+      setError("Invalid code. Please try again.");
     }
   };
 
+  // --- NEW: ADMIN RESET LOGIC ---
   const handleAdminReset = async () => {
     if (!window.confirm("Are you sure? This will disable 2FA for this user immediately.")) return;
     
@@ -68,15 +49,15 @@ function Enable2FA({ userId, isAlreadyEnabled, onResetSuccess }) {
     try {
       const res = await axios.post("http://localhost:5000/api/users/reset-2fa", {
         targetUserId: userId,
-        adminId: currentAdmin._id 
+        adminId: currentAdmin._id // Pass requester ID for backend check
       });
 
       if (res.data.success) {
         alert("2FA Reset Successful.");
-        setStep(1);
+        setStep(1); // Move back to setup step
         setQrCode("");
         setOtp("");
-        if (onResetSuccess) onResetSuccess();
+        if (onResetSuccess) onResetSuccess(); // Optional callback to refresh parent list
       }
     } catch (err) {
       alert("Error: " + (err.response?.data?.message || "Server Error"));
@@ -86,63 +67,59 @@ function Enable2FA({ userId, isAlreadyEnabled, onResetSuccess }) {
   };
 
   return (
-    <div className="2fa-container" style={{ padding: "20px", border: "1px solid #ccc", borderRadius: "8px", backgroundColor: "#f9f9f9", maxWidth: "400px", margin: "auto" }}>
+    <div className="2fa-container" style={{ padding: "20px", border: "1px solid #ccc", borderRadius: "8px", backgroundColor: "#f9f9f9" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <h3 style={{ margin: 0 }}>2FA Security</h3>
+        <h3>Two-Factor Authentication (2FA)</h3>
+        
+        {/* Only show Reset button to Admins/SuperAdmins if 2FA is active */}
         {canReset && step === 3 && (
-          <button onClick={handleAdminReset} disabled={loading} style={{ backgroundColor: "#dc3545", color: "white", border: "none", padding: "5px 10px", borderRadius: "4px", cursor: "pointer" }}>
-            {loading ? "..." : "Reset"}
+          <button 
+            onClick={handleAdminReset} 
+            disabled={loading}
+            style={{ backgroundColor: "#dc3545", color: "white", border: "none", padding: "5px 10px", borderRadius: "4px", cursor: "pointer" }}
+          >
+            {loading ? "Resetting..." : "Admin: Reset 2FA"}
           </button>
         )}
       </div>
 
-      <hr style={{ margin: "15px 0" }} />
+      <hr />
 
-      {/* STEP 1: DISABLED STATE */}
       {step === 1 && (
         <div style={{ textAlign: "center" }}>
-          <p>Status: <span style={{ color: "red", fontWeight: "bold" }}>Disabled</span></p>
-          <button onClick={handleStartSetup} disabled={loading} style={{ padding: "10px 20px", cursor: "pointer" }}>
-            {loading ? "Generating..." : "Enable 2FA Now"}
-          </button>
+          <p>Status: <span style={{ color: "red" }}>Disabled</span></p>
+          <button onClick={handleStartSetup} className="login-btn">Enable 2FA Now</button>
         </div>
       )}
 
-      {/* STEP 2: SCANNING & VERIFICATION */}
       {step === 2 && (
         <div style={{ textAlign: "center" }}>
-          <p style={{ fontSize: "14px" }}>1. Scan QR with Google Authenticator or Authy:</p>
-          {qrCode ? (
-            <img src={qrCode} alt="2FA QR Code" style={{ margin: "10px 0", width: "180px", height: "180px", border: "1px solid #ddd" }} />
-          ) : (
-            <div style={{ height: "180px", display: "flex", alignItems: "center", justifyContent: "center" }}>Loading QR...</div>
-          )}
+          <p>1. Scan this QR code with Google Authenticator:</p>
+          <img src={qrCode} alt="QR Code" style={{ margin: "20px 0", border: "5px solid white" }} />
           
-          <p style={{ fontSize: "14px" }}>2. Enter the 6-digit code:</p>
+          <p>2. Enter the 6-digit code from your app:</p>
           <form onSubmit={handleVerifyAndEnable}>
             <input 
               type="text" 
               value={otp} 
-              onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))} 
+              onChange={(e) => setOtp(e.target.value)} 
               maxLength="6"
               placeholder="000000"
-              style={{ padding: "10px", fontSize: "20px", textAlign: "center", width: "160px", letterSpacing: "4px", display: "block", margin: "0 auto 15px" }}
+              style={{ padding: "10px", fontSize: "18px", textAlign: "center", width: "150px", letterSpacing: "5px" }}
             />
-            <button type="submit" disabled={loading} style={{ padding: "10px 20px", backgroundColor: "#007bff", color: "white", border: "none", borderRadius: "4px", cursor: "pointer" }}>
-              {loading ? "Verifying..." : "Verify & Activate"}
-            </button>
-            <button type="button" onClick={() => setStep(1)} style={{ display: "block", width: "100%", marginTop: "10px", background: "none", border: "none", color: "#666", cursor: "pointer", fontSize: "12px" }}>Cancel</button>
+            <br /><br />
+            <button type="submit" className="login-btn">Confirm & Activate</button>
+            <button type="button" onClick={() => setStep(1)} style={{ marginLeft: "10px", background: "none", border: "none", color: "blue", cursor: "pointer" }}>Cancel</button>
           </form>
-          {error && <p style={{ color: "red", fontSize: "13px", marginTop: "10px" }}>{error}</p>}
+          {error && <p style={{ color: "red", marginTop: "10px" }}>{error}</p>}
         </div>
       )}
 
-      {/* STEP 3: ACTIVE STATE */}
       {step === 3 && (
-        <div style={{ textAlign: "center", padding: "10px" }}>
-          <div style={{ fontSize: "40px" }}>🛡️</div>
-          <p style={{ color: "green", fontWeight: "bold", margin: "5px 0" }}>2FA is Active</p>
-          <p style={{ fontSize: "13px", color: "#555" }}>Your account is protected by an additional security layer.</p>
+        <div style={{ textAlign: "center", padding: "20px" }}>
+          <div style={{ fontSize: "40px" }}>✅</div>
+          <p style={{ color: "green", fontWeight: "bold" }}>2FA is Active</p>
+          <p>Your account is secured. You will need your authenticator app to log in.</p>
         </div>
       )}
     </div>
