@@ -22,7 +22,7 @@ if (!fs.existsSync(UPLOADS_DIR)) {
 app.use(cors({
   origin: [
     
-  "https://file-management-system-0diw.onrender.com","https://filemanagement-ohp8udz7s-aaryans-files-projects.vercel.app/","http://localhost:3000"
+  "https://file-management-system-0diw.onrender.com","http://localhost:3000"
   ],
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
   credentials: true,
