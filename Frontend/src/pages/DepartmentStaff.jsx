@@ -12,7 +12,7 @@ const DepartmentStaff = ({ currentTheme }) => {
     useEffect(() => {
         const fetchStaff = async () => {
             try {
-                const res = await axios.get(`http://localhost:5000/api/users/dept/${deptId}`);
+                const res = await axios.get(`https://file-management-system-0diw.onrender.com/api/users/dept/${deptId}`);
                 setData(res.data);
             } catch (err) {
                 console.error("Error fetching staff:", err);
