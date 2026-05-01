@@ -21,8 +21,8 @@ if (!fs.existsSync(UPLOADS_DIR)) {
 // ================= MIDDLEWARE =================
 app.use(cors({
   origin: [
-    
-  "https://file-management-system-0diw.onrender.com"
+  'https://filemanagement-five.vercel.app',
+    'http://localhost:3000'
   ],
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
   credentials: true,
